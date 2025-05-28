@@ -1,0 +1,554 @@
+{
+  "workspaceFoldersFilePaths": [
+    "./"
+  ],
+  "symbols": [
+    {
+      "name": "# 3-Clause BSD License",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/env/lib/python3.11/site-packages/numpy/random/LICENSE.md",
+      "start": {
+        "line": 37,
+        "character": 0
+      },
+      "end": {
+        "line": 65,
+        "character": 0
+      }
+    },
+    {
+      "name": "# 3-Clause BSD License",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/env/lib64/python3.11/site-packages/numpy/random/LICENSE.md",
+      "start": {
+        "line": 37,
+        "character": 0
+      },
+      "end": {
+        "line": 65,
+        "character": 0
+      }
+    },
+    {
+      "name": "# Components",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/env/lib/python3.11/site-packages/numpy/random/LICENSE.md",
+      "start": {
+        "line": 66,
+        "character": 0
+      },
+      "end": {
+        "line": 71,
+        "character": 0
+      }
+    },
+    {
+      "name": "# Components",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/env/lib64/python3.11/site-packages/numpy/random/LICENSE.md",
+      "start": {
+        "line": 66,
+        "character": 0
+      },
+      "end": {
+        "line": 71,
+        "character": 0
+      }
+    },
+    {
+      "name": "# NCSA Open Source License",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/env/lib/python3.11/site-packages/numpy/random/LICENSE.md",
+      "start": {
+        "line": 3,
+        "character": 0
+      },
+      "end": {
+        "line": 36,
+        "character": 0
+      }
+    },
+    {
+      "name": "# NCSA Open Source License",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/env/lib64/python3.11/site-packages/numpy/random/LICENSE.md",
+      "start": {
+        "line": 3,
+        "character": 0
+      },
+      "end": {
+        "line": 36,
+        "character": 0
+      }
+    },
+    {
+      "name": "# Python Analysis Template",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/README.md",
+      "start": {
+        "line": 0,
+        "character": 0
+      },
+      "end": {
+        "line": 4,
+        "character": 0
+      }
+    },
+    {
+      "name": "# Test hook",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./metaconnectivity/README.md",
+      "start": {
+        "line": 0,
+        "character": 0
+      },
+      "end": {
+        "line": 1,
+        "character": 0
+      }
+    },
+    {
+      "name": "# pytest cache directory",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./allegiance/.pytest_cache/README.md",
+      "start": {
+        "line": 0,
+        "character": 0
+      },
+      "end": {
+        "line": 8,
+        "character": 0
+      }
+    },
+    {
+      "name": "# pytest cache directory",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./metaconnectivity/.pytest_cache/README.md",
+      "start": {
+        "line": 0,
+        "character": 0
+      },
+      "end": {
+        "line": 8,
+        "character": 0
+      }
+    },
+    {
+      "name": "# shared_code",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./shared_code/README.md",
+      "start": {
+        "line": 0,
+        "character": 0
+      },
+      "end": {
+        "line": 10,
+        "character": 0
+      }
+    },
+    {
+      "name": "## Installation",
+      "kind": 14,
+      "containerName": "",
+      "filePath": "./shared_code/README.md",
+      "start": {
+        "line": 4,
+        "character": 0
+      },
+      "end": {
+        "line": 10,
+        "character": 0
+      }
+    }
+  ],
+  "activeFileDiagnostics": [
+    {
+      "start": {
+        "line": 32,
+        "character": 4
+      },
+      "end": {
+        "line": 32,
+        "character": 47
+      },
+      "message": "This setting has no effect. Please use github.copilot.enable instead.",
+      "severity": 1
+    },
+    {
+      "start": {
+        "line": 1,
+        "character": 4
+      },
+      "end": {
+        "line": 1,
+        "character": 52
+      },
+      "message": "Preview setting: this setting controls a new feature that is still under refinement yet ready to use. Feedback is welcome.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 11,
+        "character": 4
+      },
+      "end": {
+        "line": 11,
+        "character": 65
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 12,
+        "character": 4
+      },
+      "end": {
+        "line": 12,
+        "character": 48
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 33,
+        "character": 4
+      },
+      "end": {
+        "line": 33,
+        "character": 50
+      },
+      "message": "Preview setting: this setting controls a new feature that is still under refinement yet ready to use. Feedback is welcome.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 34,
+        "character": 4
+      },
+      "end": {
+        "line": 34,
+        "character": 50
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 35,
+        "character": 4
+      },
+      "end": {
+        "line": 35,
+        "character": 65
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 36,
+        "character": 4
+      },
+      "end": {
+        "line": 36,
+        "character": 62
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 37,
+        "character": 4
+      },
+      "end": {
+        "line": 37,
+        "character": 61
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 38,
+        "character": 4
+      },
+      "end": {
+        "line": 38,
+        "character": 54
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 39,
+        "character": 4
+      },
+      "end": {
+        "line": 39,
+        "character": 70
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 40,
+        "character": 4
+      },
+      "end": {
+        "line": 40,
+        "character": 73
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 41,
+        "character": 4
+      },
+      "end": {
+        "line": 41,
+        "character": 66
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 44,
+        "character": 4
+      },
+      "end": {
+        "line": 44,
+        "character": 40
+      },
+      "message": "Experimental setting: this setting controls a new feature that is actively being developed and may be unstable. It is subject to change or removal.",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 80,
+        "character": 4
+      },
+      "end": {
+        "line": 80,
+        "character": 29
+      },
+      "message": "Unknown Configuration Setting",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 81,
+        "character": 4
+      },
+      "end": {
+        "line": 81,
+        "character": 34
+      },
+      "message": "Unknown Configuration Setting",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 82,
+        "character": 4
+      },
+      "end": {
+        "line": 82,
+        "character": 40
+      },
+      "message": "Unknown Configuration Setting",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 83,
+        "character": 4
+      },
+      "end": {
+        "line": 83,
+        "character": 41
+      },
+      "message": "Unknown Configuration Setting",
+      "severity": 3
+    },
+    {
+      "start": {
+        "line": 84,
+        "character": 4
+      },
+      "end": {
+        "line": 84,
+        "character": 39
+      },
+      "message": "Unknown Configuration Setting",
+      "severity": 3
+    }
+  ],
+  "activeTextEditor": {
+    "selections": [
+      {
+        "anchor": {
+          "line": 24,
+          "character": 28
+        },
+        "active": {
+          "line": 24,
+          "character": 28
+        },
+        "isReversed": true
+      }
+    ],
+    "documentFilePath": "/home/samy/.config/Code/User/settings.json",
+    "visibleRanges": [
+      {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 45,
+          "character": 51
+        }
+      }
+    ],
+    "languageId": "jsonc"
+  },
+  "debugConsoleOutput": "",
+  "terminalBuffer": "(funsy) (base) samy@PT-SAMY:~/Bureau/vscode/net_fluidity$ \n\r(funsy) (base) samy@PT-SAMY:~/Bureau/vscode/net_fluidity$ ",
+  "terminalSelection": "",
+  "terminalShellType": "bash",
+  "repoContexts": [
+    {
+      "rootUri": {
+        "$mid": 1,
+        "path": "./metaconnectivity",
+        "scheme": "file"
+      },
+      "headBranchName": "main",
+      "headCommitHash": "7ebb4e784e53b88ff11329eb7ce0cc6925040578",
+      "upstreamBranchName": "main",
+      "upstreamRemote": "origin",
+      "isRebasing": true,
+      "remotes": [
+        "origin",
+        "cluster"
+      ],
+      "remoteFetchUrls": [
+        "https://github.com/SamyCN89/metaconnectivity.git",
+        "ssh://samy@130.79.131.18/home/samy/git-repos/metaconnectivity.git"
+      ],
+      "changes": {
+        "mergeChanges": [],
+        "indexChanges": [],
+        "workingTree": [],
+        "untrackedChanges": []
+      }
+    },
+    {
+      "rootUri": {
+        "$mid": 1,
+        "path": "./shared_code",
+        "scheme": "file"
+      },
+      "headBranchName": "master",
+      "headCommitHash": "7219cf277f1d60fbcf1f40245585ab30114562c8",
+      "upstreamBranchName": "master",
+      "upstreamRemote": "origin",
+      "isRebasing": true,
+      "remotes": [
+        "origin"
+      ],
+      "remoteFetchUrls": [
+        "https://github.com/SamyCN89/shared_code.git"
+      ],
+      "changes": {
+        "mergeChanges": [],
+        "indexChanges": [],
+        "workingTree": [
+          {}
+        ],
+        "untrackedChanges": []
+      }
+    },
+    {
+      "rootUri": {
+        "$mid": 1,
+        "path": "./julien_data",
+        "scheme": "file"
+      },
+      "headBranchName": "main",
+      "headCommitHash": "39b1e531fba4328026b0e4a48c940027ae449714",
+      "upstreamBranchName": "main",
+      "upstreamRemote": "origin",
+      "isRebasing": true,
+      "remotes": [
+        "origin"
+      ],
+      "remoteFetchUrls": [
+        "https://github.com/SamyCN89/julien_data.git"
+      ],
+      "changes": {
+        "mergeChanges": [],
+        "indexChanges": [],
+        "workingTree": [
+          {},
+          {}
+        ],
+        "untrackedChanges": []
+      }
+    },
+    {
+      "rootUri": {
+        "$mid": 1,
+        "path": "./allegiance",
+        "scheme": "file"
+      },
+      "headBranchName": "master",
+      "headCommitHash": "751ae9f634f1b811ad0fd57e07059099952fd604",
+      "upstreamBranchName": "master",
+      "upstreamRemote": "origin",
+      "isRebasing": true,
+      "remotes": [
+        "origin"
+      ],
+      "remoteFetchUrls": [
+        "https://github.com/SamyCN89/allegiance.git"
+      ],
+      "changes": {
+        "mergeChanges": [],
+        "indexChanges": [],
+        "workingTree": [],
+        "untrackedChanges": []
+      }
+    }
+  ],
+  "notebookDocumentFilePaths": [
+    "/Interactive-1.interactive",
+    "/Interactive-2.interactive"
+  ],
+  "textDocumentFilePaths": [
+    "julien_data/2_compute_dfc_stream.py",
+    "allegiance/src/2_compute_dfc_local.py",
+    "julien_data/1_preprocess_data_ts_cog.py",
+    "shared_code/shared_code/fun_utils.py",
+    "shared_code/shared_code/fun_loaddata.py"
+  ]
+}
