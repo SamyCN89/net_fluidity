@@ -6,199 +6,92 @@ Created on Mon Oct  2 14:42:38 2023
 @author: samy
 """
 
+
 #%%
 from pathlib import Path
 import numpy as np
-import matplotlib.pyplot as pltµ
-import brainconn as bct
-import os
-import time
-from joblib import Parallel, delayed, parallel_backend
 import pandas as pd
-# from functions_analysis import *
-from scipy.io import loadmat, savemat
-from scipy.special import erfc
-from scipy.stats import pearsonr, spearmanr
-from sklearn.manifold import TSNE
-
-from shared_code.fun_loaddata import *  # Import only needed functions
-from shared_code.fun_dfcspeed import *
+from shared_code.fun_loaddata import *
+from shared_code.fun_dfcspeed import get_tenet4window_range
 from shared_code.fun_utils import set_figure_params, get_paths, load_npz_dict
 from tqdm import tqdm
 
-
-
-#%% Define paths, folders and hash
-# ------------------------ Configuration ------------------------
+#%% Define paths
 timeseries_folder = 'time_courses'
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder=timeseries_folder,
                   cognitive_data_file='mice_groups_comp_index.xlsx')
 
-#%%
-# Load time series data
-# data_ts, n_animals, total_tp, regions, anat_labels = load_npz_dict(paths['sorted'] / Path('ts_filtered_unstacked.npz'))
+#%% Load data
+print("Loading data...")
 data = load_npz_dict(paths['sorted'] / Path('ts_filtered_unstacked.npz'))
-data_ts = data['ts']
+data_ts = data['ts']  # This is a 1D object array with 50 elements
 n_animals = data['n_animals']
 total_tp = data['total_tp']
 regions = data['regions']
 anat_labels = data['anat_labels']
 
+# Load cognitive data
 cog_data = pd.read_csv(paths['sorted'] / Path('cog_data_filtered.csv'))
 filtered_cog_data = cog_data[cog_data["n_timepoints"] >= 500]
 remaining_cog_data = cog_data[cog_data["n_timepoints"] < 500]
-# Assume cog_data is your DataFrame
 
-#%%
+#%% Convert data to 3D format
+print("\nConverting data to 3D format...")
 
-# Print loaded data information
-print(f"Loaded time series data with shape: {data_ts.shape}")
+# Separate time series by length
+ts_500 = [ts for ts in data_ts if ts.shape[0] == 500]  # 48 animals
+ts_400 = [ts for ts in data_ts if ts.shape[0] == 400]  # 2 animals
 
-ts_data_filt = np.array([w for w in data_ts if w.shape[0] != 400])
-ts_remaining = np.array([w for w in data_ts if w.shape[0] == 400])
+print(f"Found {len(ts_500)} animals with 500 timepoints")
+print(f"Found {len(ts_400)} animals with 400 timepoints")
 
-#%%
-# Parameters for dfc analysis
+# Convert to 3D arrays - no padding needed within each group
+ts_500_3d = np.array(ts_500)  # Shape: (48, 500, 37)
+ts_400_3d = np.array(ts_400)  # Shape: (2, 400, 37)
+
+# If you need all animals together, pad the shorter sequences
+max_timepoints = 500
+all_animals_3d = np.zeros((50, max_timepoints, 37), dtype=np.float32)
+
+# Fill in the data
+idx = 0
+for ts in data_ts:
+    n_tp = ts.shape[0]
+    all_animals_3d[idx, :n_tp, :] = ts
+    idx += 1
+
+print(f"\nData shapes after conversion:")
+print(f"All animals (padded): {all_animals_3d.shape}")
+print(f"500-timepoint animals: {ts_500_3d.shape}")
+print(f"400-timepoint animals: {ts_400_3d.shape}")
+
+#%% Parameters for dFC analysis
 processors = -1
-
-lag=1
-tau=5
+lag = 1
+tau = 5
 window_size = 9
-window_parameter = (5,100,1)
+window_parameter = (5, 100, 1)
+time_window_range = np.arange(window_parameter[0], window_parameter[1] + 1, window_parameter[2])
 
-# time_window_min, time_window_max, time_window_step = window_parameter
-time_window_range = np.arange(window_parameter[0],
-                              window_parameter[1]+1,
-                              window_parameter[2])
+print(f"\ndFC parameters: lag={lag}, tau={tau}, window_range={time_window_range[0]}-{time_window_range[-1]}")
 
-#%% # Compute speed dFC
-# =============================================================================
-# Speed analysis
-# Compute the dfc speed distribution using wondow oversampling method for each animal. Also retrieve median speed for each tau, in multiple W, for each animal
-# =============================================================================
+#%% Compute dFC
+# Option 1: Process all animals together (with padding)
+print(f"\nProcessing all {all_animals_3d.shape[0]} animals together...")
+get_tenet4window_range(all_animals_3d, time_window_range, prefix='dfc', 
+                      paths=paths, lag=lag, n_animals=all_animals_3d.shape[0], 
+                      regions=regions, processors=processors)
 
-#%% 
-# ------------------------ Compute DFC ------------------------
-import logging
-import joblib 
-logging.basicConfig(level=logging.INFO)
+# Option 2: Process groups separately (uncomment if you prefer this approach)
+# print(f"\nProcessing {ts_500_3d.shape[0]} animals with 500 timepoints...")
+# get_tenet4window_range(ts_500_3d, time_window_range, prefix='dfc', 
+#                       paths=paths, lag=lag, n_animals=ts_500_3d.shape[0], 
+#                       regions=regions, processors=processors)
+# 
+# print(f"\nProcessing {ts_400_3d.shape[0]} animals with 400 timepoints...")
+# get_tenet4window_range(ts_400_3d, time_window_range, prefix='dfc', 
+#                       paths=paths, lag=lag, n_animals=ts_400_3d.shape[0], 
+#                       regions=regions, processors=processors)
 
-
-    
-def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='3D', save_path=None):
-    """
-    Generate temporal networks (dfc_stream, meta-connectivity) for time-series data.
-
-    Parameters:
-        ts_data (np.ndarray): 3D array (n_animals, n_regions, n_timepoints).
-        window_size (int): Sliding window size.
-        lag (int): Step size for the sliding window.
-        format_data (str): '2D' for vectorized, '3D' for matrices.
-        save_path (str): Directory to save results.
-
-    Returns:
-        np.ndarray: 4D array of DFC streams (n_animals, time_windows, roi, roi)
-    """
-
-    logger = logging.getLogger(__name__)
-    n_animals, _, nodes = ts_data.shape
-
-    # Define the full save path based on parameters and save_path folder
-    file_path = make_file_path(save_path, prefix, window_size, lag, n_animals, nodes)
-    logger.info(f'file path: {file_path}')
-
-    #try loading from cache
-    key = 'dfc_stream' if prefix == 'dfc' else prefix
-    label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
-    if file_path is not None and file_path.exists():
-        logger.info(f"Loading from cache: {file_path}")
-        try:
-            return load_from_cache(file_path, key=key, label=label)
-        except Exception as e:
-            logger.error(f"Failed to load {label} (reason: {e}). Recomputing...")
-
-    # Compute in parallel
-    logger.info(f"Computing {prefix} (window_size={window_size}, lag={lag})...")
-    results = np.array([ts2dfc_stream(
-        ts_data[i], window_size, lag, format_data) 
-        for i in tqdm(range(n_animals), desc=f'Computing {label}')])
-
-    results = results.astype(np.float32)  # Convert to float32 for memory efficiency
-    #Save results
-    try:
-        save2disk(file_path, prefix, key=results)
-        logger.info(f'Saved results to {file_path}')
-    except Exception as e:
-        logger.error(f'Failed to save results: {e}')
-    return results
-
-def compute_for_1_window(ws, ts, prefix, lag, save_path):
-    """
-    Compute the analysis for a single window size.
-    """ 
-    logger = logging.getLogger(__name__)
-    try:
-        logger.info(f"Starting {prefix} computation for window_size={ws}")
-        start = time.time()
-        handler_get_tenet(
-            ts,
-            prefix=prefix,
-            window_size=ws,
-            lag=lag,
-            save_path=save_path,
-        )
-        logger.info(f"Finished window_size={ws} in {time.time()-start:.2f} seconds")
-    except Exception as e:
-        logger.error(f"Error during {prefix} computation for window_size={ws}: {e}")
-        raise
-
-def get_tenet4window_range(ts, time_window_range, prefix, paths, lag, n_animals, regions, processors=-1):
-    """
-    Get the range of window sizes for tenet files. 'DC AND 'MC' are the two prefixes implemented.
-    Args:
-        ts (roi, timepoints): Time series data.
-        time_window_range (list): List of time window sizes.
-        prefix (str): Prefix for the tenet files. 'dfc' for dynamic functional connectivity.
-                   'mc' for meta-connectivity analysis.        
-        lag (int): Lag value for the analysis.
-        n_animals (int): Number of animals in the dataset.
-        regions (list): List of regions in the dataset.
-        processors (int): joblib. Number of processors to use for parallel computation.
-    Returns:
-        None
-    """
-    try:
-        save_path = paths.get(prefix)
-        if not save_path:
-            raise ValueError(f"Invalid prefix '{prefix}'. Save path not found in paths dictionary.")
-        # Run parallel dfc stream over window sizes
-
-        #set the processors
-        processors = min(processors, joblib.cpu_count())
-        logging.info(f'Starting analysis for {prefix}, n_jobs={processors}')
-
-        start = time.time()
-        Parallel(n_jobs=min(processors, len(time_window_range)))(
-            delayed(compute_for_1_window)(ws, ts, prefix, lag, save_path) 
-            for ws in tqdm(time_window_range, desc=f'Window sizes')
-        )
-        logging.info(f'{prefix} computation time {time.time()-start:.2f} seconds')
-
-        # Handle missing files and rerun if necessary
-        missing_files = check_and_rerun_missing_files(
-            save_path, prefix, time_window_range, lag, n_animals, regions
-        )
-        if missing_files:
-            logging.warning(f"Missing files detected for {prefix}: {missing_files}")
-            time_window_range = np.array(missing_files)
-            # Rerun for missing files
-            Parallel(n_jobs=min(processors, len(time_window_range)))(
-                delayed(compute_for_1_window)(ws, ts, prefix, lag, save_path) for ws in time_window_range
-            )
-    except Exception as e:
-        logger.error(f"Error occurred during {prefix} computation: {e}")
-        raise
-get_tenet4window_range(ts_data_filt, time_window_range, prefix='dfc', paths=paths, lag=lag, n_animals=len(ts_data_filt), regions=regions, processors=processors)
-get_tenet4window_range(ts_remaining, time_window_range, prefix='dfc', paths=paths, lag=lag, n_animals=len(ts_remaining), regions=regions, processors=processors)
-# %%
+print("\nDFC computation completed!")

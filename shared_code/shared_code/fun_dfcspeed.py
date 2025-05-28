@@ -29,8 +29,16 @@ import numexpr as ne
 from joblib import Parallel, delayed, parallel_backend, cpu_count
 from collections import Counter
 import logging
+from scipy.stats import rankdata
 
-from .fun_optimization import *
+from .fun_optimization import (
+    fast_corrcoef, 
+    fast_corrcoef_numba, 
+    fast_corrcoef_numba_parallel,
+    pearson_speed_vectorized,
+    cosine_speed_vectorized,
+    spearman_speed
+)
 from .fun_loaddata import *
 
 logger = logging.getLogger(__name__)
@@ -62,6 +70,8 @@ def ts2fc(timeseries, format_data = '2D', method='pearson'):
         # fc = np.corrcoef(timeseries.T)
     elif method=='plv':
         fc = compute_plv_matrix_vectorized(timeseries.T)
+    else:
+        raise ValueError(f"Unsupported method '{method}'. Use 'pearson' or 'plv'")
 
     # Optionally zero out the diagonal for '2D' format
     if format_data=='2D':
@@ -70,6 +80,8 @@ def ts2fc(timeseries, format_data = '2D', method='pearson'):
     elif format_data=='1D':
         # Return the lower-triangular part excluding the diagonal
         return fc[np.tril_indices_from(fc, k=-1)]
+    else:
+        raise ValueError(f"Unsupported format_data '{format_data}'. Use '2D' or '1D'")
 
 # Function to compute phase locking value (PLV)
 def compute_plv_matrix_vectorized(data):
@@ -129,11 +141,16 @@ def ts2dfc_stream(ts, window_size, lag=None, format_data='2D', method='pearson')
     n_pairs = n * (n - 1) // 2
 
     #Preallocate DFC stream
+    dfc_stream = None
+    tril_idx = None
+    
     if format_data == '2D':
         dfc_stream = np.empty((n_pairs, frames))
         tril_idx = np.tril_indices(n, k=-1)  # Precompute once
     elif format_data == '3D':
         dfc_stream = np.empty((n, n, frames))
+    else:
+        raise ValueError(f"Unsupported format_data '{format_data}'. Use '2D' or '3D'")
 
     for k in range(frames):
         wstart = k * lag
@@ -195,38 +212,170 @@ def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='2D', save_
         logger.error(f'Failed to save results: {e}')
     return results
 
-def compute4window(ws, ts, prefix, lag, save_path):
+def handler_get_dfc_speed(ts, window_size, lag, tau=3, min_tau_zero=False, method='pearson', save_path=None):
+    """
+    Handler function to compute DFC speed with proper caching and parameter handling.
+    
+    Parameters
+    ----------
+    ts : numpy.ndarray
+        Time series data (n_timepoints, n_regions)
+    window_size : int
+        Window size for DFC computation
+    lag : int  
+        Lag parameter for sliding window
+    tau : int, optional
+        Maximum temporal shift for speed computation (default=3)
+    min_tau_zero : bool, optional
+        Whether tau range starts at 0 (default=False)
+    method : str, optional
+        Correlation method for speed computation (default='pearson')
+    save_path : str or Path, optional
+        Path to save results (default=None)
+        
+    Returns
+    -------
+    numpy.ndarray
+        Array containing median speed of DFC variation for each window size
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Handle both 2D and 3D input formats
+        if ts.ndim == 2:
+            # Single time series (n_timepoints, n_regions)
+            n_timepoints, n_regions = ts.shape
+            n_animals = 1
+            ts_array = ts[np.newaxis, :, :]  # Add animal dimension
+        elif ts.ndim == 3:
+            # Multiple time series (n_animals, n_regions, n_timepoints)
+            n_animals, n_regions, n_timepoints = ts.shape
+            ts_array = ts
+        else:
+            raise ValueError(f"ts must be 2D (timepoints, regions) or 3D (animals, regions, timepoints), got {ts.ndim}D")
+        
+        # Define file path for caching if save_path provided
+        file_path = None
+        if save_path:
+            save_path = Path(save_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+            file_path = save_path / f"dfc_speed_ws{window_size}_lag{lag}_tau{tau}_method{method}_animals{n_animals}_regions{n_regions}.npz"
+            
+            # Try to load from cache
+            if file_path.exists():
+                try:
+                    logger.info(f"Loading DFC speed from cache: {file_path}")
+                    data = np.load(file_path, allow_pickle=True)
+                    return data['speed_medians']
+                except Exception as e:
+                    logger.warning(f"Failed to load cached DFC speed (reason: {e}). Recomputing...")
+        
+        # Create window parameter tuple (min_window, max_window, step)
+        # For single window size, use a minimal range
+        window_parameter = (window_size, window_size, 1)
+        
+        logger.info(f"Computing DFC speed (window_size={window_size}, lag={lag}, tau={tau}, method={method})")
+        
+        # Compute DFC speed using the oversampled series function
+        speed_medians = dfc_speed_oversampled_series(
+            ts=ts,
+            window_parameter=window_parameter,
+            lag=lag,
+            tau=tau,
+            min_tau_zero=min_tau_zero,
+            get_speed_dist=False
+        )
+        
+        # Save results if path provided
+        if file_path:
+            try:
+                np.savez_compressed(
+                    file_path,
+                    speed_medians=speed_medians,
+                    window_size=window_size,
+                    lag=lag,
+                    tau=tau,
+                    min_tau_zero=min_tau_zero,
+                    method=method
+                )
+                logger.info(f"Saved DFC speed results to: {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to save DFC speed results: {e}")
+        
+        return speed_medians
+        
+    except Exception as e:
+        logger.error(f"Error in handler_get_dfc_speed: {e}")
+        raise
+
+def compute4window(ws, ts, prefix, lag, save_path, **kwargs):
     """
     Compute the analysis for a single window size.
+    Supports 'dfc', 'mc', and 'dfc_speed' prefixes.
     """ 
     logger = logging.getLogger(__name__)
     try:
         logger.info(f"Starting {prefix} computation for window_size={ws}")
         start = time.time()
-        handler_get_tenet(
-            ts,
-            prefix=prefix,
-            window_size=ws,
-            lag=lag,
-            save_path=save_path,
-        )
+        
+        if prefix == 'dfc_speed':
+            # Extract DFC speed specific parameters
+            tau = kwargs.get('tau', 3)
+            min_tau_zero = kwargs.get('min_tau_zero', False)
+            method = kwargs.get('method', 'pearson')
+            
+            handler_get_dfc_speed(
+                ts,
+                window_size=ws,
+                lag=lag,
+                tau=tau,
+                min_tau_zero=min_tau_zero,
+                method=method,
+                save_path=save_path,
+            )
+        else:
+            # Handle DFC and meta-connectivity
+            handler_get_tenet(
+                ts,
+                prefix=prefix,
+                window_size=ws,
+                lag=lag,
+                save_path=save_path,
+            )
+        
         logger.info(f"Finished window_size={ws} in {time.time()-start:.2f} seconds")
     except Exception as e:
         logger.error(f"Error during {prefix} computation for window_size={ws}: {e}")
         raise
 
-def get_tenet4window_range(ts, time_window_range, prefix, paths, lag, n_animals, regions, processors=-1):
+def get_tenet4window_range(
+    ts: np.ndarray,
+    time_window_range: list,
+    prefix: str,
+    paths: dict,
+    lag: int,
+    n_animals: int,
+    regions: list,
+    processors: int = -1,
+    **kwargs
+) -> None:
     """
-    Get the range of window sizes for tenet files. 'DC AND 'MC' are the two prefixes implemented.
+    Orchestrates the computation of temporal network analysis (DFC, meta-connectivity, or DFC speed) over a range of window sizes using parallel processing.
+    
     Args:
-        ts (roi, timepoints): Time series data.
+        ts (np.ndarray): Time series data (n_animals, roi, timepoints).
         time_window_range (list): List of time window sizes.
-        prefix (str): Prefix for the tenet files. 'dfc' for dynamic functional connectivity.
-                   'mc' for meta-connectivity analysis.        
+        prefix (str): Prefix for the analysis. Options: 'dfc' for dynamic functional connectivity, 
+                     'mc' for meta-connectivity analysis, 'dfc_speed' for DFC speed analysis.
+        paths (dict): Dictionary mapping prefixes to save paths.
         lag (int): Lag value for the analysis.
         n_animals (int): Number of animals in the dataset.
-        regions (list): List of regions in the dataset.
-        processors (int): joblib. Number of processors to use for parallel computation.
+        regions (list): List of regions in the dataset (used for missing file check).
+        processors (int): Number of processors to use for parallel computation (default: -1, uses all available).
+        **kwargs: Additional parameters for specific analysis types:
+            - tau (int): For DFC speed, maximum temporal shift (default: 3)
+            - min_tau_zero (bool): For DFC speed, whether tau starts at 0 (default: False)
+            - method (str): For DFC speed, correlation method (default: 'pearson')
     Returns:
         None
     """
@@ -234,29 +383,35 @@ def get_tenet4window_range(ts, time_window_range, prefix, paths, lag, n_animals,
         save_path = paths.get(prefix)
         if not save_path:
             raise ValueError(f"Invalid prefix '{prefix}'. Save path not found in paths dictionary.")
-        # Run parallel dfc stream over window sizes
-
-        #set the processors
+        
+        # Validate prefix
+        valid_prefixes = ['dfc', 'mc', 'dfc_speed']
+        if prefix not in valid_prefixes:
+            raise ValueError(f"Invalid prefix '{prefix}'. Must be one of {valid_prefixes}")
+        
+        # Cap processors to available CPUs
         processors = min(processors, cpu_count())
         logging.info(f'Starting analysis for {prefix}, n_jobs={processors}')
 
         start = time.time()
+        # Parallel computation over all window sizes
         Parallel(n_jobs=min(processors, len(time_window_range)))(
-            delayed(compute4window)(ws, ts, prefix, lag, save_path) 
+            delayed(compute4window)(ws, ts, prefix, lag, save_path, **kwargs) 
             for ws in tqdm(time_window_range, desc=f'Window sizes')
         )
         logging.info(f'{prefix} computation time {time.time()-start:.2f} seconds')
 
-        # Handle missing files and rerun if necessary
+        # Check for missing files and rerun if necessary
         missing_files = check_and_rerun_missing_files(
             save_path, prefix, time_window_range, lag, n_animals, regions
         )
         if missing_files:
             logging.warning(f"Missing files detected for {prefix}: {missing_files}")
-            time_window_range = np.array(missing_files)
+            missing_window_range = list(missing_files)
             # Rerun for missing files
-            Parallel(n_jobs=min(processors, len(time_window_range)))(
-                delayed(compute4window)(ws, ts, prefix, lag, save_path) for ws in time_window_range
+            Parallel(n_jobs=min(processors, len(missing_window_range)))(
+                delayed(compute4window)(ws, ts, prefix, lag, save_path, **kwargs) 
+                for ws in missing_window_range
             )
     except Exception as e:
         logger.error(f"Error occurred during {prefix} computation: {e}")
@@ -363,52 +518,159 @@ def get_tenet4window_range(ts, time_window_range, prefix, paths, lag, n_animals,
 # Speed functions from dFC data - move to fun_speed
 # =============================================================================
 
-def dfc_speed(dfc_stream, vstep=1, tril_indices=None, return_fc2=False):
+def dfc_speed(dfc_stream, vstep=1, method='pearson', tril_indices=None, return_fc2=False):
     """
-    Calculate speeds of variation in dfc over a specified step size.
+    Unified function to calculate the speed of variation in dynamic functional connectivity (dFC).
     
-    Parameters:
-    dfc_stream (numpy.ndarray): Input dynamic functional connectivity stream (2D or 3D).
-    vstep (int): Step size for computing speed of variation (default=1).
+    This function computes the speed of dFC variation as 1 - correlation between FC states 
+    separated by a specified time step. It combines optimized vectorized computation using 
+    einsum with support for multiple correlation methods and efficient handling of both 
+    2D and 3D input formats.
     
-    Returns:
-    speed_median (float): Median of computed distribution of speeds.
-    Speeds (numpy.ndarray): Time series of computed speeds.
+    Parameters
+    ----------
+    dfc_stream : numpy.ndarray
+        Dynamic functional connectivity stream. Can be either:
+        - 2D array (n_pairs, n_frames): Lower triangular FC values over time
+        - 3D array (n_rois, n_rois, n_frames): Full FC matrices over time
+    vstep : int, optional
+        Time step for computing FC speed (default=1). Must be positive and < n_frames.
+    method : str, optional
+        Correlation method to use for speed computation (default='pearson').
+        Supported methods:
+        - 'pearson': Pearson correlation coefficient
+        - 'spearman': Spearman rank correlation 
+        - 'cosine': Cosine similarity
+    tril_indices : tuple, optional
+        Pre-computed triangular indices for 3D input (default=None).
+        If None, will be computed automatically for 3D input.
+    return_fc2 : bool, optional
+        If True, also return the second FC matrix for each time step (default=False).
+        
+    Returns
+    -------
+    speed_median : float
+        Median of the computed speed distribution.
+    speeds : numpy.ndarray
+        Time series of computed speeds with shape (n_frames - vstep,).
+    fc2_stream : numpy.ndarray, optional
+        Second FC matrix for each time step. Only returned if return_fc2=True.
+        Shape: (n_pairs, n_frames - vstep) for vectorized output.
+        
+    Raises
+    ------
+    ValueError
+        If dfc_stream dimensions are invalid, vstep is out of bounds, or method is unsupported.
+    TypeError
+        If vstep is not a positive integer.
+        
+    Notes
+    -----
+    This unified implementation combines the best features from multiple existing dfc_speed 
+    implementations across the project:
+
+    1. **Vectorized Computation**: Uses optimized einsum operations for correlation computation
+    2. **Multiple Methods**: Supports Pearson, Spearman, and cosine correlation methods
+    3. **Flexible Input**: Handles both 2D vectorized and 3D matrix formats efficiently
+    4. **Memory Efficient**: Pre-allocates arrays and uses numerical stability improvements
+    5. **Robust Validation**: Comprehensive input validation and error handling
+    
+    The speed is computed as: speed = 1 - correlation(FC_t, FC_{t+vstep})
+    where correlation method is specified by the 'method' parameter.
+    
+    For 3D input, the function efficiently extracts lower triangular values using 
+    pre-computed or automatically generated indices, then processes as 2D data.
+    
+    Examples
+    --------
+    >>> # 2D input (vectorized FC)
+    >>> dfc_2d = np.random.randn(45, 100)  # 45 pairs, 100 time frames
+    >>> median_speed, speeds = dfc_speed(dfc_2d, vstep=1, method='pearson')
+    >>> print(f"Median speed: {median_speed:.3f}")
+    
+    >>> # 3D input (FC matrices)  
+    >>> dfc_3d = np.random.randn(10, 10, 100)  # 10x10 FC matrices, 100 frames
+    >>> median_speed, speeds = dfc_speed(dfc_3d, vstep=2, method='spearman')
+    
+    >>> # With second FC matrix return
+    >>> median_speed, speeds, fc2 = dfc_speed(dfc_2d, vstep=1, return_fc2=True)
+    
+    References
+    ----------
+    Dynamic Functional Connectivity as a complex random walk: Definitions and the dFCwalk toolbox
+    Lucas Arbabyazd, Diego Lombardo, Olivier Blin, Mira Didic, Demian Battaglia, Viktor Jirsa
+    MethodsX 2020, doi: 10.1016/j.mex.2020.101168
     """
-    # Check the dimensionality of dfc_stream and process accordingly
+    
+    # Input validation
+    if not isinstance(dfc_stream, np.ndarray):
+        raise TypeError("dfc_stream must be a numpy array")
+    
+    if dfc_stream.ndim not in [2, 3]:
+        raise ValueError("dfc_stream must be 2D (n_pairs, frames) or 3D (roi, roi, frames)")
+    
+    if not isinstance(vstep, int) or vstep <= 0:
+        raise TypeError("vstep must be a positive integer")
+        
+    if method not in ['pearson', 'spearman', 'cosine']:
+        raise ValueError(f"Unsupported method '{method}'. Use 'pearson', 'spearman', or 'cosine'")
+    
+    # Handle input format conversion
     if dfc_stream.ndim == 3:
-        n = dfc_stream.shape[0]
+        n_rois = dfc_stream.shape[0]
+        n_frames = dfc_stream.shape[2]
+        
+        # Generate triangular indices if not provided
         if tril_indices is None:
-            tril_indices = np.tril_indices(n, k=-1)
-        # Flatten to (n_pairs, frames)
+            tril_indices = np.tril_indices(n_rois, k=-1)
+        
+        # Extract lower triangular values efficiently
         fc_stream = dfc_stream[tril_indices[0], tril_indices[1], :]
-    elif dfc_stream.ndim == 2:
-        fc_stream = dfc_stream
     else:
-        raise ValueError("Provide a valid 2D (n_pairs, frames) or 3D (roi, roi, frames) dFC stream!")
-
-    # Ensure
-    n_frames = fc_stream.shape[1]
-    speeds = np.empty(n_frames - vstep)
+        # 2D input: (n_pairs, n_frames)
+        fc_stream = dfc_stream
+        n_frames = fc_stream.shape[1]
+    
+    # Validate frame count vs vstep
+    if vstep >= n_frames:
+        raise ValueError(f"vstep ({vstep}) must be less than number of frames ({n_frames})")
+    
+    n_pairs = fc_stream.shape[0]
+    n_speeds = n_frames - vstep
+    
+    # Pre-allocate output arrays for efficiency
+    speeds = np.empty(n_speeds)
+    fc2_stream = None
+    
+    # Extract FC matrices for vectorized computation
+    fc1_matrices = fc_stream[:, :-vstep]  # Shape: (n_pairs, n_speeds)
+    fc2_matrices = fc_stream[:, vstep:]   # Shape: (n_pairs, n_speeds)
+    
     if return_fc2:
-        fc2_stream = np.empty((fc_stream.shape[0], n_frames - vstep))
-    # speeds = []
-
-    # Compute speeds using correlation distance
-    # for sp in range(nslices - vstep):
-    for sp in range(n_frames - vstep):
-        fc1 = fc_stream[:, sp]
-        fc2 = fc_stream[:, sp + vstep]
-        # Directly compute the Pearson correlation coefficient (faster than fast_corrcoef)
-        covariance = np.cov(fc1, fc2)
-        correlation = covariance[0, 1] / np.sqrt(covariance[0, 0] * covariance[1, 1])
-        speeds[sp] = 1 - correlation
-        if return_fc2:
-            fc2_stream[:, sp] = fc2
-
+        fc2_stream = np.empty((n_pairs, n_speeds))
+        fc2_stream[:, :] = fc2_matrices
+    
+    # Use optimized speed computation functions for maximum performance
+    if method == 'pearson':
+        speeds = pearson_speed_vectorized(fc1_matrices, fc2_matrices)
+    elif method == 'spearman':
+        speeds = spearman_speed(fc1_matrices, fc2_matrices)
+    elif method == 'cosine':
+        speeds = cosine_speed_vectorized(fc1_matrices, fc2_matrices)
+    else:
+        raise ValueError(f"Unsupported method '{method}'. Use 'pearson', 'spearman', or 'cosine'")
+    
+    # Ensure speeds are within valid range [0, 2] for numerical stability
+    speeds = np.clip(speeds, 0.0, 2.0)
+    
+    # Compute median speed
+    speed_median = np.median(speeds)
+    
+    # Return results based on options
     if return_fc2:
-        return np.median(speeds), speeds, fc2_stream
-    return np.median(speeds), speeds
+        return speed_median, speeds, fc2_stream
+    else:
+        return speed_median, speeds
 
 
 #%%
@@ -509,12 +771,12 @@ def parallel_dfc_speed_oversampled_series(ts, window_parameter, lag=1, tau=3,
     
     win_min, win_max, win_step = window_parameter
     time_windows_range = np.arange(win_min, win_max + 1, win_step)
-    tau_array = np.append(np.arange(min_tau, tau), tau)
+    tau_array = np.arange(min_tau, tau + 1)
 
     def compute_speed_for_window_size(tt):
         aux_dfc_stream = ts2dfc_stream(ts, tt, lag, format_data='2D', method=method)
         height_stripe = aux_dfc_stream.shape[1] - tt - tau
-        speed_oversampl = [dfc_speed(aux_dfc_stream, vstep=tt + sp)[1][:height_stripe] 
+        speed_oversampl = [dfc_speed(aux_dfc_stream, vstep=int(tt + sp))[1][:height_stripe] 
                            for sp in tau_array]
         return np.median(speed_oversampl, axis=1), speed_oversampl if get_speed_dist else None
 
@@ -522,13 +784,14 @@ def parallel_dfc_speed_oversampled_series(ts, window_parameter, lag=1, tau=3,
                 delayed(compute_speed_for_window_size)(tt) 
                 for tt in tqdm(time_windows_range)
     )
-    speed_medians, speed_dists = zip(*results) if get_speed_dist else (zip(*results), None)
-
+    
     if get_speed_dist:
+        speed_medians, speed_dists = zip(*results)
         # Flatten the speed_dist list of lists to a single list
-        speed_dists = [item for sublist in speed_dists for item in sublist]
+        speed_dists = [item for sublist in speed_dists for item in sublist if sublist is not None]
         return np.array(speed_medians), speed_dists
     else:
+        speed_medians = [result[0] for result in results if result is not None]
         return np.array(speed_medians)
 #%%
 
@@ -634,4 +897,4 @@ wpool_impaired = get_population_wpooling
 
 
 #%%
-
+        

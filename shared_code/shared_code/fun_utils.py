@@ -13,6 +13,7 @@ from scipy.io import loadmat
 import pandas as pd
 import pickle
 from dotenv import load_dotenv
+import matplotlib.pyplot as plt
 
 # Load environment variables from ../../.env if present
 load_dotenv()
@@ -59,6 +60,7 @@ def get_paths(
         # Load dataset paths
         'timeseries': dataset / f'{timecourse_folder}',
         'cog_data': dataset / f'{timecourse_folder}/{cognitive_data_file}',
+        
         # Results paths
         'results': results,
         'sorted': results / 'sorted_data/',

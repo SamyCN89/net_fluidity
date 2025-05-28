@@ -14,6 +14,7 @@ import brainconn as bct
 import os
 import time
 
+from joblib import Parallel, delayed, parallel_backend
 import pandas as pd
 # from functions_analysis import *
 from scipy.io import loadmat, savemat
@@ -22,7 +23,7 @@ from scipy.stats import pearsonr, spearmanr
 
 from shared_code.fun_loaddata import *  # Import only needed functions
 from shared_code.fun_dfcspeed import parallel_dfc_speed_oversampled_series
-from shared_code.fun_utils import set_figure_params, get_paths
+from shared_code.fun_utils import set_figure_params, get_paths, load_npz_dict
 from tqdm import tqdm
 
 
@@ -39,32 +40,46 @@ paths = get_paths(dataset_name='julien_caillette',
 # ROOT = Path('/media/samy/Elements1/Proyectos/LauraHarsan/dataset/julien_caillette/') if USE_EXTERNAL_DISK \
 #         else Path('/home/samy/Bureau/Proyect/LauraHarsan/dataset/julien_caillette/')
 # RESULTS_DIR = ROOT / Path('results')
-paths['speed'] = paths['results'] / 'speed'
+# paths['speed'] = paths['results'] / 'speed'
 # paths['speed'].mkdir(parents=True, exist_ok=True)
 
-TS_FILE = paths['sorted'] / Path("ts_filtered_unstacked.npz")
-COG_FILE = paths['sorted'] / Path("cog_data_filtered.csv")
+# TS_FILE = paths['sorted'] / Path("ts_filtered_unstacked.npz")
+# COG_FILE = paths['sorted'] / Path("cog_data_filtered.csv")
 
 SAVE_DATA = True
 
-WINDOW_PARAM = (5,100,1)
-LAG=1
-TAU=5
-
-HASH_TAG = f"lag={LAG}_tau={TAU}_wmax={WINDOW_PARAM[1]}_wmin={WINDOW_PARAM[0]}"
 
 #%%
 # ------------------------ Load Data ------------------------
 
-ts_data = np.load(TS_FILE, allow_pickle=True)['ts']
-cog_data = pd.read_csv(COG_FILE)
+data_ts_pre = load_npz_dict(paths['sorted'] / Path('ts_filtered_unstacked.npz'))
+ts = data_ts_pre['ts']
+n_animals = data_ts_pre['n_animals']
+total_tp = data_ts_pre['total_tp']
+regions = data_ts_pre['regions']
+anat_labels = data_ts_pre['anat_labels']
+# Load cognitive data
+cog_data = pd.read_csv(paths['sorted'] / Path("cog_data_filtered.csv"))
 
 
-print(f"Loaded {len(ts_data)} time series")
+print(f"Loaded {len(ts)} time series")
 print(f"Loaded cognitive data for {len(cog_data)} animals")
 
-assert len(ts_data) == len(cog_data), "Mismatch between time series and cognitive data entries."
+assert len(ts) == len(cog_data), "Mismatch between time series and cognitive data entries."
 #%%
+processors = -1
+
+lag=1
+tau=5
+window_size = 9
+window_parameter = (5,100,1)
+
+HASH_TAG = f"lag={lag}_tau={tau}_wmax={window_parameter[1]}_wmin={window_parameter[0]}"
+
+# time_window_min, time_window_max, time_window_step = window_parameter
+time_window_range = np.arange(window_parameter[0],
+                              window_parameter[1]+1,
+                              window_parameter[2])
 
 
 
@@ -83,9 +98,9 @@ speed_medians = []
 print("Starting dFC speed computation...")
 start_time = time.time()
 
-for ts in tqdm(ts_data, desc="Computing dFC speed"):
+for ts_aux in tqdm(ts, desc="Computing dFC speed"):
     median_speeds, speed_distribution = parallel_dfc_speed_oversampled_series(
-        ts, WINDOW_PARAM, lag=LAG, tau=TAU, min_tau_zero=True, get_speed_dist=True
+        ts_aux, window_parameter, lag=lag, tau=tau, min_tau_zero=True, get_speed_dist=True
     )
     vel_list.append(speed_distribution)
     speed_medians.append(median_speeds)
