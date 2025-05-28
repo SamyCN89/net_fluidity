@@ -1,0 +1,18 @@
+[
+  {
+    "key": "shift+enter",
+    "command": "jupyter.execSelectionInteractive",
+    "when": "editorTextFocus && python"
+  },
+  {
+    "key": "ctrl+enter",
+    "command": "python.execSelectionInTerminal",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "ctrl+shift+r",
+    "command": "python.execInTerminal",
+    "when": "editorTextFocus"
+  }
+]
+

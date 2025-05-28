@@ -1,0 +1,30 @@
+name: funcog
+channels:
+  - defaults
+dependencies:
+  - numpy
+  - pandas
+  - ipython
+  - seaborn
+  - spyder=6.0.5
+  - matplotlib
+  - scikit-learn
+  - jupyterlab
+  - scipy
+  - python=3.11
+  - pytables
+  - tensorflow
+  - torchvision
+  - sqlalchemy
+  - torchaudio
+  - sympy
+  - openpyxl
+  - pytorch
+  - beautifulsoup4
+  - statsmodels
+  - requests
+  - lxml
+  - xlrd
+  - cython
+  - joblib
+prefix: /home/samy/anaconda3/envs/funcog

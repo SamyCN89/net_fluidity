@@ -1,0 +1,33 @@
+name: funsy
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - h5py
+  - jupyterlab
+  - ipykernel
+  - networkx
+  - pytables
+  - openpyxl
+  - pip
+  - pip:
+      # - git+https://github.com/SamyCN89/allegiance.git
+      - duecredit
+      - python-dotenv
+      - git+https://github.com/fiuneuro/brainconn.git
+      - numba
+      - tqdm
+      - matplotlib
+      - plotly
+      # - ydata-profiling
+      - wordcloud
+      - missingno
+

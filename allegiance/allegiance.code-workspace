@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../shared_code"
+		}
+	],
+	"settings": {
+		"jupyter.askForKernelRestart": false,
+		"github.copilot.enable": {
+			"*": true,
+			"plaintext": true,
+			"markdown": false,
+			"scminput": true,
+			"python": true,
+			"c": true
+		},
+		"workbench.editor.titleScrollbarSizing": "large"
+	}
+}

@@ -1,0 +1,24 @@
+{
+  "python.defaultInterpreterPath": "/home/samy/anaconda3/envs/funcog/bin/python",
+  "python.formatting.provider": "black",
+  "python.linting.enabled": true,
+  "python.linting.flake8Enabled": true,
+  "python.linting.pylintEnabled": false,
+  "editor.formatOnSave": true,
+  "files.autoSave": "afterDelay",
+  "jupyter.askForKernelRestart": false,
+  "github.copilot.enable": {
+    "*": true,
+    "plaintext": false,
+    "markdown": false,
+    "scminput": false,
+    "python": true,
+    "c": true
+  },
+  "python.terminal.activateEnvironment": true,
+  "jupyter.interactiveWindow.creationMode": "perFile",
+  "jupyter.interactiveWindow.textEditor.executeSelection": true,
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "workbench.editor.titleScrollbarSizing": "large",
+  "python.pythonPath": "/home/samy/anaconda3/envs/funcog/bin/python"
+}
