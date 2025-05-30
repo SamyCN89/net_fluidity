@@ -95,3 +95,4 @@ get_tenet4window_range(all_animals_3d, time_window_range, prefix='dfc',
 #                       regions=regions, processors=processors)
 
 print("\nDFC computation completed!")
+# %%

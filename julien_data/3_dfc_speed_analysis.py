@@ -26,6 +26,8 @@ from shared_code.fun_dfcspeed import parallel_dfc_speed_oversampled_series
 from shared_code.fun_utils import set_figure_params, get_paths, load_npz_dict
 from tqdm import tqdm
 
+from shared_code.shared_code.fun_dfcspeed import get_tenet4window_range
+
 
 
 #%% Define paths, folders and hash
@@ -82,6 +84,54 @@ time_window_range = np.arange(window_parameter[0],
                               window_parameter[2])
 
 
+#%%
+from shared_code.fun_dfcspeed import dfc_speed
+from shared_code.fun_loaddata import make_file_path, load_from_cache
+
+
+prefix= 'dfc'  # or 'meta'
+for window_size in time_window_range:
+    # Define file path for caching
+    file_path = make_file_path(paths['dfc'], prefix, window_size, lag, n_animals, regions)
+
+    #try loading from cache
+    key = 'dfc_stream' if prefix == 'dfc' else prefix
+    label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
+    if file_path is not None and file_path.exists():
+        dfc_stream = load_from_cache(file_path, key=key, label=label)
+
+    # Precompute the arrays for median, speed, fc
+    median = []
+    speed = []
+    fc = []
+
+    for n in np.arange(n_animals):
+        if dfc_stream[n] is None:
+            print(f"Warning: dfc_stream[{n}] is None, skipping...")
+            continue
+        if dfc_stream[n].shape[0] < 2:
+            print(f"Warning: dfc_stream[{n}] has less than 2 timepoints, skipping...")
+            continue
+        aux_speed = dfc_speed(dfc_stream[n], vstep=1, method='pearson', return_fc2=True)
+        median.append(aux_speed[0])
+        speed.append(aux_speed[1])
+        fc.append(aux_speed[2])
+
+
+# call the function get_tenet4window_range for speed
+prefix = 'speed'  # or 'meta'
+
+
+get_tenet4window_range(window_parameter,
+                       lag=lag, 
+                       tau=tau, 
+                       n_animals=n_animals, 
+                       regions=regions, 
+                       processors=processors,
+                       prefix=prefix,
+                       paths=paths['dfc'],
+                       HASH_TAG=HASH_TAG,
+                       save_data=SAVE_DATA)
 
 #%% # Compute speed dFC
 # =============================================================================
@@ -124,4 +174,16 @@ if SAVE_DATA:
 
 
 
+# %%
+
+parallel_dfc_speed_oversampled_series(ts, 
+                            window_parameter, 
+                            lag=1, 
+                            tau=5, 
+                            min_tau_zero=False, 
+                            get_speed_dist=True, 
+                            method='pearson', 
+                            n_jobs=-1,
+                            path=paths['dfc'], 
+                            prefix='dfc')
 # %%
