@@ -131,6 +131,8 @@ def load_npz_dict(path_to_npz: Path) -> dict:
     data = np.load(path_to_npz, allow_pickle=True)
     out = {}
     for key in data.files:
+        print(f"Loading key: {key}")
+        # Get the array for the current key')
         arr = data[key]
         # Convert 0-dim arrays to scalars
         if isinstance(arr, np.ndarray) and arr.shape == ():

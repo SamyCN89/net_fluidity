@@ -204,8 +204,10 @@ def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='2D', save_
     logger.info(f'file path: {file_path}')
 
     #try loading from cache
-    key = 'dfc_stream' if prefix == 'dfc' else prefix
-    label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
+    key = prefix
+    label = prefix 
+    # key = 'dfc_stream' if prefix == 'dfc' else prefix
+    # label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
     if file_path is not None and file_path.exists():
         logger.info(f"Loading from cache: {file_path} and key: {key}")
         try:
@@ -232,6 +234,7 @@ def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='2D', save_
 def _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, nodes, **kwargs):
     """
     Handle DFC speed analysis within the unified handler.
+    Merged implementation from the gold standard test version.
     
     Parameters:
         ts_data (np.ndarray): 3D array (n_animals, n_regions, n_timepoints).
@@ -243,7 +246,7 @@ def _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, 
         **kwargs: DFC speed specific parameters.
         
     Returns:
-        np.ndarray: DFC speed results.
+        list: DFC speed results (median_speeds, speed_arrays, fc2_arrays).
     """
     logger = logging.getLogger(__name__)
     
@@ -252,15 +255,20 @@ def _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, 
     min_tau_zero = kwargs.get('min_tau_zero', False)
     method = kwargs.get('method', 'pearson')
     
-    # Create custom file path for DFC speed (uses different naming convention)
+    # Define prefix for DFC speed (following test version convention)
+    prefix = 'speed'
+    
+    # Create custom file path for DFC speed (uses different naming convention like test version)
     if save_path:
-        file_path = make_file_path(save_path, prefix, window_size, lag, n_animals, nodes)
+        file_path = make_file_path(save_path / prefix, prefix, window_size, lag, n_animals, nodes)
 
-        # Try to load from cache
-        if file_path.exists():
+        # Try to load from cache (using test version approach)
+        if file_path and file_path.exists():
             try:
-                return load_from_cache(file_path, key=prefix, label=prefix)
+                from .fun_utils import load_npz_dict
+                cached_results = load_npz_dict(file_path)[prefix]
                 logger.info(f"Loading DFC speed from cache: {file_path}")
+                return cached_results
             except Exception as e:
                 logger.warning(f"Failed to load cached DFC speed (reason: {e}). Recomputing...")
     else:
@@ -268,58 +276,41 @@ def _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, 
     
     logger.info(f"Computing DFC speed (window_size={window_size}, lag={lag}, tau={tau}, method={method})")
     
-    # First, load or compute DFC streams
-    dfc_file_path = make_file_path(save_path, 'dfc', window_size, lag, n_animals, nodes)
-    
+    # First, load DFC streams (following test version approach)
+    dfc_file_path = make_file_path(save_path / 'dfc', 'dfc', window_size, lag, n_animals, nodes)
+
     dfc_stream = None
     if dfc_file_path and dfc_file_path.exists():
         try:
             logger.info(f"Loading DFC stream from cache: {dfc_file_path}")
-            dfc_stream = load_from_cache(dfc_file_path, key='dfc_stream', label='dfc-stream')
+            dfc_stream = load_from_cache(dfc_file_path, key='dfc', logger=logger, label='dfc')
         except Exception as e:
             logger.warning(f"Failed to load cached DFC stream (reason: {e}). Computing...")
-        
-    # Compute speed for each animal
-    speed_results = []
-    for i in range(n_animals):
-        if dfc_stream[i] is None or dfc_stream[i].shape[1] < 2:
-            logger.warning(f"Skipping animal {i}: insufficient data")
-            speed_results.append(np.nan)
-            continue
-            
-        # Compute speed using the unified dfc_speed function
-        vstep = max(1, window_size // lag)  # Ensure vstep is at least 1
-        try:
-            median_speed, _ = dfc_speed(
-                dfc_stream[i],
-                vstep=vstep,
-                method=method,
-                return_fc2=False
-            )
-            speed_results.append(median_speed)
-        except Exception as e:
-            logger.warning(f"Failed to compute speed for animal {i}: {e}")
-            speed_results.append(np.nan)
     
-    speed_medians = np.array(speed_results)
+    # If no DFC stream loaded, we need to compute it or handle the error
+    if dfc_stream is None:
+        logger.error("No DFC stream available. Cannot compute DFC speed without DFC data.")
+        # Return empty results structure to maintain consistency
+        return []
+
+    # Compute speed for each animal (following test version approach)
+    vstep = int(max(1, window_size // lag))  # Ensure vstep is at least 1
+    results = [dfc_speed(
+        dfc_stream[i], vstep, method=method, return_fc2=True
+    ) for i in tqdm(range(n_animals), desc=f'Computing {prefix}')]
+
+    median_speeds, speed_arrays, fc2_arrays = zip(*results)
+    median_speeds = np.array(median_speeds)  # This works, because all are scalar
     
-    # Save results if path provided
+    # Save results if path provided (following test version approach with fixes)
     if file_path:
         try:
-            np.savez_compressed(
-                file_path,
-                speed_medians=speed_medians,
-                window_size=window_size,
-                lag=lag,
-                tau=tau,
-                min_tau_zero=min_tau_zero,
-                method=method
-            )
-            logger.info(f"Saved DFC speed results to: {file_path}")
+            save2disk(file_path, prefix, **{'speed': speed_arrays, 'fc': fc2_arrays})
+            logger.info(f'Saved results to {file_path} using key {prefix}')
         except Exception as e:
-            logger.error(f"Failed to save DFC speed results: {e}")
+            logger.error(f'Failed to save results: {e}')
     
-    return speed_medians
+    return results
 
 def compute4window(ws, ts, prefix, lag, save_path, **kwargs):
     """
@@ -786,11 +777,15 @@ def parallel_dfc_speed_oversampled_series(ts, window_parameter, lag=1, tau=3,
         key = 'dfc_stream' if prefix == 'dfc' else prefix
         label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
         if file_path is not None and file_path.exists():
-            return load_from_cache(file_path, key=key, label=label)
+            # Import the global load_from_cache function properly
+            from .fun_loaddata import load_from_cache as load_cache_func
+            return load_cache_func(file_path, key=key, label=label)
+        return None
 
     def compute_speed_for_window_size(ws, prefix):
-        aux_dfc_stream = ts2dfc_stream(ts, ws, lag, format_data='2D', method=method)
         aux_dfc_stream = load_from_cache(ws, prefix)
+        if aux_dfc_stream is None:
+            aux_dfc_stream = ts2dfc_stream(ts, ws, lag, format_data='2D', method=method)
         height_stripe = aux_dfc_stream.shape[1] - ws - tau
         speed_oversampl = [dfc_speed(aux_dfc_stream, vstep=int(ws + sp))[1][:height_stripe] 
                            for sp in tau_array]
