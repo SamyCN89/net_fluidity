@@ -64,6 +64,7 @@ def get_paths(
         # Results paths
         'results': results,
         'sorted': results / 'sorted_data/',
+        'preprocessed': results / 'preprocessed_data/',
         'mc': results / 'mc/',
         'dfc': results / 'dfc/',
         'speed': results / 'speed/',
@@ -75,6 +76,7 @@ def get_paths(
         'figures': figures,
         'fmodularity': figures / 'modularity',
         'f_mod': figures / 'modularity',
+        'f_cog': figures / 'cog',
 
     }
     
@@ -104,7 +106,7 @@ def get_paths(
 # =============================================================================
 # def load_cogdata_sorted(paths):
 #     cog_data_filtered = pd.read_csv(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
-#     data_ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz')
+#     data_ts = np.load(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
 #     with open(paths['results'] / "grouping_data_oip.pkl", "rb") as f:
 #         mask_groups, label_variables = pickle.load(f)
 #     return data_ts, cog_data_filtered, mask_groups, label_variables
@@ -113,34 +115,34 @@ def load_cognitive_data(path_to_csv: Path) -> pd.DataFrame:
     return pd.read_csv(path_to_csv)
 
 #General purpose
-def load_npz_dict(path_to_npz: Path) -> dict:
-    """
-    Load all arrays (and scalars) from an .npz file into a Python dict.
+# def load_npz_dict(path_to_npz: Path) -> dict:
+#     """
+#     Load all arrays (and scalars) from an .npz file into a Python dict.
 
-    Parameters
-    ----------
-    path_to_npz : Path
-        Path to the .npz file.
+#     Parameters
+#     ----------
+#     path_to_npz : Path
+#         Path to the .npz file.
 
-    Returns
-    -------
-    dict
-        A mapping from each key in the .npz to its value. 0-dim arrays
-        are converted to native Python scalars via .item().
-    """
-    data = np.load(path_to_npz, allow_pickle=True)
-    out = {}
-    for key in data.files:
-        print(f"Loading key: {key}")
-        # Get the array for the current key')
-        arr = data[key]
-        # Convert 0-dim arrays to scalars
-        if isinstance(arr, np.ndarray) and arr.shape == ():
-            out[key] = arr.item()
-        else:
-            out[key] = arr
-    data.close()
-    return out
+#     Returns
+#     -------
+#     dict
+#         A mapping from each key in the .npz to its value. 0-dim arrays
+#         are converted to native Python scalars via .item().
+#     """
+#     data = np.load(path_to_npz, allow_pickle=True)
+#     out = {}
+#     for key in data.files:
+#         print(f"Loading key: {key}")
+#         # Get the array for the current key')
+#         arr = data[key]
+#         # Convert 0-dim arrays to scalars
+#         if isinstance(arr, np.ndarray) and arr.shape == ():
+#             out[key] = arr.item()
+#         else:
+#             out[key] = arr
+#     data.close()
+#     return out
 
 
 def load_timeseries_data(path_to_npz: Path) -> dict:

@@ -76,8 +76,8 @@ paths = get_paths(dataset_name='julien_caillette',
 paths['speed'] = paths['results'] / 'speed'
 # paths['speed'].mkdir(parents=True, exist_ok=True)
 
-TS_FILE = paths['sorted'] / Path("ts_filtered_unstacked.npz")
-COG_FILE = paths['sorted'] / Path("cog_data_filtered.csv")
+TS_FILE = paths['preprocessed'] / Path("ts_filtered_unstacked.npz")
+COG_FILE = paths['preprocessed'] / Path("cog_data_filtered.csv")
 
 SAVE_DATA = True
 #OLD REMOVE
@@ -87,8 +87,8 @@ SAVE_DATA = True
 
 #Here we load the preprocessed cognitive and time- series data
 
-cog_data = pd.read_csv(paths['sorted'] / "cog_data_filtered.csv")
-data = np.load(paths['sorted'] / "ts_filtered_unstacked.npz", allow_pickle=True)
+cog_data = pd.read_csv(paths['preprocessed'] / "cog_data_filtered.csv")
+data = np.load(paths['preprocessed'] / "ts_filtered_unstacked.npz", allow_pickle=True)
 ts_filtered = data["ts"]
 
 vel_data = np.load(paths['speed'] / f'speed_dfc_{HASH_TAG}.npz', allow_pickle=True)
@@ -107,8 +107,8 @@ paths = get_paths(dataset_name='julien_caillette',
 paths['speed'] = paths['results'] / 'speed'
 # paths['speed'].mkdir(parents=True, exist_ok=True)
 
-TS_FILE = paths['sorted'] / Path("ts_filtered_unstacked.npz")
-COG_FILE = paths['sorted'] / Path("cog_data_filtered.csv")
+TS_FILE = paths['preprocessed'] / Path("ts_filtered_unstacked.npz")
+COG_FILE = paths['preprocessed'] / Path("cog_data_filtered.csv")
 
 SAVE_DATA = True
 

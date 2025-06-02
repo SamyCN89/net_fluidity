@@ -16,6 +16,7 @@ import numpy as np
 import os
 from scipy.io import loadmat
 from joblib import Parallel, delayed, parallel_backend
+import re
 # from .fun_dfcspeed import compute4window_new
 
 #%%
@@ -145,6 +146,90 @@ def check_and_rerun_missing_files(paths, prefix, time_window_range, lag, n_anima
     return missing_files
 
 
+#%%
+# Load julien time series data from .mat files
+
+def load_mat_timeseries(folder: Path) -> tuple:
+    """
+    Load all time series from .mat files in a given folder, regardless of shape consistency.
+
+    Parameters
+    ----------
+    folder : Path
+        Path to the folder containing .mat files. Each file is expected to contain a variable 'tc' representing the time series.
+
+    ts_list : list of np.ndarray
+        List of loaded time series arrays, each typically of shape [regions, timepoints].
+    shapes : list of tuple
+        List of shapes corresponding to each loaded array.
+    names : list of str
+        List of filenames corresponding to each loaded time series.
+
+    Notes
+    -----
+    Files are loaded in reverse alphabetical order. If a file cannot be loaded or does not contain 'tc', an error message is printed and the file is skipped.
+    """
+    mat_files = sorted([f.name for f in folder.iterdir() if f.is_file()], reverse=True)
+    ts_list, shapes, names = [], [], []
+    for fname in mat_files:
+        try:
+            data = loadmat(folder / fname)['tc']
+            ts_list.append(data)
+            shapes.append(data.shape)
+            names.append(fname)
+            print(f"Loaded {fname}: shape {data.shape}")
+        except Exception as e:
+            print(f"Error loading {fname}: {e}")
+    return ts_list, shapes, names
+
+
+def extract_mouse_ids(filenames: list) -> list:
+    """Extract mouse IDs from filenames.
+
+    Args:
+        filenames (list): List of filename strings.
+
+    Returns:
+        list: List of extracted mouse IDs.
+    """
+    cleaned = []
+    for name in filenames:
+        match = re.match(r"tc_Coimagine_(.+?)_(\d+)_\d+_seeds\.mat", name)
+        if match:
+            cleaned.append(f"{match.group(1)}_{match.group(2)}")
+        else:
+            print(f"Warning: No match for {name}")
+    return cleaned
+
+#Load preprocessed data from .npz files
+def load_npz_dict(path_to_npz: Path) -> dict:
+    """
+    Load all arrays (and scalars) from an .npz file into a Python dict.
+
+    Parameters
+    ----------
+    path_to_npz : Path
+        Path to the .npz file.
+
+    Returns
+    -------
+    dict
+        A mapping from each key in the .npz to its value. 0-dim arrays
+        are converted to native Python scalars via .item().
+    """
+    data = np.load(path_to_npz, allow_pickle=True)
+    out = {}
+    for key in data.files:
+        print(f"Loading key: {key}")
+        # Get the array for the current key')
+        arr = data[key]
+        # Convert 0-dim arrays to scalars
+        if isinstance(arr, np.ndarray) and arr.shape == ():
+            out[key] = arr.item()
+        else:
+            out[key] = arr
+    data.close()
+    return out
 #%%
 def filename_sort_mat(folder_path):
     """Read and sort MATLAB file names in a given folder path."""

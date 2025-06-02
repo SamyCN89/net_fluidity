@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from shared_code.fun_loaddata import *
 from shared_code.fun_dfcspeed import get_tenet4window_range
-from shared_code.fun_utils import set_figure_params, get_paths, load_npz_dict
+from shared_code.fun_utils import set_figure_params, get_paths
 from tqdm import tqdm
 
 #%% Define paths
@@ -24,7 +24,7 @@ paths = get_paths(dataset_name='julien_caillette',
 
 #%% Load data
 print("Loading data...")
-data = load_npz_dict(paths['sorted'] / Path('ts_filtered_unstacked.npz'))
+data = load_npz_dict(paths['preprocessed'] / Path('ts_filtered_unstacked.npz'))
 data_ts = data['ts']  # This is a 1D object array with 50 elements
 n_animals = data['n_animals']
 total_tp = data['total_tp']
@@ -32,7 +32,7 @@ regions = data['regions']
 anat_labels = data['anat_labels']
 
 # Load cognitive data
-cog_data = pd.read_csv(paths['sorted'] / Path('cog_data_filtered.csv'))
+cog_data = pd.read_csv(paths['preprocessed'] / Path('cog_data_filtered.csv'))
 filtered_cog_data = cog_data[cog_data["n_timepoints"] >= 500]
 remaining_cog_data = cog_data[cog_data["n_timepoints"] < 500]
 

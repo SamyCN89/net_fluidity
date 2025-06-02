@@ -8,6 +8,7 @@ Created on Mon Oct  2 14:42:38 2023
 
 #%%
 from pathlib import Path
+from unittest import result
 import numpy as np
 import matplotlib.pyplot as plt
 import brainconn as bct
@@ -24,7 +25,7 @@ from scipy.stats import pearsonr, spearmanr
 from shared_code.fun_metaconnectivity import compute_metaconnectivity
 from shared_code.fun_dfcspeed import parallel_dfc_speed_oversampled_series
 from shared_code.fun_loaddata import *  # Import only needed functions
-from shared_code.fun_utils import set_figure_params, get_paths, load_npz_dict
+from shared_code.fun_utils import set_figure_params, get_paths
 from tqdm import tqdm
 
 
@@ -45,8 +46,8 @@ paths = get_paths(dataset_name='julien_caillette',
 # paths['speed'] = paths['results'] / 'speed'
 # paths['speed'].mkdir(parents=True, exist_ok=True)
 
-# TS_FILE = paths['sorted'] / Path("ts_filtered_unstacked.npz")
-# COG_FILE = paths['sorted'] / Path("cog_data_filtered.csv")
+# TS_FILE = paths['preprocessed'] / Path("ts_filtered_unstacked.npz")
+# COG_FILE = paths['preprocessed'] / Path("cog_data_filtered.csv")
 
 SAVE_DATA = True
 
@@ -54,14 +55,14 @@ SAVE_DATA = True
 #%%
 # ------------------------ Load Data ------------------------
 
-data_ts_pre = load_npz_dict(paths['sorted'] / Path('ts_filtered_unstacked.npz'))
+data_ts_pre = load_npz_dict(paths['preprocessed'] / Path('ts_filtered_unstacked.npz'))
 ts = data_ts_pre['ts']
 n_animals = data_ts_pre['n_animals']
 total_tp = data_ts_pre['total_tp']
 regions = data_ts_pre['regions']
 anat_labels = data_ts_pre['anat_labels']
 # Load cognitive data
-cog_data = pd.read_csv(paths['sorted'] / Path("cog_data_filtered.csv"))
+cog_data = pd.read_csv(paths['preprocessed'] / Path("cog_data_filtered.csv"))
 
 
 print(f"Loaded {len(ts)} time series")
@@ -118,7 +119,6 @@ time_window_range = np.arange(window_parameter[0],
 #%%
 from shared_code.fun_dfcspeed import dfc_speed
 # from shared_code.fun_loaddata import make_file_path, load_from_cache
-from shared_code.fun_utils import load_npz_dict
 # Modify the handlrer_get_tenet function to include the new parameters
 import logging
 
@@ -192,25 +192,47 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **
 
     vstep = int(max(1, window_size // lag))  # Ensure vstep is at least 1
     results = [dfc_speed(
-        dfc_stream[i], int(vstep + tt), method=method, return_fc2=True
-    ) if vstep + tt > 0 else (np.nan, np.nan, np.nan)
-        for tt in tau_range
+        dfc_stream[i], int(vstep), method=method, return_fc2=True) 
                for i in tqdm(range(n_animals), desc=f'Computing {prefix}')]
+    # results = [dfc_speed(
+    #     dfc_stream[i], int(vstep + tt), method=method, return_fc2=True
+    # ) if vstep + tt > 0 else (np.nan, np.nan, np.nan)
+    #     for tt in tau_range
+    #            for i in tqdm(range(n_animals), desc=f'Computing {prefix}')]
 
     median_speeds, speed_arrays, fc2_arrays = zip(*results)
     median_speeds = np.array(median_speeds)  # This works, because all are scalar
     speed_arrays = np.array(speed_arrays, object)
     fc2_arrays = list(fc2_arrays)
 
-    return median_speeds, speed_arrays, fc2_arrays
-    # try:
-    #     save2disk(file_path, prefix, **{'speed': speed_arrays, 'fc': fc2_arrays})
-    #     logger.info(f'Saved results to {file_path} using key as {key}')
-    # except Exception as e:
-    #     logger.error(f'Failed to save results: {e}')
+    # return median_speeds, speed_arrays, fc2_arrays
+    try:
+        save2disk(file_path, prefix, **{'speed': speed_arrays, 'fc': fc2_arrays})
+        logger.info(f'Saved results to {file_path} using key as {prefix} fc and speed')
+    except Exception as e:
+        logger.error(f'Failed to save results: {e}')
     # return results
 
 for window_size in time_window_range:
     results = _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **kwargs)
 
 # %%
+
+# Load the computed results
+speed=[]
+for window_size in time_window_range:
+
+    prefix = 'speed'
+    file_path = make_file_path(paths['results'] / 'speed', prefix, window_size, lag, n_animals, regions)
+
+    print(np.load(file_path, allow_pickle=True).files)
+    # Check available keys
+    results = load_npz_dict(file_path)
+    # speed = results[prefix]
+
+
+    speed.append(results['speed'])   # Convert to numpy array if needed
+# speed = np.array(speed, dtype=object) # Convert to numpy array if needed
+# %%
+
+[speed[ws] for ws in np.arange(len(time_window_range))]
