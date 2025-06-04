@@ -215,7 +215,7 @@ def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='2D', save_
         except Exception as e:
             logger.error(f"Failed to load {label} (reason: {e}). Recomputing...")
 
-    # Compute in parallel
+    # Computing ...
     logger.info(f"Computing {prefix} (window_size={window_size}, lag={lag})...")
     results = np.array([ts2dfc_stream(
         ts_data[i], window_size, lag, format_data) 
@@ -229,6 +229,8 @@ def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='2D', save_
     except Exception as e:
         logger.error(f'Failed to save results: {e}')
     return results
+
+
 
 
 def _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, nodes, **kwargs):
@@ -383,8 +385,8 @@ def get_tenet4window_range(
         processors = min(processors, cpu_count())
         logging.info(f'Starting analysis for {prefix}, n_jobs={processors}')
 
-        start = time.time()
         # Parallel computation over all window sizes
+        start = time.time()
         Parallel(n_jobs=min(processors, len(time_window_range)))(
             delayed(compute4window)(ws, ts, prefix, lag, save_path, **kwargs) 
             for ws in tqdm(time_window_range, desc=f'Window sizes')
@@ -395,10 +397,10 @@ def get_tenet4window_range(
         missing_files = check_and_rerun_missing_files(
             save_path, prefix, time_window_range, lag, n_animals, regions
         )
+        # Rerun for missing files
         if missing_files:
             logging.warning(f"Missing files detected for {prefix}: {missing_files}")
             missing_window_range = list(missing_files)
-            # Rerun for missing files
             Parallel(n_jobs=min(processors, len(missing_window_range)))(
                 delayed(compute4window)(ws, ts, prefix, lag, save_path, **kwargs) 
                 for ws in missing_window_range

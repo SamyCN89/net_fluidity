@@ -28,10 +28,6 @@ import re
 # =============================================================================
 
 # ------------------------Configuration------------------------
-# Set the path to the root directory of your dataset
-# USE_EXTERNAL_DISK = True
-# ROOT = Path('/media/samy/Elements1/Proyectos/LauraHarsan/dataset/julien/') if USE_EXTERNAL_DISK \
-#         else Path('/home/samy/Bureau/Proyect/LauraHarsan/dataset/julien/')
 
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder='time_courses',
@@ -112,12 +108,6 @@ def main():
                  total_tp=total_tp,
                  regions=regions,
                  anat_labels = region_labels_clean)
-    #              ts=ts,  
-    #      n_animals=n_animals, 
-    # total_tp=total_tp, 
-    # regions=regions, 
-    # is_2month_old=is_2month_old,
-    # anat_labels=anat_labels,
         print(f"Saved: ts_filtered.npz with shape {ts_array.shape}")
     else:
         np.savez(paths['preprocessed'] / "ts_filtered_unstacked.npz", 

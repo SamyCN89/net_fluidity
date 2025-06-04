@@ -19,11 +19,9 @@ paths = get_paths(dataset_name='julien_caillette',
                   cognitive_data_file='mice_groups_comp_index.xlsx',
                   anat_labels_file='all_ROI_coimagine.txt')
 
-# paths['roi'] = paths['cog_data'] / 'all_ROI_coimagine.txt'
-
-
 # ------------------------ 1.1 Load raw time series data ----------------------
 # 1.1 Load raw time series data from .mat files
+# (n_animals x n_timepoints x n_regions) -> 23 and 49 400 timepoints (Dp1Yey-VEH and Dp1Yey-LCTB92)
 ts_list, ts_shapes, loaded_files = load_mat_timeseries(paths['timeseries'])
 ts_ids = extract_mouse_ids(loaded_files)
 

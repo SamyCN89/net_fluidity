@@ -78,36 +78,6 @@ time_window_range = np.arange(window_parameter[0],
                               window_parameter[2])
 
 
-#%%
-
-
-# prefix= 'dfc'  # or 'meta'
-# for window_size in time_window_range:
-#     # Define file path for caching
-#     file_path = make_file_path(paths['dfc'], prefix, window_size, lag, n_animals, regions)
-
-#     #try loading from cache
-#     key = prefix 
-#     label = prefix 
-#     if file_path is not None and file_path.exists():
-#         dfc_stream = load_from_cache(file_path, key=key, label=label)
-
-#     # Precompute the arrays for median, speed, fc
-#     median = []
-#     speed = []
-#     fc = []
-
-#     for n in np.arange(n_animals):
-#         if dfc_stream[n] is None:
-#             print(f"Warning: dfc_stream[{n}] is None, skipping...")
-#             continue
-#         if dfc_stream[n].shape[0] < 2:
-#             print(f"Warning: dfc_stream[{n}] has less than 2 timepoints, skipping...")
-#             continue
-#         aux_speed = dfc_speed(dfc_stream[n], vstep=1, method='pearson', return_fc2=True)
-#         median.append(aux_speed[0])
-#         speed.append(aux_speed[1])
-#         fc.append(aux_speed[2])
 
 #%%
 from shared_code.fun_dfcspeed import dfc_speed
@@ -204,11 +174,11 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, lo
     # print([(fc2_arrays[xx][0].shape, xx) for xx in range(len(fc2_arrays))])
 
     # # return median_speeds, speed_arrays, fc2_arrays
-    # try:
-    #     save2disk(file_path, prefix, **{'fc': fc2_arrays})
-    #     logger.info(f'Saved results to {file_path} using key as {prefix} fc and speed')
-    # except Exception as e:
-    #     logger.error(f'Failed to save results: {e}')
+    try:
+        save2disk(file_path, prefix, **{'fc': fc2_arrays})
+        logger.info(f'Saved results to {file_path} using key as {prefix} fc and speed')
+    except Exception as e:
+        logger.error(f'Failed to save results: {e}')
     # return results
     return fc2_arrays
 
