@@ -74,7 +74,7 @@ processors = -1
 lag=1
 tau=5
 window_size = 9
-window_parameter = (5,100,1)
+window_parameter = (5,50,1)
 
 HASH_TAG = f"lag={lag}_tau={tau}_wmax={window_parameter[1]}_wmin={window_parameter[0]}"
 

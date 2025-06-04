@@ -68,10 +68,10 @@ print(f"400-timepoint animals: {ts_400_3d.shape}")
 
 #%% Parameters for dFC analysis
 processors = -1
+# window_size = 9
 lag = 1
 tau = 5
-window_size = 9
-window_parameter = (5, 100, 1)
+window_parameter = (5, 50, 1)
 time_window_range = np.arange(window_parameter[0], window_parameter[1] + 1, window_parameter[2])
 
 print(f"\ndFC parameters: lag={lag}, tau={tau}, window_range={time_window_range[0]}-{time_window_range[-1]}")

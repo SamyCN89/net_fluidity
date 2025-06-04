@@ -38,7 +38,10 @@ def make_file_path(save_path, prefix, window_size, lag, n_animals, nodes):
     if save_path:
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
-        return save_path / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
+        if prefix= 'speed':
+            return save_path / f"{prefix}_window_size={window_size}_tau={lag}_animals={n_animals}_regions={nodes}.npz"
+        else:
+            return save_path / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
     return None
 
 def load_from_cache(file_path, key, logger=None, label=None):

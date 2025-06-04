@@ -75,7 +75,7 @@ processors = -1
 lag=1
 tau=5
 window_size = 9
-window_parameter = (5,100,1)
+window_parameter = (5,50,1)
 
 HASH_TAG = f"lag={lag}_tau={tau}_wmax={window_parameter[1]}_wmin={window_parameter[0]}"
 
@@ -129,9 +129,9 @@ lag = lag
 save_path = paths['results']  # Directory to save results
 n_animals = n_animals
 nodes = regions  # Assuming regions is the number of nodes/regions in the time series
-kwargs = {'tau': tau, 'min_tau_zero': False, 'method': 'pearson'}
-
 tau=5
+kwargs = {'tau': tau, 'min_tau_zero': True, 'method': 'pearson'}
+
 
 
 def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **kwargs):
@@ -153,14 +153,14 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **
     logger = logging.getLogger(__name__)
     
     # Extract DFC speed specific parameters
-    tau = kwargs.get('tau', 3)
+    tau = kwargs.get('tau', 1)
     min_tau_zero = kwargs.get('min_tau_zero', True)
     method = kwargs.get('method', 'pearson')
     
-    tau_range = np.arange(0, tau + 1) if min_tau_zero else np.arange(-tau, tau + 1)
-    # Create custom file path for DFC speed (uses different naming convention)
+    tau_range = np.arange(0, tau + 1)*0.1 if min_tau_zero else np.arange(-tau, tau + 1)
+    # Create custom file path for speed (uses different naming convention)
     if save_path:
-        file_path = make_file_path(save_path / prefix, prefix, window_size, lag, n_animals, nodes)
+        file_path = make_file_path(save_path / prefix, prefix, window_size, tau, n_animals, nodes)
 
         # Try to load from cache
         if file_path.exists():
@@ -191,14 +191,14 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **
     fc2_all = []
 
     vstep = int(max(1, window_size // lag))  # Ensure vstep is at least 1
-    results = [dfc_speed(
-        dfc_stream[i], int(vstep), method=method, return_fc2=True) 
-               for i in tqdm(range(n_animals), desc=f'Computing {prefix}')]
     # results = [dfc_speed(
-    #     dfc_stream[i], int(vstep + tt), method=method, return_fc2=True
-    # ) if vstep + tt > 0 else (np.nan, np.nan, np.nan)
-    #     for tt in tau_range
+    #     dfc_stream[i], int(vstep), method=method, return_fc2=True) 
     #            for i in tqdm(range(n_animals), desc=f'Computing {prefix}')]
+    results = [dfc_speed(
+        dfc_stream[i], int(vstep + (vstep*tt)), method=method, return_fc2=True
+    ) if vstep + (vstep*tt) > 0 else (np.nan, np.nan, np.nan)
+        for tt in tau_range
+               for i in tqdm(range(n_animals), desc=f'Computing {prefix}')]
 
     median_speeds, speed_arrays, fc2_arrays = zip(*results)
     median_speeds = np.array(median_speeds)  # This works, because all are scalar
@@ -223,7 +223,7 @@ speed=[]
 for window_size in time_window_range:
 
     prefix = 'speed'
-    file_path = make_file_path(paths['results'] / 'speed', prefix, window_size, lag, n_animals, regions)
+    file_path = make_file_path(paths['results'] / 'speed', prefix, window_size, tau, n_animals, regions)
 
     print(np.load(file_path, allow_pickle=True).files)
     # Check available keys
@@ -235,4 +235,5 @@ for window_size in time_window_range:
 # speed = np.array(speed, dtype=object) # Convert to numpy array if needed
 # %%
 
-[speed[ws] for ws in np.arange(len(time_window_range))]
+a = [speed[ws] for ws in np.arange(len(time_window_range))]
+# %%

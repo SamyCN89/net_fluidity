@@ -509,11 +509,11 @@ def get_tenet4window_range(
 # =============================================================================
 
 def dfc_speed(dfc_stream, 
-              vstep=1, 
-              method='pearson', 
-              return_fc2=False,
-              tril_indices=None
-              ):
+            vstep=1, 
+            method='pearson', 
+            return_fc2=False,
+            tril_indices=None
+            ):
     """
     Unified function to calculate the speed of variation in dynamic functional connectivity (dFC).
     
@@ -630,16 +630,17 @@ def dfc_speed(dfc_stream,
     if vstep >= n_frames:
         raise ValueError(f"vstep ({vstep}) must be less than number of frames ({n_frames})")
     
+    indices = np.arange(0, n_frames - vstep, vstep)
+    n_speeds = len(indices)-1
     n_pairs = fc_stream.shape[0]
-    n_speeds = n_frames - vstep
     
     # Pre-allocate output arrays for efficiency
     speeds = np.empty(n_speeds)
     fc2_stream = None
     
     # Extract FC matrices for vectorized computation
-    fc1_matrices = fc_stream[:, :-vstep]  # Shape: (n_pairs, n_speeds)
-    fc2_matrices = fc_stream[:, vstep:]   # Shape: (n_pairs, n_speeds)
+    fc1_matrices = fc_stream[:, indices[:-1]]  # Shape: (n_pairs, n_speeds)
+    fc2_matrices = fc_stream[:, indices[1:]]   # Shape: (n_pairs, n_speeds)
     
     if return_fc2:
         fc2_stream = np.empty((n_pairs, n_speeds))
