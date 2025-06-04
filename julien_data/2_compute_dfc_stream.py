@@ -13,14 +13,15 @@ import numpy as np
 import pandas as pd
 from shared_code.fun_loaddata import *
 from shared_code.fun_dfcspeed import get_tenet4window_range
-from shared_code.fun_utils import set_figure_params, get_paths
+from shared_code.fun_paths import get_paths
 from tqdm import tqdm
 
 #%% Define paths
 timeseries_folder = 'time_courses'
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder=timeseries_folder,
-                  cognitive_data_file='mice_groups_comp_index.xlsx')
+                  cognitive_data_file='mice_groups_comp_index.xlsx',
+                  anat_labels_file='all_ROI_coimagine.txt')
 
 #%% Load data
 print("Loading data...")

@@ -549,6 +549,7 @@
     "allegiance/src/2_compute_dfc_local.py",
     "julien_data/1_preprocess_data_ts_cog.py",
     "shared_code/shared_code/fun_utils.py",
-    "shared_code/shared_code/fun_loaddata.py"
+    "shared_code/shared_code/fun_loaddata.py",
+    "shared_code/shared_code/fun_pahts.py",
   ]
 }

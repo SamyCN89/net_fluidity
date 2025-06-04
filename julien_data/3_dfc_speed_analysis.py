@@ -23,7 +23,8 @@ from scipy.stats import pearsonr, spearmanr
 
 from shared_code.fun_loaddata import *  # Import only needed functions
 from shared_code.fun_dfcspeed import parallel_dfc_speed_oversampled_series
-from shared_code.fun_utils import set_figure_params, get_paths
+from shared_code.fun_utils import set_figure_params
+from shared_code.fun_paths import get_paths
 from tqdm import tqdm
 
 from shared_code.shared_code.fun_dfcspeed import get_tenet4window_range
@@ -35,19 +36,8 @@ from shared_code.shared_code.fun_dfcspeed import get_tenet4window_range
 
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx')
-
-#%%
-# USE_EXTERNAL_DISK = True
-# ROOT = Path('/media/samy/Elements1/Proyectos/LauraHarsan/dataset/julien_caillette/') if USE_EXTERNAL_DISK \
-#         else Path('/home/samy/Bureau/Proyect/LauraHarsan/dataset/julien_caillette/')
-# RESULTS_DIR = ROOT / Path('results')
-# paths['speed'] = paths['results'] / 'speed'
-# paths['speed'].mkdir(parents=True, exist_ok=True)
-
-# TS_FILE = paths['preprocessed'] / Path("ts_filtered_unstacked.npz")
-# COG_FILE = paths['preprocessed'] / Path("cog_data_filtered.csv")
-
+                  cognitive_data_file='mice_groups_comp_index.xlsx',
+                  anat_labels_file='all_ROI_coimagine.txt')
 SAVE_DATA = True
 
 

@@ -21,7 +21,8 @@ from scipy.stats import zscore, pearsonr
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-from shared_code.fun_utils import get_paths, set_figure_params
+from shared_code.fun_utils import set_figure_params
+from shared_code.fun_paths import get_paths
 from shared_code.fun_dfcspeed import ts2fc
 
 # ========================== Figure parameters ================================
@@ -30,11 +31,14 @@ save_fig = set_figure_params(True)
 
 # =================== Paths and folders =======================================
 
-paths = get_paths()
-data_ts = np.load(paths['sorted'] /  'ts_and_meta_2m4m.npz')
+paths = get_paths(dataset_name='ines_abdullah', 
+                  timecourse_folder='Timecourses_updated_03052024',
+                  cognitive_data_file='ROIs.xlsx')
+folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
 
 # ========================== Load data =========================
 
+data_ts = np.load(paths['preprocessed'] /  'ts_and_meta_2m4m.npz')
 #Parameters and indices of variables
 ts          = data_ts['ts']
 n_animals   = int(data_ts['n_animals'])

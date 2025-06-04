@@ -25,7 +25,8 @@ from scipy.stats import pearsonr, spearmanr
 from shared_code.fun_metaconnectivity import compute_metaconnectivity
 from shared_code.fun_dfcspeed import parallel_dfc_speed_oversampled_series
 from shared_code.fun_loaddata import *  # Import only needed functions
-from shared_code.fun_utils import set_figure_params, get_paths
+from shared_code.fun_utils import set_figure_params
+from shared_code.fun_paths import get_paths
 from tqdm import tqdm
 
 
@@ -36,18 +37,10 @@ from tqdm import tqdm
 
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx')
+                  cognitive_data_file='mice_groups_comp_index.xlsx',
+                  anat_labels_file='all_ROI_coimagine.txt')
 
 #%%
-# USE_EXTERNAL_DISK = True
-# ROOT = Path('/media/samy/Elements1/Proyectos/LauraHarsan/dataset/julien_caillette/') if USE_EXTERNAL_DISK \
-#         else Path('/home/samy/Bureau/Proyect/LauraHarsan/dataset/julien_caillette/')
-# RESULTS_DIR = ROOT / Path('results')
-# paths['speed'] = paths['results'] / 'speed'
-# paths['speed'].mkdir(parents=True, exist_ok=True)
-
-# TS_FILE = paths['preprocessed'] / Path("ts_filtered_unstacked.npz")
-# COG_FILE = paths['preprocessed'] / Path("cog_data_filtered.csv")
 
 SAVE_DATA = True
 
@@ -129,12 +122,12 @@ lag = lag
 save_path = paths['results']  # Directory to save results
 n_animals = n_animals
 nodes = regions  # Assuming regions is the number of nodes/regions in the time series
-tau=5
+tau=3
 kwargs = {'tau': tau, 'min_tau_zero': True, 'method': 'pearson'}
 
 
 
-def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **kwargs):
+def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, load_cache =True, **kwargs):
     """
     Handle DFC speed analysis within the unified handler.
     
@@ -163,12 +156,13 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **
         file_path = make_file_path(save_path / prefix, prefix, window_size, tau, n_animals, nodes)
 
         # Try to load from cache
-        if file_path.exists():
-            try:
-                return load_npz_dict(file_path)[prefix]
-                logger.info(f"Loading DFC speed from cache: {file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to load cached DFC speed (reason: {e}). Recomputing...")
+        if load_cache ==True:
+            if file_path.exists():
+                try:
+                    return load_npz_dict(file_path)[prefix]
+                    logger.info(f"Loading DFC speed from cache: {file_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to load cached DFC speed (reason: {e}). Recomputing...")
     else:
         file_path = None
     
@@ -201,20 +195,26 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **
                for i in tqdm(range(n_animals), desc=f'Computing {prefix}')]
 
     median_speeds, speed_arrays, fc2_arrays = zip(*results)
+    print(len(fc2_arrays))
     median_speeds = np.array(median_speeds)  # This works, because all are scalar
     speed_arrays = np.array(speed_arrays, object)
     fc2_arrays = list(fc2_arrays)
+    # fc2_obj = np.array(fc2_arrays, dtype=object)  # Each entry is shape (666, N_i)
+    # print(type(fc2_arrays), len(fc2_arrays), type(fc2_arrays[0]), fc2_arrays[0].shape, type(fc2_arrays[0][0]), fc2_arrays[0][0].shape)
+    # print([(fc2_arrays[xx][0].shape, xx) for xx in range(len(fc2_arrays))])
 
-    # return median_speeds, speed_arrays, fc2_arrays
-    try:
-        save2disk(file_path, prefix, **{'speed': speed_arrays, 'fc': fc2_arrays})
-        logger.info(f'Saved results to {file_path} using key as {prefix} fc and speed')
-    except Exception as e:
-        logger.error(f'Failed to save results: {e}')
+    # # return median_speeds, speed_arrays, fc2_arrays
+    # try:
+    #     save2disk(file_path, prefix, **{'fc': fc2_arrays})
+    #     logger.info(f'Saved results to {file_path} using key as {prefix} fc and speed')
+    # except Exception as e:
+    #     logger.error(f'Failed to save results: {e}')
     # return results
+    return fc2_arrays
+
 
 for window_size in time_window_range:
-    results = _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, **kwargs)
+    results = _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, load_cache=False, **kwargs)
 
 # %%
 
@@ -223,7 +223,7 @@ speed=[]
 for window_size in time_window_range:
 
     prefix = 'speed'
-    file_path = make_file_path(paths['results'] / 'speed', prefix, window_size, tau, n_animals, regions)
+    file_path = make_file_path(paths['speed'], prefix, window_size, tau, n_animals, regions)
 
     print(np.load(file_path, allow_pickle=True).files)
     # Check available keys

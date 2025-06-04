@@ -16,7 +16,8 @@ import pickle
 # sys.path.append('../shared_code')
 
 from shared_code.fun_loaddata import extract_hash_numbers, load_mat_timeseries, extract_mouse_ids
-from shared_code.fun_utils import filename_sort_mat, load_matdata, classify_phenotypes, make_combination_masks, make_masks, get_paths
+from shared_code.fun_utils import filename_sort_mat, load_matdata, classify_phenotypes, make_combination_masks, make_masks
+from shared_code.fun_paths import get_paths
 import time
 from scipy.io import loadmat
 import re
@@ -34,9 +35,8 @@ import re
 
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx')
-
-paths['roi'] = paths['timeseries'] / 'all_ROI_coimagine.txt'
+                  cognitive_data_file='mice_groups_comp_index.xlsx',
+                  anat_labels_file='all_ROI_coimagine.txt',)
 
 # %%
 # -----------------------------------------------------------------------------
@@ -58,7 +58,7 @@ def main():
     cog_data['mouse'] = cog_data['mouse'].astype(str) #Ensure mouse IDs are strings
 
     #Region labels are loaded from a text file
-    region_labels        = np.loadtxt(paths['roi'], dtype=str).tolist()
+    region_labels        = np.loadtxt(paths['labels'], dtype=str).tolist()
     region_labels_clean = [label.replace("Both_", "") for label in region_labels]
 
     # =============================================================================

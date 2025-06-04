@@ -12,40 +12,34 @@ import time
 # from functions_analysis import *
 from pathlib import Path
 
-from fun_loaddata import *
-from fun_dfcspeed import *
+from shared_code.fun_loaddata import *
+from shared_code.fun_dfcspeed import *
 
 from shared_code.fun_metaconnectivity import *
 
-from fun_utils import (set_figure_params, 
-                       get_paths, 
+from shared_code.fun_utils import (set_figure_params, 
                        load_cognitive_data,
                        load_timeseries_data,
                        load_grouping_data,
                        )
-# =============================================================================
-# This code compute 
-# Load the data
-# Intersect the 2 and 4 months to have data that have the two datapoints
+from shared_code.fun_paths import get_paths
+
+# ===============================================================================
+# This code compute metaconnectivity and modularity
 # ========================== Figure parameters ================================
 save_fig = set_figure_params(False)
 
-# =================== Paths and folders =======================================
-timeseries_folder = 'Timecourses_updated_03052024'
-external_disk = True
-if external_disk==True:
-    root = Path('/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/')
-else:    
-    root = Path('/home/samy/Bureau/Proyect/LauraHarsan/Ines/')
+paths = get_paths(dataset_name='ines_abdullah', 
+                  timecourse_folder='Timecourses_updated_03052024',
+                  cognitive_data_file='ROIs.xlsx',
+                  anat_labels_file='41_Allen.txt')
 
-paths = get_paths(external_disk=True,
-                  external_path=root,
-                  timecourse_folder=timeseries_folder)
+folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
 
 # ========================== Load data =========================
-cog_data_filtered = load_cognitive_data(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
-data_ts = load_timeseries_data(paths['sorted'] / 'ts_and_meta_2m4m.npz')
-mask_groups, label_variables = load_grouping_data(paths['results'] / "grouping_data_oip.pkl")
+cog_data_filtered = load_cognitive_data(paths['preprocessed'] / 'cog_data_sorted_2m4m.csv')
+data_ts = load_timeseries_data(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
+mask_groups, label_variables = load_grouping_data(paths['preprocessed'] / "grouping_data_oip.pkl")
 
 
 # ========================== Indices ==========================================

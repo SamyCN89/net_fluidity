@@ -20,11 +20,12 @@ from shared_code.fun_metaconnectivity import *
 
 
 from shared_code.fun_utils import (set_figure_params, 
-                       get_paths, 
+                    #    get_paths, 
                        load_cognitive_data,
                        load_timeseries_data,
                        load_grouping_data,
                        )
+from shared_code.fun_paths import get_paths
 # =============================================================================
 # This code compute 
 # Load the data
@@ -33,13 +34,12 @@ from shared_code.fun_utils import (set_figure_params,
 #%%
 # =================== Paths and folders =======================================
 # Will prioritize PROJECT_DATA_ROOT if set
-timeseries_folder = 'Timecourses_updated_03052024'
 paths = get_paths(dataset_name='ines_abdullah', 
-                  timecourse_folder=timeseries_folder)
-
+                  timecourse_folder='Timecourses_updated_03052024',
+                  cognitive_data_file='ROIs.xlsx')
 
 # ========================== Load data =========================
-data_ts = load_timeseries_data(paths['sorted'] / 'ts_and_meta_2m4m.npz')
+data_ts = load_timeseries_data(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
 # ========================== Indices ==========================================
 ts=data_ts['ts']
 n_animals = data_ts['n_animals']

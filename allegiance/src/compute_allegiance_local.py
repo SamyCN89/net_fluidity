@@ -31,11 +31,13 @@ from shared_code.fun_metaconnectivity import (compute_metaconnectivity,
                                   )
 
 from shared_code.fun_utils import (set_figure_params, 
-                       get_paths, 
+                    #    get_paths, 
                        load_cognitive_data,
                        load_timeseries_data,
                        load_grouping_data,
                        )
+from shared_code.fun_paths import get_paths
+
 # =============================================================================
 # This code compute 
 # Load the data
@@ -44,11 +46,11 @@ from shared_code.fun_utils import (set_figure_params,
 save_fig = set_figure_params(False)
 
 # =================== Paths and folders =======================================
-timeseries_folder = 'Timecourses_updated_03052024'
-# Define the timeseries directory
-timeseries_folder = 'Timecourses_updated_03052024'
-# Will prioritize PROJECT_DATA_ROOT if set
-paths = get_paths(timecourse_folder=timeseries_folder)
+paths = get_paths(dataset_name='ines_abdullah', 
+                  timecourse_folder='Timecourses_updated_03052024',
+                  cognitive_data_file='ROIs.xlsx')
+folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
+# # Will prioritize PROJECT_DATA_ROOT if set
 
 # external_disk = True
 # if external_disk==True:
@@ -61,12 +63,12 @@ paths = get_paths(timecourse_folder=timeseries_folder)
 #                   timecourse_folder=timeseries_folder)
 
 # ========================== Load data =========================
-cog_data_filtered = load_cognitive_data(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
-data_ts = load_timeseries_data(paths['sorted'] / 'ts_and_meta_2m4m.npz')
-mask_groups, label_variables = load_grouping_data(paths['results'] / "grouping_data_oip.pkl")
+cog_data_filtered = load_cognitive_data(paths['preprocessed'] / 'cog_data_sorted_2m4m.csv')
+mask_groups, label_variables = load_grouping_data(paths['preprocessed'] / "grouping_data_oip.pkl")
 
 
 # ========================== Indices ==========================================
+data_ts = load_timeseries_data(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
 ts=data_ts['ts']
 n_animals = data_ts['n_animals']
 regions = data_ts['regions']

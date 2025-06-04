@@ -5,19 +5,18 @@ Created on Tue Apr  8 23:13:49 2025
 
 @author: samy
 """
-
+#%%
 import numpy as np
 import os
 import pandas as pd
 import pickle
 from pathlib import Path
-from fun_utils import (filename_sort_mat, 
+from shared_code.fun_utils import (filename_sort_mat, 
                        split_groups_by_age, 
-                       extract_hash_numbers, 
                        load_matdata, 
                        classify_phenotypes, 
                        set_figure_params,
-                       load_cogdata_sorted,
+                    #    load_cogdata_sorted,
                        get_paths,
                        
                        )
@@ -40,7 +39,39 @@ bins_parameter=200
 # cognitive_data_ts_sorted.py 
 #
 #%%Gets paths
-paths = get_paths()
+# =================== Paths and folders =======================================
+paths = get_paths(dataset_name='ines_abdullah', 
+                  timecourse_folder='Timecourses_updated_03052024',
+                  cognitive_data_file='ROIs.xlsx')
+folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
+
+root = paths['root']
+#Path results
+path_results = root / 'results'
+path_mc_mod = path_results / 'mc_mod/'
+paths['sorted'] = path_results / 'sorted_data/'
+paths['timeseries'] = path_results / 'Timecourses_updated_03052024'
+paths['cog_data']   = paths['timeseries'] / 'ROIs.xlsx'
+
+#Path figures
+path_figures = root / 'fig'
+path_allegiance = path_figures / 'allegiance'
+path_modularity = path_figures / 'modularity'
+
+def get_paths(external_disk=True):
+    root = Path('/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/' if external_disk 
+                else '/home/samy/Bureau/Proyect/LauraHarsan/Ines/')
+    return {
+        'root': root,
+        'results': root / 'results',
+        'timeseries': root / 'results/Timecourses_updated_03052024',
+        'cog_data': root / 'results/Timecourses_updated_03052024/ROIs.xlsx',
+        'sorted': root / 'results/sorted_data/',
+        'mc_mod': root / 'results/mc_mod/',
+        'allegiance': root / 'results/allegiance/',
+        'figures': root / 'fig',
+    }
+# paths = get_paths()
 #%% Load sorted data
 # data_ts, cog_data_filtered, mask_groups, label_variables = load_cogdata_sorted(paths)
     
@@ -74,43 +105,8 @@ time_window_range = np.arange(time_window_min,
 
 #%%
 
-# =================== Paths and folders =======================================
-external_disk = True
-if external_disk==True:
-    root = Path('/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/')
-else:    
-    root = Path('/home/samy/Bureau/Proyect/LauraHarsan/Ines/')
 
-folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
-# folders = {'2mois': 'Lot3_2mois', '4mois': 'Lot3_4mois'}
-# paths['timeseries'] = root + 'Timecourses_updated/' # Old data
-# paths['cog_data']   = os.path.join(paths['timeseries'], 'Behaviour_exclusions_ROIs_female.xlsx')
 
-#Path results
-path_results = root / 'results'
-path_mc_mod = path_results / 'mc_mod/'
-paths['sorted'] = path_results / 'sorted_data/'
-paths['timeseries'] = path_results / 'Timecourses_updated_03052024'
-paths['cog_data']   = paths['timeseries'] / 'ROIs.xlsx'
-
-#Path figures
-path_figures = root / 'fig'
-path_allegiance = path_figures / 'allegiance'
-path_modularity = path_figures / 'modularity'
-
-def get_paths(external_disk=True):
-    root = Path('/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/' if external_disk 
-                else '/home/samy/Bureau/Proyect/LauraHarsan/Ines/')
-    return {
-        'root': root,
-        'results': root / 'results',
-        'timeseries': root / 'results/Timecourses_updated_03052024',
-        'cog_data': root / 'results/Timecourses_updated_03052024/ROIs.xlsx',
-        'sorted': root / 'results/sorted_data/',
-        'mc_mod': root / 'results/mc_mod/',
-        'allegiance': root / 'results/allegiance/',
-        'figures': root / 'fig',
-    }
 
 #%%
 

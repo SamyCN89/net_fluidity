@@ -1,7 +1,8 @@
 import numpy as np
 from pathlib import Path
 from joblib import Parallel, delayed
-from shared_code.fun_utils import get_paths, load_timeseries_data
+from shared_code.fun_utils import load_timeseries_data
+from shared_code.fun_paths import get_paths
 from shared_code.fun_metaconnectivity import fun_allegiance_communities
 import os
 import logging
@@ -12,6 +13,8 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--n_jobs", type=int, default=4,
                     help="Number of parallel jobs to run (default: 4)")
+parser.add_argument("--env", type=str, default='LOCAL',
+                    help="Environment (default: LOCAL, options: CLUSTER_FS, ...)")
 parser.add_argument("--data_root", type=str, default=None,
                     help="Override PROJECT_DATA_ROOT (default: env variable)")
 parser.add_argument("--window_size", type=int, default=9, help="DFC window size (default: 9)")
@@ -34,7 +37,9 @@ window_size = args.window_size
 lag = args.lag
 timecourse_folder = args.timecourse_folder
 n_runs = args.n_runs
-gamma = args.gamma
+gamma_pt = args.gamma
+
+env = args.env.upper()  # Ensure uppercase for consistency
 
 
 # --- Setup logging ---
@@ -46,16 +51,21 @@ logging.basicConfig(
 )
 
 # --- Config ---
-n_runs = 1000
-gamma_pt = 100
-window_size = 9
-lag = 1
+# n_runs = 1000
+# gamma_pt = 100
+# window_size = 9
+# lag = 1
 # processors = 8  # Adjust to your CPU
-timecourse_folder = 'Timecourses_updated_03052024'
+# timecourse_folder = 'Timecourses_updated_03052024'
 
 # --- Load data ---
-paths = get_paths(timecourse_folder=timecourse_folder)
-data_ts = load_timeseries_data(paths['sorted'] / 'ts_and_meta_2m4m.npz')
+paths = get_paths(dataset_name='ines_abdullah', 
+                  timecourse_folder=timecourse_folder,
+                  cognitive_data_file='ROIs.xlsx',
+                  env=env,
+                  )
+
+data_ts = load_timeseries_data(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
 ts = data_ts['ts']
 n_animals = len(ts)
 n_regions = ts[0].shape[1]

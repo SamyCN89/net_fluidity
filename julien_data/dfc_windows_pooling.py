@@ -28,7 +28,8 @@ from shared_code.fun_dfcspeed import pool_vel_windows, get_population_wpooling
 
 # from fun_utils import set_figure_params
 from shared_code.fun_bootstrap import handler_bootstrap_permutation
-from shared_code.fun_utils import get_paths, set_figure_params
+from shared_code.fun_utils import set_figure_params
+from shared_code.fun_paths import get_paths
 
 from joblib import Parallel, delayed
 
@@ -66,14 +67,14 @@ HASH_TAG = f"lag={LAG}_tau={TAU}_wmax={WINDOW_PARAM[1]}_wmin={WINDOW_PARAM[0]}"
 #%%
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx')
+                  cognitive_data_file='mice_groups_comp_index.xlsx',
+                  anat_labels_file='all_ROI_coimagine.txt')
 
 #%%
 # USE_EXTERNAL_DISK = True
 # ROOT = Path('/media/samy/Elements1/Proyectos/LauraHarsan/dataset/julien_caillette/') if USE_EXTERNAL_DISK \
 #         else Path('/home/samy/Bureau/Proyect/LauraHarsan/dataset/julien_caillette/')
 # RESULTS_DIR = ROOT / Path('results')
-paths['speed'] = paths['results'] / 'speed'
 # paths['speed'].mkdir(parents=True, exist_ok=True)
 
 TS_FILE = paths['preprocessed'] / Path("ts_filtered_unstacked.npz")

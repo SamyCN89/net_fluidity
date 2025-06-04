@@ -14,7 +14,8 @@ import pandas as pd
 import pickle
 
 from shared_code.fun_loaddata import extract_hash_numbers
-from shared_code.fun_utils import filename_sort_mat, load_matdata, classify_phenotypes, make_combination_masks, make_masks, get_paths
+from shared_code.fun_utils import filename_sort_mat, load_matdata, classify_phenotypes, make_combination_masks, make_masks
+from shared_code.fun_paths import get_paths
 import time
 
 # =============================================================================
@@ -40,9 +41,11 @@ THRESHOLD = 0.2 #Threshold for phenotype classification
 
 
 # Define the timeseries directory
-timeseries_folder = 'Timecourses_updated_03052024'
 # Will prioritize PROJECT_DATA_ROOT if set
-paths = get_paths(dataset_name='ines_abdullah', timecourse_folder=timeseries_folder)
+paths = get_paths(dataset_name='ines_abdullah', 
+                  timecourse_folder='Timecourses_updated_03052024',
+                  cognitive_data_file='ROIs.xlsx',
+                  anat_labels_file='41_Allen.txt')
 folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
 
 
@@ -206,10 +209,11 @@ label_variables_per_sex = (label_combo_oip, label_combo_nor, label_combo_gen)
 # Save results
 # =============================================================================
 #Cognitive data
-cog_data_filtered.to_csv(paths['sorted'] / 'cog_data_sorted_2m4m.csv', index=False)
+cog_data_filtered.to_csv(paths['preprocessed'] / 'cog_data_sorted_2m4m.csv', index=False)
 
-#time series plus metadata
-np.savez(paths['sorted'] / 'ts_and_meta_2m4m.npz',
+#time series plus metadata          
+# Save the time series and metadata
+np.savez(paths['preprocessed'] / 'ts_and_meta_2m4m.npz',
          ts=ts,  
          n_animals=n_animals, 
     total_tp=total_tp, 
@@ -219,10 +223,10 @@ np.savez(paths['sorted'] / 'ts_and_meta_2m4m.npz',
     )
 
 #mask and labels for groups
-with open(paths['sorted'] / "grouping_data_oip.pkl", "wb") as f:
+with open(paths['preprocessed'] / "grouping_data_oip.pkl", "wb") as f:
     pickle.dump((mask_groups, label_variables), f)
 
-with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "wb") as f:
+with open(paths['preprocessed'] / "grouping_data_per_sex(gen_phen).pkl", "wb") as f:
     pickle.dump((mask_groups_per_sex, label_variables_per_sex), f)
 
 #%% Load pre-process data
@@ -230,8 +234,8 @@ with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "wb") as f:
 # # Load result
 # =============================================================================
 
-cog_data_filtered = pd.read_csv(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
-data_ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz')
+cog_data_filtered = pd.read_csv(paths['preprocessed'] / 'cog_data_sorted_2m4m.csv')
+data_ts = np.load(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
 
 ts=data_ts['ts']
 n_animals = data_ts['n_animals']

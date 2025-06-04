@@ -7,34 +7,36 @@ import time
 
 import scipy as sp
 
-from shared_code.fun_utils import get_paths
+from shared_code.fun_paths import get_paths
 from shared_code.fun_loaddata import (load_mat_timeseries, extract_mouse_ids, load_npz_dict, make_file_path)
 import time
 from scipy.io import loadmat
 import re
 #%%
-
+# ------------------------ Path's Configuration ------------------------
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx')
+                  cognitive_data_file='mice_groups_comp_index.xlsx',
+                  anat_labels_file='all_ROI_coimagine.txt')
 
-paths['roi'] = paths['timeseries'] / 'all_ROI_coimagine.txt'
+# paths['roi'] = paths['cog_data'] / 'all_ROI_coimagine.txt'
 
 
-# 1 Load raw time series data from .mat files
+# ------------------------ 1.1 Load raw time series data ----------------------
+# 1.1 Load raw time series data from .mat files
 ts_list, ts_shapes, loaded_files = load_mat_timeseries(paths['timeseries'])
 ts_ids = extract_mouse_ids(loaded_files)
-# %%
-# 2 Load cognitive data from .xlsx file
+
+# ---------------------- 1.2 Load Raw cognitive data ------------------------
+# 1.2 Load cognitive data from .xlsx file
 cog_data     = pd.read_excel(paths['cog_data'], sheet_name='mice_groups_comp_index')
 
+# ---------------------- 1.3 Load Region labels ------------------------
+# 1.3 Clean region labels
+region_labels = np.loadtxt(paths['labels'], dtype=str).tolist()
 # %%
-# 3 Clean region labels
-region_labels = np.loadtxt(paths['roi'], dtype=str).tolist()
-# %%
-# ------------------------ Load Preprocessed Data ------------------------
-
-#Load preprocessed time series dataa
+# ---------------------- 2 Load Preprocessed data ------------------------
+# 2.1 Load preprocessed time series data
 data_ts_pre = load_npz_dict(paths['preprocessed'] / Path('ts_filtered_unstacked.npz'))
 ts = data_ts_pre['ts']
 n_animals = data_ts_pre['n_animals']
@@ -42,19 +44,22 @@ total_tp = data_ts_pre['total_tp']
 regions = data_ts_pre['regions']
 anat_labels = data_ts_pre['anat_labels']
 
-# Load preprocessed cognitive data
+# 2.2 Load preprocessed cognitive data
 cog_data_filtered = pd.read_csv(paths['preprocessed'] / Path("cog_data_filtered.csv"))
-
 
 print(f"Loaded {len(ts)} time series")
 print(f"Loaded cognitive data for {len(cog_data_filtered)} animals")
 
+# 2.3 Load groups
+groups = cog_data_filtered.groupby(['genotype', 'treatment']).groups
+
 # %%
-#Load dfc_stream data n_animals x n_pairs x n_windows
-#Not very useful, because it is very difficult to load this dataset, too big.
+# ---------------------- 3 DFC stream anaylisys ------------------------
+# Load 1 time window size (TW_i) dfc_stream data from <path> 
+# Shape (n_animals x n_pairs x n_windows)
 
 lag = 1
-tau = 5
+tau = 3
 window_parameter = (5, 50, 1)
 time_window_range = np.arange(window_parameter[0], window_parameter[1] + 1, window_parameter[2])
 
@@ -71,9 +76,12 @@ for window_size in time_window_range:
     results = load_npz_dict(file_path)
     dfc = results[prefix]
 #%%
-#Load speed data
-# Load the computed results
+# ---------------------- 4 DFC speed analysis ------------------------
+# Load Speed (S) dfc data from <path> 
+# Shape (n_windows x (n_animals x n_tau) x n_pairs)
+
 speed=[]
+fc_speed = []
 for window_size in time_window_range:
 
     prefix = 'speed'
@@ -87,10 +95,11 @@ for window_size in time_window_range:
 
 
     speed.append(results['speed'])   # Convert to numpy array if needed
+    fc_speed.append(results['fc2'])   # Convert to numpy array if needed
 # speed = np.array(speed, dtype=object) # Convert to numpy array if needed
 # %%
 
-#speeds_all = [speed[ws] for ws in np.arange(len(time_window_range))]
+speeds_all = [speed[ws] for ws in np.arange(len(time_window_range))]
 # %%
 n_windows = len(speeds_all)
 n_animals = speeds_all[0].shape[0]
@@ -123,7 +132,7 @@ speeds_all_T = [
     [speeds_by_animal_tau[win][animal][tau]
      for win in range(n_windows) for tau in range(n_tau)]
     for animal in range(n_animals)
-
+]
 
 
 
@@ -142,7 +151,7 @@ import matplotlib.pyplot as plt
 filtered_df = cog_data_filtered[cog_data_filtered['n_timepoints'] >= 500].reset_index(drop=True)
 groups = filtered_df.groupby(['genotype', 'treatment']).groups
 
-tau_count = 6  # adjust as needed
+tau_count = 3  # adjust as needed
 animal_count = len(filtered_df)
 time_window_count = len(speeds_all)  # now using len instead of shape
 

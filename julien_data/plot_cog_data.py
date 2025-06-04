@@ -12,13 +12,15 @@ from statannotations.Annotator import Annotator
 import seaborn as sns
 from scipy.stats import kruskal
 
-from shared_code.fun_utils import get_paths, set_figure_params
+from shared_code.fun_utils import set_figure_params
+from shared_code.fun_paths import get_paths
 
 
 
 paths = get_paths(dataset_name='julien_caillette', 
                   timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx')
+                  cognitive_data_file='mice_groups_comp_index.xlsx',
+                  anat_labels_file='all_ROI_coimagine.txt')
 
 # Load cognitive data
 cog_data_filtered = pd.read_csv(paths['preprocessed'] / Path("cog_data_filtered.csv"))
