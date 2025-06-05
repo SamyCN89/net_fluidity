@@ -42,7 +42,7 @@ data_ts = np.load(paths['preprocessed'] /  'ts_and_meta_2m4m.npz')
 #Parameters and indices of variables
 ts          = data_ts['ts']
 n_animals   = int(data_ts['n_animals'])
-total_tp    = data_ts['total_tp']
+total_tr    = data_ts['total_tr']
 regions     = data_ts['regions']
 is_2month_old = data_ts['is_2month_old']
 anat_labels = data_ts['anat_labels']
@@ -74,7 +74,7 @@ ts_zscore = zscore(ts_concat, axis=0)
 #Create a dataframe with the zscore time series
 ts_df = pd.DataFrame(ts_zscore, columns=[f"{anat_labels[i]}" for i in range(ts_zscore.shape[1])])
 # Create a new column for the animal number
-ts_df['animal'] = np.repeat(np.arange(1, n_animals + 1), total_tp)
+ts_df['animal'] = np.repeat(np.arange(1, n_animals + 1), total_tr)
 
 # %%
 # Plot the z-scored time series for the anatomical regions
@@ -216,7 +216,7 @@ plt.show()
 # Reorganize the kmeans_labels to 
 # Reconstruct per-animal kmeans labels
 kmeans_labels_per_animal = np.array([
-    kmeans_labels[i * total_tp : (i + 1) * total_tp] for i in range(n_animals)
+    kmeans_labels[i * total_tr : (i + 1) * total_tr] for i in range(n_animals)
 ])
 
 
@@ -324,11 +324,11 @@ plt.show()
 
 def analyze_link_dynamics(kmeans_labels, fc_clusters, meta, save_fig, fig_path):
     n_animals = meta['n_animals']
-    total_tp = meta['total_tp']
+    total_tr = meta['total_tr']
     regions = meta['regions']
 
     kmeans_labels_per_animal = np.array([
-        kmeans_labels[i * total_tp : (i + 1) * total_tp] for i in range(n_animals)
+        kmeans_labels[i * total_tr : (i + 1) * total_tr] for i in range(n_animals)
     ])
     fc_cluster_per_animal = np.array([
         fc_clusters[kmeans_labels_per_animal[i]] for i in range(n_animals)

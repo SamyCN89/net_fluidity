@@ -47,7 +47,7 @@ SAVE_DATA = True
 data_ts_pre = load_npz_dict(paths['preprocessed'] / Path('ts_filtered_unstacked.npz'))
 ts = data_ts_pre['ts']
 n_animals = data_ts_pre['n_animals']
-total_tp = data_ts_pre['total_tp']
+total_tr = data_ts_pre['total_tr']
 regions = data_ts_pre['regions']
 anat_labels = data_ts_pre['anat_labels']
 # Load cognitive data

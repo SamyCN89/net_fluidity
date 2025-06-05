@@ -247,7 +247,7 @@ def load_timeseries_data(path_to_npz: Path) -> dict:
     return {
         'ts': data['ts'],
         'n_animals': int(data['n_animals']),
-        'total_tp': data['total_tp'],
+        'total_tr': data['total_tr'],
         'regions': data['regions'],
         'anat_labels': data['anat_labels'],
         'is_2month_old': data['is_2month_old']

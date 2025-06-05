@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import brainconn as bct
 import os
 import time
+import logging
 
 from joblib import Parallel, delayed, parallel_backend
 import pandas as pd
@@ -21,6 +22,7 @@ import pandas as pd
 from scipy.io import loadmat, savemat
 from scipy.special import erfc
 from scipy.stats import pearsonr, spearmanr
+from sklearn import base
 from tqdm import tqdm
 
 from shared_code.fun_metaconnectivity import compute_metaconnectivity
@@ -37,67 +39,20 @@ data = DFCAnalysis()
 data.get_metadata()
 data.get_ts_preprocessed()
 data.get_cogdata_preprocessed()
-#%% Define paths, folders and hash
-# ------------------------ Configuration ------------------------
+data.get_temporal_parameters()
 
-paths = get_paths(dataset_name='julien_caillette', 
-                  timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx',
-                  anat_labels_file='all_ROI_coimagine.txt')
 
-#%%
+processors = -1
+save_path = data.paths['results']  # Directory to save results
 
 SAVE_DATA = True
 
 
 #%%
-# ------------------------ Load Data ------------------------
 
-data_ts_pre = load_npz_dict(paths['preprocessed'] / Path('ts_filtered_unstacked.npz'))
-ts = data_ts_pre['ts']
-n_animals = data_ts_pre['n_animals']
-total_tr = data_ts_pre['total_tr']
-regions = data_ts_pre['regions']
-anat_labels = data_ts_pre['anat_labels']
-# Load cognitive data
-cog_data = pd.read_csv(paths['preprocessed'] / Path("cog_data_filtered.csv"))
-
-
-print(f"Loaded {len(ts)} time series")
-print(f"Loaded cognitive data for {len(cog_data)} animals")
-
-assert len(ts) == len(cog_data), "Mismatch between time series and cognitive data entries."
-#%%
-processors = -1
-
-lag=1
-tau=5
 window_size = 9
-window_parameter = (5,50,1)
-
-HASH_TAG = f"lag={lag}_tau={tau}_wmax={window_parameter[1]}_wmin={window_parameter[0]}"
-
-# time_window_min, time_window_max, time_window_step = window_parameter
-time_window_range = np.arange(window_parameter[0],
-                              window_parameter[1]+1,
-                              window_parameter[2])
-
-
-
-#%%
-import logging
-
-
 prefix= 'speed'  # Prefix for the DFC speed results
-window_size = window_size
-lag = lag
-save_path = paths['results']  # Directory to save results
-n_animals = n_animals
-nodes = regions  # Assuming regions is the number of nodes/regions in the time series
-tau=3
-kwargs = {'tau': tau, 'min_tau_zero': True, 'method': 'pearson'}
-
-
+kwargs = {'tau': data.tau, 'min_tau_zero': True, 'method': 'pearson'}
 
 def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, load_cache=True, **kwargs):
     """
@@ -163,21 +118,10 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, lo
     logger.info(f"Computing DFC speed (window_size={window_size}, lag={lag}, tau={tau}, method={method})")
     
     # Load DFC stream
-    dfc_file_path = make_file_path(save_path / 'dfc', 'dfc', window_size, lag, n_animals, nodes)
-    dfc_stream = None
-    
-    if dfc_file_path and dfc_file_path.exists():
-        try:
-            logger.info(f"Loading DFC stream from: {dfc_file_path}")
-            dfc_stream = load_from_cache(dfc_file_path, key='dfc', label='dfc-stream')
-        except Exception as e:
-            logger.warning(f"Failed to load DFC stream: {e}")
-    
-    if dfc_stream is None:
-        logger.error("No DFC stream available. Cannot compute DFC speed without DFC data.")
-        raise FileNotFoundError("DFC stream not found. Please compute DFC first.")
-    
-    logger.info(f"Loaded DFC stream shape: {dfc_stream.shape}")
+    data.load_dfc_1_window(lag=lag,window=window_size)
+    # dfc_file_path = make_file_path(save_path / 'dfc', 'dfc', window_size, lag, n_animals, nodes)
+    # dfc_stream = None
+    logger.info(f"Loaded DFC stream shape: {data.dfc_stream.shape}")
     
     # =================== OVERLAP CALCULATION ===================
     def calculate_vstep(window_size, lag, overlap_mode, overlap_value):
@@ -199,22 +143,26 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, lo
     # Organize results by tau and animal
     results_by_tau = {}
     
+    # print(tau_range, base_vstep)
+    
     for tau_val in tau_range:
         logger.info(f"Computing speeds for tau={tau_val}")
         
         # Calculate effective vstep for this tau
-        effective_vstep = base_vstep + tau_val
+        effective_vstep = int(base_vstep + tau_val)
         if effective_vstep <= 0:
             logger.warning(f"Skipping tau={tau_val}: effective_vstep={effective_vstep} <= 0")
             continue
         
         # Compute speeds for all animals with this tau
         animal_results = []
-        for i in tqdm(range(n_animals), desc=f'Computing speeds (tau={tau_val})'):
+        for i in tqdm(range(n_animals), desc=f'Animal loop (tau={tau_val})'):
             try:
                 if return_fc2:
+                    # print(f"Effective vstep for tau={tau_val}: {effective_vstep}")
+                    # print("Effective vstep is not an integer" if not isinstance(effective_vstep, int) else "Effective vstep is an integer")
                     median_speed, speeds, fc2 = dfc_speed(
-                        dfc_stream[i], vstep=effective_vstep, method=method, return_fc2=True
+                        data.dfc_stream[i], vstep=effective_vstep, method=method, return_fc2=True
                     )
                     animal_results.append({
                         'median_speed': median_speed,
@@ -224,7 +172,7 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, lo
                     })
                 else:
                     median_speed, speeds = dfc_speed(
-                        dfc_stream[i], vstep=effective_vstep, method=method, return_fc2=False
+                        data.dfc_stream[i], vstep=effective_vstep, method=method, return_fc2=False
                     )
                     animal_results.append({
                         'median_speed': median_speed,
@@ -294,21 +242,28 @@ def _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, lo
     
     logger.info(f"DFC speed analysis completed for window_size={window_size}")
     return organized_results
+#%%
 
+# ---------------------------- TESTING THE IMPROVED FUNCTION ------------------------
 
+#%%
 # Test the improved function with just the first window size
 try:
-    test_window_size = time_window_range[0]
+    test_window_size = data.time_window_range[0]
+    results = _handle_dfc_speed_analysis(test_window_size, 
+                                            data.lag, 
+                                            save_path, 
+                                            data.n_animals, 
+                                            data.regions, load_cache=True, **kwargs)
     print(f"Testing improved DFC speed analysis with window_size={test_window_size}")
-    results = _handle_dfc_speed_analysis(test_window_size, lag, save_path, n_animals, nodes, load_cache=False, **kwargs)
     print(f"✓ Success! Results keys: {list(results.keys())}")
     
     # If successful, run for all window sizes
     print("Running for all window sizes...")
     all_results = {}
-    for window_size in time_window_range:
+    for window_size in data.time_window_range:
         print(f"Processing window_size={window_size}")
-        results = _handle_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, load_cache=False, **kwargs)
+        results = _handle_dfc_speed_analysis(window_size, data.lag, save_path, data.n_animals, data.regions, load_cache=True, **kwargs)
         all_results[window_size] = results
     
     print(f"✓ Completed processing {len(all_results)} window sizes")
@@ -322,9 +277,9 @@ except Exception as e:
 
 # Load the computed results
 speed = []
-for window_size in time_window_range:
+for window_size in data.time_window_range:
     prefix = 'speed'
-    file_path = make_file_path(save_path / prefix, prefix, window_size, tau, n_animals, regions)
+    file_path = make_file_path(save_path / prefix, prefix, window_size, data.tau, data.n_animals, data.regions)
     
     if file_path.exists():
         print(f"Loading results for window_size={window_size}")
@@ -335,7 +290,7 @@ for window_size in time_window_range:
         
         # Look for the median speeds for the main tau value (tau=3)
         # The key should be 'median_speeds_tau_3' based on our improved function
-        speed_key = f'median_speeds_tau_{tau}'
+        speed_key = f'median_speeds_tau_{data.tau}'
         
         if speed_key in results:
             speed.append(results[speed_key])
@@ -360,13 +315,5 @@ print(f"Loaded speed data for {len(speed)} window sizes")
 # speed = np.array(speed, dtype=object)  # Convert to numpy array if needed
 # %%
 
-a = [speed[ws] for ws in np.arange(len(time_window_range))]
+a = [speed[ws] for ws in np.arange(len(data.time_window_range))]
 # %%
-# Simple configuration
-config = DFCSpeedConfig(tau=3, overlap_mode='percentage', overlap_value=0.5)
-
-# Run analysis
-results = improved_dfc_speed_analysis(window_size, lag, save_path, n_animals, nodes, config)
-
-# Load results for specific tau
-speed_data, fc2_data, metadata = load_speed_results(save_path, window_sizes, tau, n_animals, regions, selected_tau=3)

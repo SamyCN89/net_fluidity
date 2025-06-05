@@ -5,13 +5,8 @@ import numpy as np
 import pandas as pd
 import time
 
-import scipy as sp
-
 from shared_code.fun_paths import get_paths
 from shared_code.fun_loaddata import (load_mat_timeseries, extract_mouse_ids, load_npz_dict, make_file_path)
-import time
-from scipy.io import loadmat
-import re
 #%%
 # ------------------------ Path's Configuration ------------------------
 paths = get_paths(dataset_name='julien_caillette', 
@@ -38,7 +33,7 @@ region_labels = np.loadtxt(paths['labels'], dtype=str).tolist()
 data_ts_pre = load_npz_dict(paths['preprocessed'] / Path('ts_filtered_unstacked.npz'))
 ts = data_ts_pre['ts']
 n_animals = data_ts_pre['n_animals']
-total_tp = data_ts_pre['total_tp']
+total_tr = data_ts_pre['total_tr']
 regions = data_ts_pre['regions']
 anat_labels = data_ts_pre['anat_labels']
 

@@ -78,7 +78,7 @@ def get_paths(external_disk=True):
 # ts = data_ts['ts']
 # n_animals = int(data_ts['n_animals'])
 # regions = data_ts['regions']
-# total_tp = data_ts['total_tp']
+# total_tr = data_ts['total_tr']
 # is_2month_old = data_ts['is_2month_old']
 # anat_labels= data_ts['anat_labels']
 
@@ -126,7 +126,7 @@ data_ts = np.load(ts_data_filename)
 
 ts=data_ts['ts']
 n_animals = data_ts['n_animals']
-total_tp = data_ts['total_tp']
+total_tr = data_ts['total_tr']
 regions = data_ts['regions']
 is_2month_old = data_ts['is_2month_old']
 anat_labels= data_ts['anat_labels']

@@ -123,9 +123,9 @@ ts4m = ts4m[:,TRANSIENT:]
 
 # Preallocate and stack
 n2, n4 = ts2m.shape[0], ts4m.shape[0]
-total_tp, regions = ts2m.shape[1:]
+total_tr, regions = ts2m.shape[1:]
 n_animals = n2 + n4
-ts = np.empty((n_animals, total_tp, regions), dtype=ts2m.dtype)
+ts = np.empty((n_animals, total_tr, regions), dtype=ts2m.dtype)
 ts[:n2] = ts2m
 ts[n2:] = ts4m
 
@@ -216,7 +216,7 @@ cog_data_filtered.to_csv(paths['preprocessed'] / 'cog_data_sorted_2m4m.csv', ind
 np.savez(paths['preprocessed'] / 'ts_and_meta_2m4m.npz',
          ts=ts,  
          n_animals=n_animals, 
-    total_tp=total_tp, 
+    total_tr=total_tr, 
     regions=regions, 
     is_2month_old=is_2month_old,
     anat_labels=anat_labels,
@@ -239,7 +239,7 @@ data_ts = np.load(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
 
 ts=data_ts['ts']
 n_animals = data_ts['n_animals']
-total_tp = data_ts['total_tp']
+total_tr = data_ts['total_tr']
 regions = data_ts['regions']
 is_2month_old = data_ts['is_2month_old']
 anat_labels= data_ts['anat_labels']
