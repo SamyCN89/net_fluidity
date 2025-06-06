@@ -18,8 +18,11 @@ def merge_allegiance(window_size=9, lag=1, timecourse_folder='Timecourses_update
 
     # Get number of windows from a known DFC file
     filename_dfc = f'window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}'
+    print(f"[INFO] Merging allegiance data for {filename_dfc}...")
+
+    # Load DFC data to determine number of windows
     dfc_data = np.load(paths['dfc'] / f'dfc_{filename_dfc}.npz')
-    n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[1]
+    n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
 
     arr_shape = (n_regions, n_regions)
 
@@ -32,20 +35,23 @@ def merge_allegiance(window_size=9, lag=1, timecourse_folder='Timecourses_update
     out_dir = paths['allegiance'] / 'temp'
     missing_count = 0
 
-    for a in tqdm(range(n_animals), desc="Animals"):
-        for w in range(n_windows):
-            out_file = out_dir / f"{filename_dfc}_animal_{a:02d}_window_{w:04d}.npz"
+    for ani in tqdm(range(n_animals), desc="Animals"):
+        for ws in range(n_windows):
+            out_file = out_dir / f"{filename_dfc}_animal_{ani:02d}_window_{ws:04d}.npz"
+            print(f"[INFO] Processing Animal {ani}, Window {ws} - File: {out_file}")
             if out_file.exists():
                 data = np.load(out_file)
-                dfc_communities[a, w] = data["dfc_communities"]
-                sort_allegiances[a, w] = data["sort_allegiance"]
-                contingency_matrices[a, w] = data["contingency_matrix"]
+                dfc_communities[ani, ws] = data["dfc_communities"]
+                sort_allegiances[ani, ws] = data["sort_allegiance"]
+                contingency_matrices[ani, ws] = data["contingency_matrix"]
             else:
                 missing_count += 1
-                print(f"[MISSING] Animal {a}, Window {w}")
+                print(f"[MISSING] Animal {ani}, Window {ws} - File not found: {out_file}")
 
-    # Save merged result
+    # Filepath for merged file
     merged_out_file = paths['allegiance'] / f'merged_allegiance_{filename_dfc}.npz'
+    
+    # Save merged result
     np.savez_compressed(
         merged_out_file,
         dfc_communities=dfc_communities,

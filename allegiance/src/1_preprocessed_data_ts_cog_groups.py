@@ -224,4 +224,9 @@ regions = data_ts['regions']
 is_2month_old = data_ts['is_2month_old']
 anat_labels= data_ts['anat_labels']
 
+#Load groups 
+with open(paths['sorted'] / "grouping_data_oip.pkl", "rb") as f:
+    mask_groups, label_variables = pickle.load(f)
+with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
+    mask_groups_per_sex, label_variables_per_sex = pickle.load(f)
 # %%

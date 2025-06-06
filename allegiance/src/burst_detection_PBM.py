@@ -6,6 +6,7 @@ Created on Wed Apr  2 02:59:41 2025
 @author: samy
 """
 #%%
+from os import path
 import time
 from pathlib import Path
 
@@ -36,13 +37,16 @@ paths = get_paths(dataset_name='ines_abdullah',
                   cognitive_data_file='ROIs.xlsx')
 folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
 
+paths['ts'] = paths['figures'] / 'ts'
+paths['ts'].mkdir(parents=True, exist_ok=True)
+
 # ========================== Load data =========================
 
 data_ts = np.load(paths['preprocessed'] /  'ts_and_meta_2m4m.npz')
 #Parameters and indices of variables
 ts          = data_ts['ts']
 n_animals   = int(data_ts['n_animals'])
-total_tr    = data_ts['total_tr']
+total_tr    = data_ts['total_tp']
 regions     = data_ts['regions']
 is_2month_old = data_ts['is_2month_old']
 anat_labels = data_ts['anat_labels']
@@ -209,7 +213,22 @@ plt.xticks(x, [f'State {i+1}' for i in range(n_clusters)])
 plt.legend()
 plt.tight_layout()
 plt.show()
+#%%
+#Plot a scatter plot of the global efficiency and local efficiency
+plt.figure(figsize=(8, 6))
 
+plt.title('Global vs Local Efficiency of Clusters')
+plt.scatter(global_efficiency, np.mean(local_efficiency, axis=1), s=100, c=(np.arange(n_clusters)), alpha=0.7)
+plt.xlabel('Global Efficiency')
+plt.ylabel('Local Efficiency')
+for i in range(n_clusters):
+    plt.annotate(f'State {i+1}', (global_efficiency[i], np.mean(local_efficiency[i])))
+# plt.xlim(0, 0.12)
+# plt.ylim(0, 0.12)
+# plt.grid()
+plt.tight_layout()
+plt.savefig(paths['ts'] / 'global_vs_local_efficiency.png')
+plt.show()
 #%%
 # ================================= T-Graphlet =======================
 
@@ -287,6 +306,7 @@ n_links = len(link_events[0])
 burst_counts = np.zeros((n_animals, n_links), dtype=int)
 durations_by_link = [[] for _ in range(n_links)]
 
+# Collect durations for each link across all animals
 for animal in range(n_animals):
     for link in range(n_links):
         for ee in link_events[animal][link]:

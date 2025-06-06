@@ -6,6 +6,7 @@ It loads raw timeseries data, cognitive data, and region labels,
 and processes the data to compute DFC streams and speeds.
 """
 from importlib import metadata
+from math import e
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -25,6 +26,9 @@ class DFCAnalysis:
             cognitive_data_file='mice_groups_comp_index.xlsx',
             anat_labels_file='all_ROI_coimagine.txt'
         )
+
+
+        self.metadata = None
         self.ts_list = None
         self.ts_shapes = None
         self.ts_ids = None
@@ -38,18 +42,22 @@ class DFCAnalysis:
         self.total_tr = None
         self.regions = None
 
-    # Raw
+    # 1.1 Raw data loading
     def load_raw_timeseries(self):
         self.ts_list, self.ts_shapes, loaded_files = load_mat_timeseries(self.paths['timeseries'])
         self.ts_ids = extract_mouse_ids(loaded_files)
-
-    def load_cognitive_data(self):
+    
+    # 1.2 Load raw cognitive data
+    def load_raw_cognitive_data(self):
         self.cog_data = pd.read_excel(self.paths['cog_data'], sheet_name='mice_groups_comp_index')
 
-    def load_region_labels(self):
+    # 1.3 Load raw region labels
+    def load_raw_region_labels(self):
         self.region_labels = np.loadtxt(self.paths['labels'], dtype=str).tolist()
 
-    # Preprocessed
+    #-----------------------------------------------------------------------------------------------------
+    # 2. Preprocessed data loading
+    # 2.1 Metadata loading
     def get_metadata(self, meta_filename=None):
         preproc = Path(self.paths['preprocessed'])
         
@@ -67,28 +75,31 @@ class DFCAnalysis:
         # Set attributes from dict
         self.metadata = metadata_dict
         self.cog_data_filtered = metadata_dict.get('mouse_metadata', None)
-        self.region_labels = metadata_dict.get('region_labels', None)
+        self.region_labels_preprocessed = metadata_dict.get('region_labels', None)
         self.n_animals = metadata_dict.get('n_animals', None)
         self.regions = metadata_dict.get('regions', None)
         self.total_tr = metadata_dict.get('total_tr', None)
         self.filter_mode = metadata_dict.get('filter_mode', "unknown")
         print(f"Loaded metadata for {self.n_animals} animals from {meta_file.name}.")
 
-    
+    # 2.2 Preprocessed timeseries data loading
     def get_ts_preprocessed(self):
-        data_ts_pre = load_npz_dict(self.paths['preprocessed'] / Path(f'ts_filtered_animals_{self.n_animals}_regions_{self.regions}_tr_{self.total_tr}.npz'))
-        self.ts = data_ts_pre['ts']
+        data_ts_preprocessed = load_npz_dict(self.paths['preprocessed'] / Path(f'ts_filtered_animals_{self.n_animals}_regions_{self.regions}_tr_{self.total_tr}.npz'))
+        self.ts = data_ts_preprocessed['ts']
 
+    # 2.3 Cognitive data preprocessed loading
     def get_cogdata_preprocessed(self):
         self.cog_data_filtered = pd.read_csv(self.paths['preprocessed'] / Path(f"cog_data_filtered_animals_{self.n_animals}_regions_{self.regions}_tr_{self.total_tr}.csv"))
         self.groups = self.cog_data_filtered.groupby(['genotype', 'treatment']).groups
 
+    # 2.4 Get preprocessed data
     def load_preprocessed_data(self):
         self.get_metadata()  # Load metadata first
         self.get_ts_preprocessed()  # Load preprocessed timeseries
         self.get_cogdata_preprocessed()  # Load preprocessed cognitive data
 
-    # Analyzed data
+    #-----------------------------------------------------------------------------------------------------
+    # 3.1 Analyzed data
     def get_temporal_parameters(self):
         """
         This method is a placeholder for loading or computing temporal parameters.
@@ -103,13 +114,16 @@ class DFCAnalysis:
         self.time_window_range = np.arange(self.time_window_min,
                                            self.time_window_max + 1,
                                            self.time_window_step)
-    # Load 1 window
+    # 3.2 Load 1 dfc window
     def load_dfc_1_window(self, lag=1, window=9):
         prefix = 'dfc'
         self.dfc_file_path = make_file_path(self.paths['dfc'], prefix, window, lag, self.n_animals, self.regions)
         results = load_npz_dict(self.dfc_file_path)
+        print(results.keys())
         self.dfc_stream = results[prefix]
+        print(f"Loaded dfc stream for window size {window} with lag {lag} from {self.dfc_file_path.name}.")
 
+    # 3.3 Load dfc stream
     def load_dfc_stream(self, lag=1, tau=3, window_range=(5, 50, 1)):
         self.dfc_streams = {}
         time_window_range = np.arange(*window_range)
@@ -117,9 +131,9 @@ class DFCAnalysis:
             prefix = 'dfc'
             file_path = make_file_path(self.paths['dfc'], prefix, window_size, lag, self.n_animals, self.regions)
             results = load_npz_dict(file_path)
-            self.dfc_streams[window_size] = self.load_dfc_1_window(self, lag, window_size)
+            self.dfc_streams[window_size] = self.load_dfc_1_window( lag, window_size)
 
-
+    # 3.4 Load speed analysis
     def load_speed_analysis(self, tau=3, window_range=(5, 50, 1)):
         self.speeds = []
         self.fc_speeds = []
@@ -128,38 +142,79 @@ class DFCAnalysis:
             prefix = 'speed'
             file_path = make_file_path(self.paths['speed'], prefix, window_size, tau, self.n_animals, self.regions)
             results = load_npz_dict(file_path)
-            self.speeds.append(results['speed'])
-            self.fc_speeds.append(results['fc2'])
-        # Example post-processing:
-        self.speeds_all = [self.speeds[ws] for ws in np.arange(len(time_window_range))]
-        self.n_windows = len(self.speeds_all)
-        self.n_animals = self.speeds_all[0].shape[0]
+        #     self.speeds.append(results['speed'])
+        #     self.fc_speeds.append(results['fc2'])
+        # # Example post-processing:
+        # self.speeds_all = [self.speeds[ws] for ws in np.arange(len(time_window_range))]
+        # self.n_windows = len(self.speeds_all)
+        # self.n_animals = self.speeds_all[0].shape[0]
         # ...you can add more post-processing as in your script...
+        
+    # 3.5 Load fc stream
+    # def load_fc_stream(self, lag=1, tau=3, window_range=(5, 50, 1)):
+    
+    # Add more methods as needed for other processing steps*
+    # 3.5 Load Metaconnectivity
+    # 3.6 Load allegiance
+    # 3.7 Load trimers
+    
+    # def load_metaconnectivity(self, lag=1, window=9):
+    #     prefix = 'metaconnectivity'
+    #     self.metaconnectivity_file_path = make_file_path(self.paths['metaconnectivity'], prefix, window, lag, self.n_animals, self.regions)
+    #     results = load_npz_dict(self.metaconnectivity_file_path)
+    #     self.metaconnectivity = results[prefix]
 
-    # Add more methods as needed for other processing steps
-
+#-----------------------------------------------------------------------------------------------------
 #%%
+def example_usage():
+    """
+    Example usage of the DFCAnalysis class.
+    This function demonstrates how to load and process the data.
+    """
+    analysis = DFCAnalysis()
 
-# # Example usage:
+    # Load raw data
+    analysis.load_raw_timeseries()
+    analysis.load_raw_cognitive_data()
+    analysis.load_raw_region_labels()
+
+    # Load preprocessed data
+    analysis.load_preprocessed_data()
+
+    # Load analyzed data
+    analysis.get_temporal_parameters()
+    analysis.load_dfc_1_window()
+    analysis.load_dfc_stream()
+    analysis.load_speed_analysis()
+#-----------------------------------------------------------------------------------------------------
+# example_usage()
+
+# # # Example usage:
 # analysis = DFCAnalysis()
 
-# #Raw data loading
-# analysis.load_raw_timeseries()
-# analysis.load_cognitive_data()
-# analysis.load_region_labels()
-# # analysis.load_preprocessed_data()
+# # #Raw data loading
+# analysis.load_preprocessed_data()
+# # analysis.load_raw_timeseries()
+# # analysis.load_raw_cognitive_data()
+# # analysis.load_raw_region_labels()
 
-# #Preprocessing data loading
+# # # Preprocessing data loading
 # analysis.get_metadata()  # Load metadata only if needed
 # analysis.get_ts_preprocessed()
 # analysis.get_cogdata_preprocessed()
 
-# # Load analyzed data
+
+# # # Load analyzed data
 # analysis.get_temporal_parameters()
 # analysis.load_dfc_1_window()
 # analysis.load_dfc_stream()
 # analysis.load_speed_analysis()
+# #-----------------------------------------------------------------------------------------------------
 
+#%%
+
+
+#%%
 
 
 
