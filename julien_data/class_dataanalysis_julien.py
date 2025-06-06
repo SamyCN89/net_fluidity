@@ -15,8 +15,9 @@ import pickle
 
 from shared_code.fun_paths import get_paths
 from shared_code.fun_loaddata import (
-    load_mat_timeseries, extract_mouse_ids, load_npz_dict, make_file_path
+    load_mat_timeseries, extract_mouse_ids, load_npz_dict, make_file_path, load_pickle, load_fc2_npz
 )
+from shared_code.shared_code.fun_loaddata import load_pickle
 #%%
 class DFCAnalysis:
     def __init__(self, dataset_name='julien_caillette'):
@@ -119,9 +120,10 @@ class DFCAnalysis:
         prefix = 'dfc'
         self.dfc_file_path = make_file_path(self.paths['dfc'], prefix, window, lag, self.n_animals, self.regions)
         results = load_npz_dict(self.dfc_file_path)
-        print(results.keys())
+        # print(results.keys())
         self.dfc_stream = results[prefix]
         print(f"Loaded dfc stream for window size {window} with lag {lag} from {self.dfc_file_path.name}.")
+        return self.dfc_stream
 
     # 3.3 Load dfc stream
     def load_dfc_stream(self, lag=1, tau=3, window_range=(5, 50, 1)):
@@ -134,14 +136,26 @@ class DFCAnalysis:
             self.dfc_streams[window_size] = self.load_dfc_1_window( lag, window_size)
 
     # 3.4 Load speed analysis
-    def load_speed_analysis(self, tau=3, window_range=(5, 50, 1)):
-        self.speeds = []
-        self.fc_speeds = []
-        time_window_range = np.arange(*window_range)
-        for window_size in time_window_range:
-            prefix = 'speed'
-            file_path = make_file_path(self.paths['speed'], prefix, window_size, tau, self.n_animals, self.regions)
-            results = load_npz_dict(file_path)
+    def get_speed_analysis(self, tau_arange=np.arange(4), time_window_range=np.arange(5, 50+1, 1)):
+        prefix='speed'
+        file_path =self.paths['speed'] /  f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_arange)}_animals_{self.n_animals}.pkl"
+        self.speed = load_pickle(file_path)
+        # self.speeds_all = self.speed['speeds_all']
+
+    # 3.5 Load speed fc analysis
+    def get_speed_fc_analysis(self, tau_arange=np.arange(4), time_window_range = np.arange(5, 50+1, 1)):
+        prefix = 'speed_fc'
+        file_path = self.paths['speed'] / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_arange)}_animals_{self.n_animals}.npz"
+        self.speed_fc = load_fc2_npz(file_path)
+
+    # def load_speed_fc_analysis(self, tau=3, window_range=(5, 50, 1)):
+    #     time_window_range = np.arange(*window_range)
+    #     for window_size in time_window_range:
+    #         prefix = 'speed'
+    #         file_path = make_file_path(self.paths['speed'], prefix, window_size, tau, self.n_animals, self.regions)
+    #         results = load_npz_dict(file_path)
+
+#%%
         #     self.speeds.append(results['speed'])
         #     self.fc_speeds.append(results['fc2'])
         # # Example post-processing:
@@ -150,6 +164,7 @@ class DFCAnalysis:
         # self.n_animals = self.speeds_all[0].shape[0]
         # ...you can add more post-processing as in your script...
         
+    # def load_speed_analysis(self, tau=3, window_range=(5, 50, 1)):
     # 3.5 Load fc stream
     # def load_fc_stream(self, lag=1, tau=3, window_range=(5, 50, 1)):
     
@@ -185,8 +200,10 @@ def example_usage():
     analysis.get_temporal_parameters()
     analysis.load_dfc_1_window()
     analysis.load_dfc_stream()
-    analysis.load_speed_analysis()
+    analysis.get_speed_analysis()
+    analysis.get_speed_fc_analysis()
 #-----------------------------------------------------------------------------------------------------
+
 # example_usage()
 
 # # # Example usage:

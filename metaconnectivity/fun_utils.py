@@ -13,6 +13,8 @@ from scipy.io import loadmat
 import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
+import logging
+from typing import Any, Union
 # =============================================================================
 # Figure setup
 # =============================================================================
@@ -89,6 +91,7 @@ def get_paths(
         
     }
 
+
 # =============================================================================
 # Load data functions
 # =============================================================================
@@ -119,6 +122,7 @@ def load_grouping_data(path_to_pkl: Path):
     with open(path_to_pkl, "rb") as f:
         mask_groups, label_variables = pickle.load(f)
     return mask_groups, label_variables
+
 
 # =============================================================================
 # Preprocessing data

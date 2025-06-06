@@ -17,6 +17,9 @@ import os
 from scipy.io import loadmat
 from joblib import Parallel, delayed, parallel_backend
 import re
+import logging
+from typing import Any, Union
+import pickle
 # from .fun_dfcspeed import compute4window_new
 
 #%%
@@ -75,6 +78,40 @@ def extract_mouse_ids(filenames: list) -> list:
         else:
             print(f"Warning: No match for {name}")
     return cleaned
+
+# =============================================================================
+# Save data functions
+# =============================================================================
+def save_pickle(obj: Any, path: Union[str, Path]) -> None:
+    """Save a Python object to a file using pickle."""
+    path = Path(path)  # always use Path object
+    with open(path, 'wb') as f:
+        pickle.dump(obj, f)
+    logging.getLogger(__name__).info(f"Saved pickle: {path}")
+
+def load_pickle(path):
+    """Load a Python object from a pickle file."""
+    with open(path, 'rb') as f:
+        logging.getLogger(__name__).info(f"Loaded pickle: {path}")
+        return pickle.load(f)
+
+import numpy as np
+
+def load_fc2_npz(path: Union[str, Path]) -> Any:
+    """Load fc2 results from a .npz file."""
+    path = Path(path)
+    try:
+        with np.load(path, allow_pickle=True) as arr:
+            if 'fc2' in arr:
+                data = arr['fc2']
+                logging.getLogger(__name__).info(f"Loaded fc2 results from: {path}")
+                return data
+            else:
+                logging.getLogger(__name__).warning(f"'fc2' key not found in {path}. Available keys: {arr.files}")
+                return None
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to load fc2 results from {path}: {e}")
+        return None
 
 #Load preprocessed data from .npz files
 def load_npz_dict(path_to_npz: Path) -> dict:
