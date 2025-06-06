@@ -277,7 +277,7 @@ def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, 
         gamma_qmod_val[idx] = modularities
 
         # Build agreement matrix
-        agreement = _build_agreement_matrix(communities)
+        agreement = build_agreement_matrix_vectorized(communities)
         gamma_agreement_mat[idx] = agreement
         contingency_matrix += agreement
 

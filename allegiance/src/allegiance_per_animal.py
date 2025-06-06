@@ -266,7 +266,7 @@ plt.show()
 # Plot the mean matrix
 # %%
 
-agreement = _build_agreement_matrix(dfc_communities_sorted.T)
+agreement = build_agreement_matrix_vectorized(dfc_communities_sorted.T)
 
 plt.figure(figsize=(10, 8))
 plt.subplot(1, 1, 1)
@@ -523,6 +523,45 @@ def _build_agreement_matrix(communities):
         agreement += (Ci[:, None] == Ci)
 
     return agreement.astype(np.float32)
+
+def build_agreement_matrix_vectorized(communities):
+    """
+    Compute the agreement matrix for a 2D numpy array of community labels using vectorization.
+    communities: array of shape (n_runs, n_nodes)
+    Returns:
+        agreement: 2D array (n_nodes, n_nodes)
+    """
+    # communities shape: (n_runs, n_nodes)
+    # compare all node pairs for each run, shape becomes (n_runs, n_nodes, n_nodes)
+    equal_matrix = (communities[:, :, None] == communities[:, None, :])
+    # Sum over runs
+    agreement = np.sum(equal_matrix, axis=0)
+    return agreement.astype(np.float32)
+
+agreement = build_agreement_matrix_vectorized(dfc_communities_sorted[0])
+
+community_agreement = [build_agreement_matrix_vectorized(dfc_communities[indv]) for indv in range(n_animals)]
+#%%
+
+#plot the agreement matrix for different groups of animals
+for i in range(9):
+    plt.figure(figsize=(10, 8))
+    plt.subplot(3, 3, i + 1)
+    # plt.clf()
+    plt.title(f"Agreement Matrix - Animal {i}")
+    plt.imshow(community_agreement[i] / np.max(community_agreement[i]) , aspect='auto', interpolation='none', cmap='viridis')
+    plt.colorbar()
+    plt.tight_layout()
+    # plt.xlabel("DFT Frequency")
+    # plt.ylabel("DFT Frequency")
+    plt.show()
+# plt.figure(figsize=(10, 8))
+# # plt.subplot(1, 1, 1)
+# plt.clf()
+# plt.title("Agreement Matrix - Animal 0")
+# # plt.imshow(agreement/np.max(agreement) , aspect='auto', interpolation='none', cmap='viridis')
+# plt.imshow(community_agreement/np.max(community_agreement) , aspect='auto', interpolation='none', cmap='viridis')
+# plt.colorbar()
 #%%
 # Global Allegiance Matrix
 
@@ -549,7 +588,7 @@ plt.show()
 # Plot the mean matrix
 # %%
 
-agreement = _build_agreement_matrix(dfc_communities_sorted.T)
+agreement = build_agreement_matrix_vectorized(dfc_communities_sorted.T)
 
 plt.figure(figsize=(10, 8))
 plt.subplot(1, 1, 1)
