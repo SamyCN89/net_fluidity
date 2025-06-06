@@ -36,6 +36,12 @@ filename_dfc = f'window_size={window_size}_lag={lag}_animals={n_animals}_regions
 dfc_data = np.load(paths['dfc'] / f'dfc_{filename_dfc}.npz')
 n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
 
+
+#%%
+# Compute the mask and index
+mc_nplets_mask, mc_nplets_index = compute_mc_nplets_mask_and_index(
+    regions, allegiance_sort=sort_allegiance
+)
 #%%
 import pickle
 with open(paths['sorted'] / "grouping_data_oip.pkl", "rb") as f:
@@ -45,7 +51,7 @@ with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
 
 # Load the merged allegiance data of all animals
 dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance(paths, window_size=9, lag=1)
-dfc_communities_sorted = dfc_communities[:, :, sort_allegiances[0, 0].astype(int)] # REaorder the labelling of the communities (deprecated soon)
+dfc_communities_sorted = dfc_communities[sort_allegiances.astype(int)] # REaorder the labelling of the communities (deprecated soon)
 
 #%%
 triu = np.triu_indices(n_regions, k=1)  # Get upper triangle indices for n_regions x n_regions matrix
