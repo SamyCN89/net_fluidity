@@ -52,8 +52,8 @@ is_2month_old = data_ts['is_2month_old']
 anat_labels = data_ts['anat_labels']
 
 #%%
-
-plt.figure(figsize=(12, 8))
+# Plot the time series for each animal
+plt.figure(1, figsize=(12, 8))
 offset = 0.07  # vertical offset between time series
 for i, ts1 in enumerate(ts[0].T):
     plt.plot(ts1 + i * offset, label=f"TS {i+1}")
@@ -61,12 +61,11 @@ for i, ts1 in enumerate(ts[0].T):
 plt.title("Time Series")
 plt.xlabel("Time Points")
 plt.ylabel("Signal + Offset")
+plt.yticks(np.arange(len(anat_labels)) * offset, anat_labels)
 plt.tight_layout()
-plt.savefig(paths['figures'] / 'ts/ts_extract.png')
+plt.savefig(paths['ts'] / 'ts_extract.png')
 plt.show()
 # %%
-
-
 # Z-score ts_df by columns and maintain as ts_df
 
 #Concatenate all time series
@@ -75,7 +74,7 @@ ts_concat = np.concatenate(ts, axis=0)
 ts_zscore = zscore(ts_concat, axis=0)
 
 #%%
-#Create a dataframe with the zscore time series
+#Create a Normalized Dataframe with the zscore time courses
 ts_df = pd.DataFrame(ts_zscore, columns=[f"{anat_labels[i]}" for i in range(ts_zscore.shape[1])])
 # Create a new column for the animal number
 ts_df['animal'] = np.repeat(np.arange(1, n_animals + 1), total_tr)
@@ -94,14 +93,11 @@ plt.yticks(np.arange(len(anat_labels))*offset*10, anat_labels)
 plt.xlim(0, ts_zscore.shape[0])
 plt.xticks(np.arange(0, ts_zscore.shape[0], step=10000), rotation=45)
 plt.tight_layout()
-plt.savefig(paths['figures'] / 'ts/ts_zscore_concatenated_all_animals.png')
+plt.savefig(paths['ts'] / 'ts_zscore_concatenated_all_animals.png')
 plt.show()
 
-# %%
-
-
 #%%
-#Test for one animal
+#Test for one animal KMeans clustering
 
 # ================= Kmeans clustering ========================
 
@@ -126,7 +122,26 @@ print(f"Inertia (sum of squared distances to closest cluster center): {kmeans.in
 stop = time.time()
 print(f"Time taken to create KMeans instance: {stop - start:.2f} seconds")
 #%%
-
+# Plot the inertia as a function of the number of clusters
+inertia = []
+for n in n_clusters_range:
+    kmeans = KMeans(n_clusters=n, random_state=42, max_iter=100, n_init=100)
+    kmeans.fit(ts_zscore)
+    inertia.append(kmeans.inertia_)
+plt.figure(figsize=(10, 6))
+plt.plot(n_clusters_range, inertia, marker='o')
+plt.title("Elbow Method: Inertia vs Number of Clusters")
+plt.xlabel("Number of Clusters")
+plt.ylabel("Inertia (Sum of Squared Distances)")
+plt.xticks(n_clusters_range)
+plt.grid()
+plt.tight_layout()
+plt.savefig(paths['ts'] / 'kmeans_elbow_method.png')
+plt.show()
+#%%
+# Compute the silhouette score
+silhouette_avg = silhouette_score(ts_zscore, kmeans.labels_)
+print(f"Silhouette Score: {silhouette_avg:.4f}")
 
 kmeans_labels = kmeans.labels_
 cluster_centers = kmeans.cluster_centers_
@@ -143,6 +158,7 @@ plt.clim(-1.5,1.5)
 
 
 #%%
+# ------------- FC cluster analysis per cluster -------------------
 #FC cluster, taking the respective time points of each cluster
 # Compute the functional connectivity (FC) for each cluster
 # Compute the Pearson correlation between the z-scored time series and the cluster centers
@@ -172,19 +188,17 @@ for i in range(n_clusters):
     n_cols = int(np.ceil(n_clusters / n_rows))
     plt.subplot(n_rows, n_cols, i + 1)
 
+    plt.title(f"Cluster {i+1}")
     plt.imshow(fc_cluster[i], aspect='auto', cmap='RdBu_r', interpolation='none')
-    plt.colorbar(label='Functional Connectivity Value')
+    plt.colorbar(label='FC')
     # plt.xticks(np.arange(len(anat_labels)), anat_labels, rotation=90)
     # plt.yticks(np.arange(len(anat_labels)), anat_labels)
 
     plt.clim(-0.25,0.25)
-    # plt.savefig(paths['figures'] / f'ts/cluster_{n_clusters}_fc_matrix.png')
+    
 plt.tight_layout()
-plt.show()
-
-# FC_lambda = pearsonr(ts_zscore))
-
-
+plt.savefig(paths['ts'] / f'cluster_{n_clusters}_fc_matrix.png')
+    # plt.close()
 
 #%%
 # ================== Network analysis: Global and Local efficiency  =========================
@@ -232,14 +246,19 @@ plt.show()
 #%%
 # ================================= T-Graphlet =======================
 
-# Reorganize the kmeans_labels to 
-# Reconstruct per-animal kmeans labels
+# Reorganize the kmeans_labels to Reconstruct per-animal kmeans labels
+kmeans_labels = np.array(kmeans.labels_)
 kmeans_labels_per_animal = np.array([
     kmeans_labels[i * total_tr : (i + 1) * total_tr] for i in range(n_animals)
 ])
 
 
 #Assign a fc_cluster to each label in each animal
+
+fc_cluster_per_animal = np.array([
+    fc_cluster[kmeans_labels_per_animal[i]] for i in range(n_animals)
+])
+
 fc_cluster_per_animal = np.array([
     fc_cluster[kmeans_labels_per_animal[i]] for i in range(n_animals)
     ])

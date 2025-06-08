@@ -23,7 +23,6 @@ def merge_allegiance(window_size=9, lag=1, timecourse_folder='Timecourses_update
     # Load DFC data to determine number of windows
     dfc_data = np.load(paths['dfc'] / f'dfc_{filename_dfc}.npz')
     n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
-
     arr_shape = (n_regions, n_regions)
 
     # Preallocate arrays with NaN
@@ -35,6 +34,7 @@ def merge_allegiance(window_size=9, lag=1, timecourse_folder='Timecourses_update
     out_dir = paths['allegiance'] / 'temp'
     missing_count = 0
 
+    # Iterate through animals and windows to load allegiance data
     for ani in tqdm(range(n_animals), desc="Animals"):
         for ws in range(n_windows):
             out_file = out_dir / f"{filename_dfc}_animal_{ani:02d}_window_{ws:04d}.npz"
@@ -43,6 +43,7 @@ def merge_allegiance(window_size=9, lag=1, timecourse_folder='Timecourses_update
                 data = np.load(out_file)
                 dfc_communities[ani, ws] = data["dfc_communities"]
                 sort_allegiances[ani, ws] = data["sort_allegiance"]
+                print(data['sort_allegiance'].shape)
                 contingency_matrices[ani, ws] = data["contingency_matrix"]
             else:
                 missing_count += 1

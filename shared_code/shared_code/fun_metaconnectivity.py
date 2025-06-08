@@ -225,6 +225,19 @@ def _build_agreement_matrix(communities):
 
     return agreement.astype(np.float32)
 
+def build_agreement_matrix_vectorized(communities):
+    """
+    Compute the agreement matrix for a 2D numpy array of community labels using vectorization.
+    communities: array of shape (n_runs, n_nodes)
+    Returns:
+        agreement: 2D array (n_nodes, n_nodes)
+    """
+    # communities shape: (n_runs, n_nodes)
+    # compare all node pairs for each run, shape becomes (n_runs, n_nodes, n_nodes)
+    equal_matrix = (communities[:, :, None] == communities[:, None, :])
+    # Sum over runs
+    agreement = np.sum(equal_matrix, axis=0)
+    return agreement.astype(np.float32)
 #%%
 
 def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, cache_path=None, ref_name='', n_jobs=-1):
