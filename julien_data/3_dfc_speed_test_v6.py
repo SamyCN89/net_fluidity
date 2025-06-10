@@ -31,7 +31,8 @@ def dfc_speed_split(dfc_stream,
             tau_range=0,
             method='pearson', 
             return_fc2=False,
-            tril_indices=None
+            tril_indices=None,
+            time_offset=0,
             ):
     """
     Unified function to calculate the speed of variation in dynamic functional connectivity (dFC).
@@ -112,17 +113,16 @@ def dfc_speed_split(dfc_stream,
     fc1_indices = []
     fc2_indices = []    
 
-    indices_max = n_frames - (vstep + np.max(tau))
-    
+    indices_max = n_frames - (vstep + np.max(tau) + time_offset) 
     indices = np.arange(0, indices_max, vstep)
     if np.size(tau_range) > 1:
         for tau_aux in tau_range:
             fc1_indices.append(indices[:-1])  # Indices for the first FC matrix
-            fc2_indices.append(indices[1:]+tau_aux)   # Indices for the second FC matrix
+            fc2_indices.append(indices[1:]+tau_aux+time_offset)   # Indices for the second FC matrix
     else:
         tau_aux = tau_range
         fc1_indices.append(indices[:-1])
-        fc2_indices.append(indices[1:]+tau_aux)   # Indices for the second FC matrix
+        fc2_indices.append(indices[1:]+tau_aux+time_offset)   # Indices for the second FC matrix
 
     n_speeds = (len(indices)-1) * np.size(tau_range)
     n_pairs = fc_stream.shape[0]
@@ -192,13 +192,13 @@ def run_dfc_speed_analysis(data, time_window_range, tau_range, lag, save_path, n
                 logging.getLogger(__name__).info(f"Computing for window {window_file} and animal {animal_idx + 1}/{n_animals}")
                 if return_fc2:
                     fc2 = dfc_speed_split(
-                        dfc_stream[animal_idx], vstep=int(window_size), tau_range=0, method=method, return_fc2=True
+                        dfc_stream[animal_idx], vstep=int(window_size), tau_range=0, method=method, return_fc2=return_fc2
                     )
                     results.append(fc2)
                     logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed FC2")
                 else:
                     speeds = dfc_speed_split(
-                        dfc_stream[animal_idx], vstep=1, tau_range=tau_range, method=method, return_fc2=False
+                        dfc_stream[animal_idx], vstep=1, tau_range=tau_range, method=method, return_fc2=return_fc2, time_offset=window_size
                     )
                     results.append(speeds)
                     logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed speeds")
@@ -265,16 +265,17 @@ analysis_kwargs = {
     'return_fc2': True,  # Set to True if you want to return the second FC matrix
     'preprocessors': processors,  # Number of parallel processors to use    
 }
+
 #%%
-run_dfc_speed_analysis(data, 
-                        time_window_range, 
-                        tau_range, 
-                        lag, 
-                        save_path, 
-                        n_animals, 
-                        nodes, 
+run_dfc_speed_analysis(data,
+                        time_window_range,
+                        tau_range,
+                        lag,
+                        save_path,
+                        n_animals,
+                        nodes,
                         load_cache=False,
-                        processors=processors, 
+                        processors=processors,
                         **analysis_kwargs)
 #%%
 analysis_kwargs = {

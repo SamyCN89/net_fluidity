@@ -171,4 +171,5 @@ def main(filter_mode="exclude_shortest"):
     return ts_filtered, cog_data_filtered, metadata_dict
 
 if __name__ == "__main__":
-    ts_filtered, cog_data_filtered, metadata_dict = main(filter_mode=None)
+    # ts_filtered, cog_data_filtered, metadata_dict = main(filter_mode=None)
+    ts_filtered, cog_data_filtered, metadata_dict = main(filter_mode='exclude_shortest')
