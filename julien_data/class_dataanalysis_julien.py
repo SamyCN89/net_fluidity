@@ -23,9 +23,9 @@ class DFCAnalysis:
     def __init__(self, dataset_name='julien_caillette'):
         self.paths = get_paths(
             dataset_name=dataset_name,
-            timecourse_folder='time_courses',
-            cognitive_data_file='mice_groups_comp_index.xlsx',
-            anat_labels_file='all_ROI_coimagine.txt'
+            timecourse_folder='time_courses_2',
+            cognitive_data_file='mice_groups_comp_index_2.xlsx',
+            anat_labels_file='all_ROI_coimagine_2.txt'
         )
 
 
@@ -116,9 +116,9 @@ class DFCAnalysis:
                                            self.time_window_max + 1,
                                            self.time_window_step)
     # 3.2 Load 1 dfc window
-    def load_dfc_1_window(self, lag=1, window=9):
+    def load_dfc_1_window(self, lag=1, window=9, regions=48):
         prefix = 'dfc'
-        self.dfc_file_path = make_file_path(self.paths['dfc'], prefix, window, lag, self.n_animals, self.regions)
+        self.dfc_file_path = make_file_path(self.paths['dfc'], prefix, window, lag, self.n_animals, regions)
         results = load_npz_dict(self.dfc_file_path)
         # print(results.keys())
         self.dfc_stream = results[prefix]

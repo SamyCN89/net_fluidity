@@ -170,69 +170,6 @@ def ts2dfc_stream(ts, window_size, lag=None, format_data='2D', method='pearson')
 #%% #===============================================================================
 # Handler functions for DFC and meta-connectivity
 #===============================================================================
-
-def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='2D', save_path=None, **kwargs):
-    """
-    Unified handler for temporal network analysis (DFC, meta-connectivity, and DFC speed).
-
-    Parameters:
-        ts_data (np.ndarray): 3D array (n_animals, n_regions, n_timepoints).
-        prefix (str): Analysis type - 'dfc', 'mc', or 'dfc_speed'.
-        window_size (int): Sliding window size.
-        lag (int): Step size for the sliding window.
-        format_data (str): '2D' for vectorized, '3D' for matrices.
-        save_path (str): Directory to save results.
-        **kwargs: Additional parameters for DFC speed analysis:
-            - tau (int): Maximum temporal shift for speed computation (default=3)
-            - min_tau_zero (bool): Whether tau range starts at 0 (default=False)
-            - method (str): Correlation method for speed computation (default='pearson')
-
-    Returns:
-        np.ndarray: Results of the analysis (format depends on prefix)
-    """
-
-    logger = logging.getLogger(__name__)
-    n_animals, _, nodes = ts_data.shape
-
-    # Handle DFC speed analysis separately
-    if prefix == 'speed':
-        return _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, nodes, **kwargs)
-
-    # Handle DFC and meta-connectivity analysis
-    # Define the full save path based on parameters and save_path folder
-    file_path = make_file_path(save_path, prefix, window_size, lag, n_animals, nodes)
-    logger.info(f'file path: {file_path}')
-
-    #try loading from cache
-    key = prefix
-    label = prefix 
-    # key = 'dfc_stream' if prefix == 'dfc' else prefix
-    # label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
-    if file_path is not None and file_path.exists():
-        logger.info(f"Loading from cache: {file_path} and key: {key}")
-        try:
-            return load_from_cache(file_path, key=key, label=label)
-        except Exception as e:
-            logger.error(f"Failed to load {label} (reason: {e}). Recomputing...")
-
-    # Computing ...
-    logger.info(f"Computing {prefix} (window_size={window_size}, lag={lag})...")
-    results = np.array([ts2dfc_stream(
-        ts_data[i], window_size, lag, format_data) 
-        for i in tqdm(range(n_animals), desc=f'Computing {label}')])
-
-    results = results.astype(np.float32)  # Convert to float32 for memory efficiency
-    #Save results
-    try:
-        save2disk(file_path, prefix, **{key: results})
-        logger.info(f'Saved results to {file_path} using key as {key}')
-    except Exception as e:
-        logger.error(f'Failed to save results: {e}')
-    return results
-
-
-
-
 def _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, nodes, **kwargs):
     """
     Handle DFC speed analysis within the unified handler.
@@ -314,7 +251,68 @@ def _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, 
     
     return results
 
-def compute4window(ws, ts, prefix, lag, save_path, **kwargs):
+
+def handler_get_tenet(ts_data, prefix, window_size, lag, format_data='2D', save_path=None, load_cache=False, **kwargs):
+    """
+    Unified handler for temporal network analysis (DFC, meta-connectivity, and DFC speed).
+
+    Parameters:
+        ts_data (np.ndarray): 3D array (n_animals, n_regions, n_timepoints).
+        prefix (str): Analysis type - 'dfc', 'mc', or 'dfc_speed'.
+        window_size (int): Sliding window size.
+        lag (int): Step size for the sliding window.
+        format_data (str): '2D' for vectorized, '3D' for matrices.
+        save_path (str): Directory to save results.
+        **kwargs: Additional parameters for DFC speed analysis:
+            - tau (int): Maximum temporal shift for speed computation (default=3)
+            - min_tau_zero (bool): Whether tau range starts at 0 (default=False)
+            - method (str): Correlation method for speed computation (default='pearson')
+
+    Returns:
+        np.ndarray: Results of the analysis (format depends on prefix)
+    """
+
+    logger = logging.getLogger(__name__)
+    n_animals, _, nodes = ts_data.shape
+
+    # Handle DFC speed analysis separately
+    if prefix == 'speed':
+        return _handle_dfc_speed_analysis(ts_data, window_size, lag, save_path, n_animals, nodes, **kwargs)
+
+    # Handle DFC and meta-connectivity analysis
+    # Define the full save path based on parameters and save_path folder
+    file_path = make_file_path(save_path, prefix, window_size, lag, n_animals, nodes)
+    logger.info(f'file path: {file_path}')
+
+    #try loading from cache
+    key = prefix
+    label = prefix 
+    # key = 'dfc_stream' if prefix == 'dfc' else prefix
+    # label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
+    if file_path is not None and file_path.exists():
+        if load_cache==True:
+            logger.info(f"Loading from cache: {file_path} and key: {key}")
+            try:
+                return load_from_cache(file_path, key=key, label=label)
+            except Exception as e:
+                logger.error(f"Failed to load {label} (reason: {e}). Recomputing...")
+
+    # Computing ...
+    logger.info(f"Computing {prefix} (window_size={window_size}, lag={lag})...")
+    results = np.array([ts2dfc_stream(
+        ts_data[i], window_size, lag, format_data) 
+        for i in tqdm(range(n_animals), desc=f'Computing {label}')])
+
+    results = results.astype(np.float32)  # Convert to float32 for memory efficiency
+    #Save results
+    try:
+        save2disk(file_path, prefix, **{key: results})
+        logger.info(f'Saved results to {file_path} using key as {key}')
+    except Exception as e:
+        logger.error(f'Failed to save results: {e}')
+    return results
+
+def compute4window(ws, ts, prefix, lag, save_path, load_cache, **kwargs):
     """
     Compute the analysis for a single window size.
     Supports 'dfc', 'mc', and 'dfc_speed' prefixes.
@@ -331,6 +329,7 @@ def compute4window(ws, ts, prefix, lag, save_path, **kwargs):
             window_size=ws,
             lag=lag,
             save_path=save_path,
+            load_cache=load_cache,  # Load from cache if available
             **kwargs
         )
         
@@ -347,6 +346,7 @@ def get_tenet4window_range(
     lag: int,
     n_animals: int,
     regions: list,
+    load_cache: bool = True,
     processors: int = -1,
     **kwargs
 ) -> None:
@@ -388,7 +388,7 @@ def get_tenet4window_range(
         # Parallel computation over all window sizes
         start = time.time()
         Parallel(n_jobs=min(processors, len(time_window_range)))(
-            delayed(compute4window)(ws, ts, prefix, lag, save_path, **kwargs) 
+            delayed(compute4window)(ws, ts, prefix, lag, save_path, load_cache, **kwargs) 
             for ws in tqdm(time_window_range, desc=f'Window sizes')
         )
         logging.info(f'{prefix} computation time {time.time()-start:.2f} seconds')
@@ -402,7 +402,7 @@ def get_tenet4window_range(
             logging.warning(f"Missing files detected for {prefix}: {missing_files}")
             missing_window_range = list(missing_files)
             Parallel(n_jobs=min(processors, len(missing_window_range)))(
-                delayed(compute4window)(ws, ts, prefix, lag, save_path, **kwargs) 
+                delayed(compute4window)(ws, ts, prefix, lag, save_path, load_cache, **kwargs) 
                 for ws in missing_window_range
             )
     except Exception as e:
@@ -538,7 +538,7 @@ def dfc_speed(dfc_stream,
     if vstep >= n_frames:
         raise ValueError(f"vstep ({vstep}) must be less than number of frames ({n_frames})")
     
-    indices = np.arange(0, n_frames - vstep, vstep)
+    indices = np.arange(0, n_frames - vstep, 1)
     n_speeds = len(indices)-1
     n_pairs = fc_stream.shape[0]
     
@@ -548,7 +548,7 @@ def dfc_speed(dfc_stream,
     
     # Extract FC matrices for vectorized computation
     fc1_matrices = fc_stream[:, indices[:-1]]  # Shape: (n_pairs, n_speeds)
-    fc2_matrices = fc_stream[:, indices[1:]]   # Shape: (n_pairs, n_speeds)
+    fc2_matrices = fc_stream[:, indices[1:]+vstep-1]   # Shape: (n_pairs, n_speeds)
     
     if return_fc2:
         fc2_stream = np.empty((n_pairs, n_speeds))
@@ -817,4 +817,26 @@ wpool_impaired = get_population_wpooling
 
 
 #%%
-        
+def check_and_rerun_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, processors=1):
+    """
+    Check for missing prefix files and compute them if necessary.
+    Args:
+        paths (dict): Dictionary containing paths for different data types.
+        prefix (str): Prefix of the files to check. 'dfc' for DFC stream files, 'mc' for meta-connectivity files.
+        time_window_range (np.ndarray): Array of time window sizes to check.
+        lag (int): Lag parameter for DFC computation.
+        n_animals (int): Number of animals in the dataset.
+        roi (str): Region of interest for DFC computation.
+    Returns:
+        missing_files (list): List of time window sizes for which files are missing or invalid.
+    """
+    # from shared_code.fun_dfcspeeZ>d import compute4window
+    missing_files = get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi)
+    # if not missing_files:
+    #     print(f"All {prefix} files already exist.")
+    # else:
+    #     print(f"Missing {prefix} files for window sizes:", missing_files)
+    #     Parallel(n_jobs=min(processors, len(missing_files)))(
+    #         delayed(compute4window)(ws, prefix) for ws in missing_files
+    #     )
+    return missing_files

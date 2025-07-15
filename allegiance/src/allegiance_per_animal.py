@@ -91,7 +91,8 @@ tol_bright = ["#BBBBBB",
 n_categories = int(dfc_communities_sorted.max() + 1)
 cmap = ListedColormap(tol_bright[:n_categories])
 #%%
-for animal in range(n_animals):
+# for animal in range(n_animals):
+for animal in range(2):
     #plot one dfc_communities_sorted matrix
     plt.figure(figsize=(10, 8))
     plt.subplot(1, 1, 1)
@@ -121,12 +122,12 @@ temporal_aggregation_mat = np.sum(contingency_matrices, axis=1) /n_windows   # A
 
 #Plot the allegiance matrix
 plt.figure(figsize=(10, 8))
-plt.imshow(temporal_aggregation_mat[0], aspect='auto', interpolation='none', cmap=cmap)
+plt.imshow(temporal_aggregation_mat[0], aspect='auto', interpolation='none', cmap='Set1')
 plt.colorbar()
-plt.title("Co-assignment Aggregation Matrix")
+plt.title("Temporal Aggregation Matrix")
 plt.ylabel("Regions")
 plt.xlabel("Regions")
-plt.clim(0,0.5)
+# plt.clim(0,0.5)
 plt.show()
 
 #%%
@@ -143,7 +144,7 @@ for animal in tqdm(range(n_animals), desc="Animals"):
     q_values = []
     # agreement_matrix: n_nodes x n_nodes, values in [0,1]
     results = Parallel(n_jobs=6)(  
-        delayed(bct.modularity.modularity_louvain_und_sign)(temporal_aggregation_mat[animal], gamma=1.2)
+        delayed(bct.modularity.modularity_louvain_und_sign)(temporal_aggregation_mat[animal], gamma=1)
         for _ in range(_runs)
         )
     
@@ -154,17 +155,18 @@ for animal in tqdm(range(n_animals), desc="Animals"):
     # ...and then cluster *that* matrix to get final consensus.
 
     # Build consensus agreement matrix from these partitions...
-    temporal_agreement_matrix[animal] = build_agreement_matrix_vectorized(np.array(partitions))
-temporal_agreement_matrix = temporal_agreement_matrix / _runs  # Normalize the agreement matrix by the number of runs
+    temporal_agreement_matrix[animal] = build_agreement_matrix_vectorized(np.array(partitions))/ _runs
+# temporal_agreement_matrix = temporal_agreement_matrix / _runs  # Normalize the agreement matrix by the number of runs
 stop_time = time.time()
 print(f"Time taken for consensus clustering: {stop_time - start_time} seconds /n {n_animals} animals")
 #%%
-for animal in range(n_animals):
+# for animal in range(n_animals):
+for animal in range(2):
     #plot one dfc_communities_sorted matrix
     plt.figure(figsize=(10, 8))
     plt.subplot(1, 1, 1)
     plt.clf()
-    # plt.title("Community label - Animal 0, Window 0")
+    plt.title(f"Temporal agreement matrix - Animal {animal}")
     # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
     # aux_argsort = np.argsort(dfc_communities_sorted)
     plt.imshow(temporal_agreement_matrix[animal].T, aspect='auto', interpolation='none', cmap=cmap)
@@ -174,22 +176,26 @@ for animal in range(n_animals):
     plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
     plt.ylabel("Regions")
     plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
-    plt.title(f"Consensus Clustering - Animal {animal}")
+    # plt.title(f"Consensus Clustering - Animal {animal}")
     plt.savefig(paths['f_mod'] / f"dfc_temp_agreement_per_animal_{animal}.png", dpi=300, bbox_inches='tight')
     plt.show()
 #%%
 # # Compute Pearson correlation between the agreement matrix and the temporal aggregation matrix
 # pearson_val =pearsonr(temporal_agreement_matrix.flatten(), temporal_aggregation_mat[animal].flatten())
-
+#   # Compute Pearson correlation between the agreement matrix and the temporal aggregation matrix
+# pearson_val = pearsonr(temporal_agreement_matrix.flatten(), temporal_aggregation_mat[animal].flatten())
+#   # Compute Pearson correlation between the agreement matrix and the temporal aggregation matrix
+# pearson_val = pearsonr(temporal_agreement_matrix.flatten(), temporal_aggregation_mat[animal].flatten())
 # temporal_agreement_matrix: n_nodes x n_nodes, values in [0,1]
 results = Parallel(n_jobs=6)(  
-    delayed(bct.modularity.modularity_louvain_und_sign)(temporal_agreement_matrix[animal], gamma=1.2)
+    delayed(bct.modularity.modularity_louvain_und_sign)(temporal_agreement_matrix[animal], gamma=1)
     for animal in range(n_animals)
     )
 
-for partition, q in results:
-    partitions.append(partition)
-    q_values.append(q)
+community_agreement_labels, q_values = zip(*results)
+# for partition, q in results:
+#     partitions.append(partition)
+#     q_values.append(q)
 
 
 #%%
@@ -238,11 +244,11 @@ def align_community_labels(communities):
     return aligned_communities
 
 # Align community labels across all windows
-aligned_communities = align_community_labels(dfc_communities_sorted[0].astype(int))
+aligned_communities_temporal = align_community_labels(dfc_communities_sorted[0].astype(int))
 #%%
 # Plot the aligned communities for one animal
 plt.figure(figsize=(10, 8))
-plt.imshow(aligned_communities.T, aspect='auto', interpolation='none', cmap=cmap)
+plt.imshow(aligned_communities_temporal.T, aspect='auto', interpolation='none', cmap=cmap)
 plt.colorbar()
 plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
 plt.ylabel("Regions")
@@ -259,7 +265,7 @@ plt.show()
 from scipy.optimize import linear_sum_assignment
 
 
-reference = aligned_communities[0]  # Use the first window as reference
+reference = community_agreement_labels[0]  # Use the first window as reference
 
 def align_partition_to_reference(partition, reference):
     
@@ -281,7 +287,7 @@ def align_partition_to_reference(partition, reference):
 aligned_partitions = np.zeros_like(dfc_communities_sorted)
 for animal in tqdm(range(n_animals)):
     partitions = dfc_communities_sorted[animal].astype(int)  # Use the current animal's communities as partitions
-    reference = aligned_communities[animal]  # Use the current animal's first window as reference
+    reference = community_agreement_labels[animal]  # Use the current animal's first window as reference
 
     aligned_partitions[animal] = align_partition_to_reference(partitions, reference)
 
@@ -300,97 +306,11 @@ plt.show()
 
 
 for animal in range(n_animals):
-    print(np.unique(aligned_partitions[animal]), np.unique(dfc_communities_sorted[animal]))
+    print(np.unique(community_agreement_labels[animal]), np.unique(dfc_communities_sorted[animal]))
 #%%
 
-#Tester for consensus clustering with varying number of runs
 
 
-
-
-n_consensus_runs = np.logspace(np.log10(10), np.log10(1000), num=10)
-times2 = []  # Store time taken for each consensus run
-n_runs_tester2 = []  # Store results for different n_consensus_runs
-for _runs_c in tqdm(n_consensus_runs, desc="Consensus Runs"):
-    times = []    # Store time taken for each consensus run
-    n_runs_tester = []
-    for i in range(10):
-        _runs_c = int(_runs_c)  # Ensure _runs_c is an integer
-        # agreement_matrix: n_nodes x n_nodes, values in [0,1]
-        start_time = time.time()
-
-        # Run Louvain algorithm multiple times to get consensus partitions
-        partitions = []
-        q_values = []
-        results = Parallel(n_jobs=6)(  
-            delayed(bct.modularity.modularity_louvain_und_sign)(temporal_aggregation_mat[0], gamma=1.2)
-            for _ in tqdm(range(_runs_c), desc=f"Running Louvain for {_runs_c} times")
-        )
-        for partition, q in results:
-            partitions.append(partition)
-            q_values.append(q)
-        # print(f"Average modularity (Q): {np.mean(q_values)}")
-        # ...and then cluster *that* matrix to get final consensus.
-
-        # Build consensus agreement matrix from these partitions...
-        agreement_matrix = build_agreement_matrix_vectorized(np.array(partitions))
-
-        # Compute Pearson correlation between the agreement matrix and the temporal aggregation matrix
-        pearson_val =pearsonr(agreement_matrix.flatten(), temporal_aggregation_mat[0].flatten())
-        # print(f"Pearson correlation: {pearson_val[0]}")
-        stop_time = time.time()
-        print(f"Time taken for consensus clustering: {stop_time - start_time} seconds")
-        n_runs_tester.append(pearson_val[0])
-        times.append(stop_time - start_time)  # Store the current number of consensus runs 
-    n_runs_tester2.append(np.stack(n_runs_tester))
-    times2.append(np.array(times))
-n_runs_tester2 = np.array(n_runs_tester2)
-# Convert times2 to a numpy array for easier manipulation
-times2 = np.array(times2)
-#%%
-#plot n_runs_tester2 against n_consensus_runs. 
-# Each value of n_runs_tester2 is a list of 10 values, one for each run
-plt.figure(figsize=(10, 8))
-for i in range(len(n_runs_tester2)):
-    # Plot each run's results
-    plt.plot(n_consensus_runs[:3], n_runs_tester2[i], marker='o', label=f'Run {i+1}')
-    # plt.plot(n_consensus_runs[:2], n_runs_tester2[i], marker='o', label=f'Run {i+1}')
-plt.xscale('log')
-plt.xlabel("Number of Consensus Runs")
-plt.ylabel("Pearson Correlation")
-plt.title("Effect of Consensus Runs on Pearson Correlation")
-plt.grid(True)
-plt.show()
-
-#%%
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Convert to numpy arrays for convenience
-n_runs_tester2 = np.array(n_runs_tester2)
-n_consensus_runs = np.array(n_consensus_runs)
-
-mean_corr = np.mean(n_runs_tester2, axis=1)
-std_corr = np.std(n_runs_tester2, axis=1)
-
-mean_time = np.mean(times2, axis=1)
-std_time = np.std(times2, axis=1)
-
-# Plot the mean and standard deviation of Pearson correlation across runs
-plt.figure(figsize=(10, 8))
-plt.plot(n_consensus_runs, mean_corr, marker='o', label='Mean across runs')
-plt.fill_between(n_consensus_runs, mean_corr-std_corr, mean_corr+std_corr, alpha=0.2, label='Std deviation')
-plt.plot(n_consensus_runs, mean_time, marker='x', color='red', label='Mean Time Taken')
-plt.fill_between(n_consensus_runs, mean_time-std_time, mean_time+std_time, color='red', alpha=0.2, label='Std Time Taken')
-
-plt.xscale('log')
-plt.xlabel("Number of Consensus Runs")
-plt.ylabel("Pearson Correlation")
-plt.title("Effect of Consensus Runs on Pearson Correlation")
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
 
 
 

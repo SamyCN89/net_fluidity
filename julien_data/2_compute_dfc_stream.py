@@ -10,6 +10,7 @@ Created on Mon Oct  2 14:42:38 2023
 #%%
 from os import path
 from pathlib import Path
+import comm
 import numpy as np
 import pandas as pd
 from shared_code.fun_loaddata import *
@@ -82,23 +83,43 @@ print(f"400-timepoint animals: {ts_400_3d.shape}")
 print(f"\ndFC parameters: lag={data.lag}, tau={data.tau}, window_range={data.time_window_range[0]}-{data.time_window_range[-1]}")
 
 #%% Compute dFC
+
+load_cache_bool = False  # Set to True if you want to load cached results
+
 # Option 1: Process all animals together (with padding)
 print(f"\nProcessing all {all_animals_3d.shape[0]} animals together...")
 get_tenet4window_range(all_animals_3d, data.time_window_range, prefix='dfc', 
                       paths=paths, lag=data.lag, n_animals=all_animals_3d.shape[0], 
-                      regions=regions, processors=processors)
+                      regions=regions, processors=processors, load_cache=load_cache_bool)
 
 # Option 2: Process groups separately (uncomment if you prefer this approach)
 print(f"\nProcessing {ts_500_3d.shape[0]} animals with 500 timepoints...")
 get_tenet4window_range(ts_500_3d, data.time_window_range, prefix='dfc', 
                       paths=paths, lag=data.lag, n_animals=ts_500_3d.shape[0], 
-                      regions=regions, processors=processors)
+                      regions=regions, processors=processors, load_cache=load_cache_bool)
 # 
 print(f"\nProcessing {ts_400_3d.shape[0]} animals with 400 timepoints...")
 get_tenet4window_range(ts_400_3d, data.time_window_range, prefix='dfc', 
                       paths=paths, lag=data.lag, n_animals=ts_400_3d.shape[0], 
-                      regions=regions, processors=processors)
+                      regions=regions, processors=processors, load_cache=load_cache_bool)
 
 print("\nDFC computation completed!")
 
+# %%
+load_cache_bool = False  # Set to True if you want to load cached results
+processors = -1  # Use all available processors
+with open(Path(data.paths['allegiance']) / 'communities_wt_veh.pkl', 'rb') as f:
+    communities = pickle.load(f)
+
+for i, c in enumerate(np.unique(communities)):
+    print(f"Animal {i}: Community {c}")
+    ts_500_3d_mod1 = ts_500_3d[:,:,communities==c]
+    regions_mod1 = np.sum(communities==c)
+
+
+    # Option 2: Process groups separately (uncomment if you prefer this approach)
+    print(f"\nProcessing {ts_500_3d_mod1.shape[0]} animals with 500 timepoints...")
+    get_tenet4window_range(ts_500_3d_mod1, data.time_window_range, prefix='dfc', 
+                        paths=paths, lag=data.lag, n_animals=ts_500_3d_mod1.shape[0], 
+                        regions=regions_mod1, processors=processors, load_cache=load_cache_bool)
 # %%

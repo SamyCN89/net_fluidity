@@ -240,7 +240,7 @@ def build_agreement_matrix_vectorized(communities):
     return agreement.astype(np.float32)
 #%%
 
-def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, cache_path=None, ref_name='', n_jobs=-1):
+def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, cache_path=None, ref_name='', n_jobs=-1, return_='normal'):
     """
     Compute or load a contingency matrix from community detection runs using joblib and vectorized agreement matrix.
     """
@@ -281,12 +281,14 @@ def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, 
     contingency_matrix = np.zeros((n_nodes, n_nodes), dtype=np.float32)
     gamma_qmod_val = np.zeros((gamma_range, n_runs), dtype=np.float32)
     gamma_agreement_mat = np.zeros((gamma_range, n_nodes, n_nodes), dtype=np.float32)
+    communities_mat = np.zeros((gamma_range, n_runs, n_nodes), dtype=np.float32)
 
     # Process per gamma
     for idx, gamma in enumerate(tqdm(gamma_mod, desc="Processing gammas")):
         results = results_by_gamma[idx]
         communities, modularities = zip(*results)
         communities = np.array(communities, dtype=np.int32)
+        communities_mat[idx] = communities
         gamma_qmod_val[idx] = modularities
 
         # Build agreement matrix
@@ -301,8 +303,10 @@ def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, 
         with full_cache_path.open('wb') as f:
             pickle.dump((contingency_matrix, gamma_qmod_val, gamma_agreement_mat), f)
             print(f"[cache] Saved to {full_cache_path}")
-
-    return contingency_matrix, gamma_qmod_val, gamma_agreement_mat
+    if return_=='normal':
+        return contingency_matrix, gamma_qmod_val, gamma_agreement_mat
+    elif return_=='community':
+        return contingency_matrix, gamma_qmod_val, gamma_agreement_mat, communities_mat
 
 #%%
 def allegiance_matrix_analysis(mc_data, n_runs=100, gamma_pt=10, cache_path=None, ref_name='', n_jobs=-1):

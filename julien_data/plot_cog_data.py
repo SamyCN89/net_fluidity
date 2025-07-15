@@ -3,6 +3,8 @@
 #%%
 from os import path
 from pathlib import Path
+from tkinter import font
+from matplotlib.pylab import f
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -44,6 +46,7 @@ print(grouped)
 # Violinplot of the NOR index by genotype and treatment
 
 plt.figure(1, figsize=(8, 6))
+# violinplot with split by treatment
 ax =sns.violinplot(
     data=cog_data_filtered,
     x='genotype',
@@ -54,11 +57,10 @@ ax =sns.violinplot(
     linewidth=1.2,
     palette='pastel'
 )
-plt.title('NOR values by Genotype, split by Treatment')
-plt.ylabel('NOR')
-plt.xlabel('Genotype')
-plt.legend(title='Treatment')
-plt.tight_layout()
+
+# plt.title('NOR values by Genotype, split by Treatment')
+# plt.legend(title='Treatment', fontsize=20)
+# plt.tight_layout()
 
 sns.stripplot(
     data=cog_data_filtered,
@@ -67,15 +69,19 @@ sns.stripplot(
     hue='treatment',
     dodge=True,
     color='k',
-    alpha=0.4,
+    alpha=0.7,
     linewidth=0
 )
 handles, labels = plt.gca().get_legend_handles_labels()
 n = len(set(cog_data_filtered['treatment']))
-plt.legend(handles[:n], labels[:n], title='Treatment')
+plt.legend(handles[:n], labels[:n], 
+           title='Treatment', 
+           fontsize=11, 
+           title_fontsize=12,)
 
-plt.savefig(paths['f_cog'] / 'NOR' / 'cog_data_violinplot.png', dpi=300, bbox_inches='tight') if savefig else None
-plt.savefig(paths['f_cog'] / 'NOR' / 'cog_data_violinplot.pdf', dpi=300, bbox_inches='tight') if savefig else None
+# plt.savefig(paths['f_cog'] / 'NOR' / 'cog_data_violinplot.png', dpi=300, bbox_inches='tight') if savefig else None
+# plt.savefig(paths['f_cog'] / 'NOR' / 'cog_data_violinplot.pdf', dpi=300, bbox_inches='tight') if savefig else None
+
 
 # === Statistical annotation code goes here! ===
 
@@ -108,8 +114,15 @@ annotator.apply_and_annotate()
 # === End of statistical annotation code ===
 
 
-plt.title('NOR values by Genotype and Treatment\n(Mann-Whitney U test, p-values < 0.05)')
+plt.title('NOR values by Genotype and Treatment\n(Mann-Whitney U test, p-values < 0.05)',
+          fontsize=15)
+plt.ylabel('NOR score')
+plt.xlabel('Genotype')
+ax.tick_params(axis='x', labelsize=14)  # Set x-axis tick label size
+ax.set_yticks([0, 0.5, 1])  # Set y-axis ticks and label size
+ax.set_yticklabels(['0', '0.5', '1'], fontsize=14)  # Set y-axis tick labels and size
 plt.tight_layout()
+
 plt.savefig(paths['f_cog'] / 'NOR' / 'cog_data_violinplot_Mann_Whitney.png', dpi=300, bbox_inches='tight') if savefig else None
 plt.savefig(paths['f_cog'] / 'NOR' / 'cog_data_violinplot_Mann_Whitney.pdf', dpi=300, bbox_inches='tight') if savefig else None
 

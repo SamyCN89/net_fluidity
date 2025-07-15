@@ -129,6 +129,26 @@ sexe = cog_data_filtered['Sexe']
 phenotype_oip = cog_data_filtered['Phenotype_OiP']
 phenotype_nor = cog_data_filtered['Phenotype_RO24h']
 
+#%%
+cog_data_filtered['group_NOR'] = (
+    cog_data_filtered['Genotype'].astype(str) + '_' +
+    cog_data_filtered['Sexe'].astype(str) + '_' +
+    cog_data_filtered['Phenotype_RO24h'].astype(str)
+)
+
+groups_sex_geno = cog_data_filtered.groupby(['Sexe', 'Genotype']).groups
+groups_sex_pheno_oip = cog_data_filtered.groupby(['Sexe', 'Phenotype_OiP']).groups
+groups_sex_pheno_nor = cog_data_filtered.groupby(['Sexe', 'Phenotype_RO24h']).groups
+
+
+# grouped_means = cog_data_filtered.groupby('group_NOR').mean(numeric_only=True)
+# grouped_means = cog_data_filtered.groupby(['Genotype', 'Sexe', 'Phenotype_RO24h']).mean(numeric_only=True)
+
+# group_nor_dummies = pd.get_dummies(cog_data_filtered['group_NOR'], prefix='group_NOR')
+# cog_data_filtered = pd.concat([cog_data_filtered, group_nor_dummies], axis=1)
+
+
+#%%
 group_phenotype_oip = (phenotype_oip=='good', phenotype_oip=='impaired', phenotype_oip=='learners', phenotype_oip=='bad')
 prelab_phenotype_oip = ('Good', 'Impaired', 'Learners', 'Bad')
 
@@ -209,13 +229,16 @@ with open(paths['preprocessed'] / "grouping_data_oip.pkl", "wb") as f:
 with open(paths['preprocessed'] / "grouping_data_per_sex(gen_phen).pkl", "wb") as f:
     pickle.dump((mask_groups_per_sex, label_variables_per_sex), f)
 
+with open(paths['preprocessed'] / "grouping_data_new.pkl", "wb") as f:
+    pickle.dump((groups_sex_geno, groups_sex_pheno_oip, groups_sex_pheno_nor), f)
+
 #%% Load pre-process data
 # =============================================================================
 # # Load result
 # =============================================================================
 
-cog_data_filtered = pd.read_csv(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
-data_ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz')
+cog_data_filtered = pd.read_csv(paths['preprocessed'] / 'cog_data_sorted_2m4m.csv')
+data_ts = np.load(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
 
 ts=data_ts['ts']
 n_animals = data_ts['n_animals']
@@ -225,8 +248,10 @@ is_2month_old = data_ts['is_2month_old']
 anat_labels= data_ts['anat_labels']
 
 #Load groups 
-with open(paths['sorted'] / "grouping_data_oip.pkl", "rb") as f:
+with open(paths['preprocessed'] / "grouping_data_oip.pkl", "rb") as f:
     mask_groups, label_variables = pickle.load(f)
-with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
+with open(paths['preprocessed'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
     mask_groups_per_sex, label_variables_per_sex = pickle.load(f)
+with open(paths['preprocessed'] / "grouping_data_new.pkl", "rb") as f:
+    groups_sex_geno, groups_sex_pheno_oip, groups_sex_pheno_nor = pickle.load(f)
 # %%

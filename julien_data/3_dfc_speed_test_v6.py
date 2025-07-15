@@ -31,7 +31,7 @@ def dfc_speed_split(dfc_stream,
             tau_range=0,
             method='pearson', 
             return_fc2=False,
-            tril_indices=None,
+            triu_indices=None,
             time_offset=0,
             ):
     """
@@ -96,11 +96,11 @@ def dfc_speed_split(dfc_stream,
         n_frames = dfc_stream.shape[2]
         
         # Generate triangular indices if not provided
-        if tril_indices is None:
-            tril_indices = np.tril_indices(n_rois, k=-1)
-        
-        # Extract lower triangular values efficiently
-        fc_stream = dfc_stream[tril_indices[0], tril_indices[1], :]
+        if triu_indices is None:
+            triu_indices = np.triu_indices(n_rois, k=1)
+
+        # Extract upper triangular values efficiently
+        fc_stream = dfc_stream[triu_indices[0], triu_indices[1], :]
     else:
         # 2D input: (n_pairs, n_frames)
         fc_stream = dfc_stream
@@ -114,15 +114,16 @@ def dfc_speed_split(dfc_stream,
     fc2_indices = []    
 
     indices_max = n_frames - (vstep + np.max(tau) + time_offset) 
-    indices = np.arange(0, indices_max, vstep)
+    indices = np.arange(0, indices_max, 1)
     if np.size(tau_range) > 1:
         for tau_aux in tau_range:
             fc1_indices.append(indices[:-1])  # Indices for the first FC matrix
-            fc2_indices.append(indices[1:]+tau_aux+time_offset)   # Indices for the second FC matrix
+            fc2_indices.append(indices[1:]+tau_aux+time_offset+vstep-1)   # Indices for the second FC matrix
+            print(indices[:-1], indices[1:]+tau_aux+time_offset+vstep-1)
     else:
         tau_aux = tau_range
         fc1_indices.append(indices[:-1])
-        fc2_indices.append(indices[1:]+tau_aux+time_offset)   # Indices for the second FC matrix
+        fc2_indices.append(indices[1:]+tau_aux+time_offset+vstep-1)   # Indices for the second FC matrix
 
     n_speeds = (len(indices)-1) * np.size(tau_range)
     n_pairs = fc_stream.shape[0]
@@ -132,12 +133,12 @@ def dfc_speed_split(dfc_stream,
     fc2_stream = None
     
     # Extract FC matrices for vectorized computation
-    fc1_matrices = fc_stream[:, np.array(fc1_indices).T.flatten()]  # Shape: (n_pairs, n_speeds)
-    fc2_matrices = fc_stream[:, np.array(fc2_indices).T.flatten()]  # Shape: (n_pairs, n_speeds)
+    fc1_matrices = fc_stream[:, np.array(fc1_indices).flatten()]  # Shape: (n_pairs, n_speeds)
+    fc2_matrices = fc_stream[:, np.array(fc2_indices).flatten()]  # Shape: (n_pairs, n_speeds)
     if return_fc2:
         fc2_stream_indices = np.empty(n_speeds, dtype=int)  # Pre-allocate for second FC matrix indices
         # fc2_stream[:, :] = fc2_matrices
-        fc2_stream_indices[:] = (np.array(fc2_indices).T.flatten()).astype(int)
+        fc2_stream_indices[:] = (np.array(fc2_indices).flatten()).astype(int)
         return fc2_stream_indices
 
     # Use optimized speed computation functions for maximum performance
@@ -170,15 +171,15 @@ def run_dfc_speed_analysis(data, time_window_range, tau_range, lag, save_path, n
 
 
     # for ws_idx, window_size in tqdm(enumerate(time_window_range), desc=f"Processing animals for window_size "):
-    def process_window(window_size):
+    def process_window(window_size, regions):
         # Loads one window size of DFC data
-        dfc_stream= data.load_dfc_1_window(lag=lag, window=window_size)
+        dfc_stream= data.load_dfc_1_window(lag=lag, window=window_size, regions=regions)    # Specify regions here  
         # dfc_stream = data.dfc_stream
         logging.getLogger(__name__).info(f"Loaded DFC stream shape: {dfc_stream.shape}")
 
         #Generate the file name for the current window size data
         window_file = save_path / (
-            f"{prefix}_{'fc_' if return_fc2 else ''}win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}.npz"
+            f"{prefix}_{'fc_' if return_fc2 else ''}win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{data.regions}.npz"
         )
 
         # Initialize lists to store results for each animal
@@ -198,7 +199,7 @@ def run_dfc_speed_analysis(data, time_window_range, tau_range, lag, save_path, n
                     logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed FC2")
                 else:
                     speeds = dfc_speed_split(
-                        dfc_stream[animal_idx], vstep=1, tau_range=tau_range, method=method, return_fc2=return_fc2, time_offset=window_size
+                        dfc_stream[animal_idx], vstep=int(window_size), tau_range=tau_range, method=method, return_fc2=return_fc2, time_offset=window_size
                     )
                     results.append(speeds)
                     logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed speeds")
@@ -223,7 +224,7 @@ def run_dfc_speed_analysis(data, time_window_range, tau_range, lag, save_path, n
 
     # Use Parallel to handle multiple windows in parallel
     Parallel(n_jobs=processors, verbose=1)(
-        delayed(process_window)(ws)
+        delayed(process_window)(ws, nodes)
     for ws in tqdm(time_window_range, desc=f"Processing windows for ...")
     )
 
@@ -254,7 +255,7 @@ tau_range = np.arange(0, tau + 1) if min_tau_zero else np.arange(-tau, tau + 1)
 time_window_range = data.time_window_range
 
 prefix = 'speed'  # Prefix for the DFC speed results
-data.load_dfc_1_window(lag=data.lag, window=data.time_window_range[0])
+data.load_dfc_1_window(lag=data.lag, window=data.time_window_range[0], regions=data.regions)  # Load one window size of DFC data
 # dfc_stream = data.dfc_stream
 # Example usage for fc2
 # if return_fc2:
@@ -315,7 +316,9 @@ window_file_total = save_path / f"{prefix}_windows{len(time_window_range)}_tau{n
 save_pickle(save_speed, window_file_total)
 # with open(window_file_total, 'wb') as f:
 #     pickle.dump(save_speed, f)
-
+#Load the speed results
+with open(window_file_total, 'rb') as f:
+    save_speed = pickle.load(f)
 # %%
 # Load fc2 results per window
 total_fc2 = []
@@ -330,4 +333,59 @@ for window_size in time_window_range:
 # Save the total fc2 results across all windows, tau and animals
 window_file_total = save_path / f"{prefix}_fc_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.npz"
 np.savez(window_file_total, fc2=np.array(total_fc2, dtype=object), allow_pickle=True)
+
 # %%
+
+
+
+with open(Path(data.paths['allegiance']) / 'communities_wt_veh.pkl', 'rb') as f:
+    communities = pickle.load(f)
+
+for i, c in enumerate(np.unique(communities)):
+    regions_mod1 = np.sum(communities==c)
+
+    data.regions = regions_mod1
+    analysis_kwargs = {
+    'method': 'pearson',
+    'prefix': prefix,  # Prefix for the DFC speed results
+    'return_fc2': False,  # Set to True if you want to return the second FC matrix
+}
+    run_dfc_speed_analysis(data, 
+                            time_window_range, 
+                            tau_range, 
+                            lag, 
+                            save_path, 
+                            n_animals, 
+                            regions_mod1, 
+                            load_cache=False, 
+                            processors=processors,
+                            **analysis_kwargs)
+    save_speed = []
+    # Load the speed results for each window size
+    for idx, window_size in enumerate(time_window_range):
+        window_file = save_path / f"{prefix}_win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions_mod1}.npz"
+
+        with np.load(window_file, allow_pickle=True) as arr:
+            if 'speeds' in arr:
+                load_speed = arr['speeds']
+                logger.info("Keys in file:", arr.files)
+            else:
+                logger.warning(f"Warning: 'speeds' not found in {window_file}, available: {arr.files}")
+                continue
+        save_speed.append(load_speed)
+
+    # Save the total speed results across all windows, tau and animals
+    window_file_total = save_path / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions_mod1}.pkl"
+    save_pickle(save_speed, window_file_total)
+    #Load the speed results
+    with open(window_file_total, 'wb') as f:
+        pickle.dump(save_speed, f)
+# Save the total speed results across all windows, tau and animals
+# Save the total speed results across all windows, tau and animals
+        
+
+
+# %%
+#Load results per window speed
+save_speed = []
+# Load the speed results for each window size

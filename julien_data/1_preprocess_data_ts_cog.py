@@ -27,9 +27,9 @@ import matplotlib.pyplot as plt
 # ------------------------Configuration------------------------
 
 paths = get_paths(dataset_name='julien_caillette', 
-                  timecourse_folder='time_courses',
-                  cognitive_data_file='mice_groups_comp_index.xlsx',
-                  anat_labels_file='all_ROI_coimagine.txt',)
+                  timecourse_folder='time_courses_2',
+                  cognitive_data_file='mice_groups_comp_index_2.xlsx',
+                  anat_labels_file='all_ROI_coimagine_2.txt',)
 
 # %%
 # -----------------------------------------------------------------------------
@@ -166,6 +166,7 @@ def main(filter_mode="exclude_shortest"):
                                 anat_labels = region_labels_clean)
         print(f"Saved: ts_filtered_animals_{n_animals}_regions_{regions}_tr_{total_tr}.npz")
 
+    # Save cognitive data
     cog_data_filtered.to_csv(paths['preprocessed'] / f"cog_data_filtered_animals_{n_animals}_regions_{regions}_tr_{total_tr}.csv", index=False)
     print(f"Saved: cog_data_filtered_animals_{n_animals}_regions_{regions}_tr_{total_tr}.csv")
     return ts_filtered, cog_data_filtered, metadata_dict

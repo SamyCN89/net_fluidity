@@ -248,28 +248,7 @@ def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, siz
                 missing_files.append(ws)
     return missing_files
 
-def check_and_rerun_missing_files(paths, prefix, time_window_range, lag, n_animals, roi):
-    """
-    Check for missing prefix files and compute them if necessary.
-    Args:
-        paths (dict): Dictionary containing paths for different data types.
-        prefix (str): Prefix of the files to check. 'dfc' for DFC stream files, 'mc' for meta-connectivity files.
-        time_window_range (np.ndarray): Array of time window sizes to check.
-        lag (int): Lag parameter for DFC computation.
-        n_animals (int): Number of animals in the dataset.
-        roi (str): Region of interest for DFC computation.
-    Returns:
-        missing_files (list): List of time window sizes for which files are missing or invalid.
-    """
-    missing_files = get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi)
-    if not missing_files:
-        print(f"All {prefix} files already exist.")
-    else:
-        print(f"Missing {prefix} files for window sizes:", missing_files)
-        Parallel(n_jobs=min(PROCESSORS, len(missing_files)))(
-            delayed(compute4window_new)(ws, prefix) for ws in missing_files
-        )
-    return missing_files
+
 
 
 #%%
