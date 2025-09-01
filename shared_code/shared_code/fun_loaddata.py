@@ -20,10 +20,12 @@ import re
 import logging
 from typing import Any, Union
 import pickle
+
 # from .fun_dfcspeed import compute4window_new
 
-#%%
+# %%
 # -------- Utility functions for loading and saving raw data --------
+
 
 def load_mat_timeseries(folder: Path, verbose: bool = False) -> tuple:
     """
@@ -49,7 +51,7 @@ def load_mat_timeseries(folder: Path, verbose: bool = False) -> tuple:
     ts_list, shapes, names = [], [], []
     for fname in mat_files:
         try:
-            data = loadmat(folder / fname)['tc']
+            data = loadmat(folder / fname)["tc"]
             ts_list.append(data)
             shapes.append(data.shape)
             names.append(fname)
@@ -59,7 +61,10 @@ def load_mat_timeseries(folder: Path, verbose: bool = False) -> tuple:
         except Exception as e:
             print(f"Error loading {fname}: {e}")
     return ts_list, shapes, names
+
+
 # Load julien time series data from .mat files
+
 
 def extract_mouse_ids(filenames: list) -> list:
     """Extract mouse IDs from filenames.
@@ -79,41 +84,50 @@ def extract_mouse_ids(filenames: list) -> list:
             print(f"Warning: No match for {name}")
     return cleaned
 
+
 # =============================================================================
 # Save data functions
 # =============================================================================
 def save_pickle(obj: Any, path: Union[str, Path]) -> None:
     """Save a Python object to a file using pickle."""
     path = Path(path)  # always use Path object
-    with open(path, 'wb') as f:
+    with open(path, "wb") as f:
         pickle.dump(obj, f)
     logging.getLogger(__name__).info(f"Saved pickle: {path}")
 
+
 def load_pickle(path):
     """Load a Python object from a pickle file."""
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         logging.getLogger(__name__).info(f"Loaded pickle: {path}")
         return pickle.load(f)
 
+
 import numpy as np
+
 
 def load_fc2_npz(path: Union[str, Path]) -> Any:
     """Load fc2 results from a .npz file."""
     path = Path(path)
     try:
         with np.load(path, allow_pickle=True) as arr:
-            if 'fc2' in arr:
-                data = arr['fc2']
+            if "fc2" in arr:
+                data = arr["fc2"]
                 logging.getLogger(__name__).info(f"Loaded fc2 results from: {path}")
                 return data
             else:
-                logging.getLogger(__name__).warning(f"'fc2' key not found in {path}. Available keys: {arr.files}")
+                logging.getLogger(__name__).warning(
+                    f"'fc2' key not found in {path}. Available keys: {arr.files}"
+                )
                 return None
     except Exception as e:
-        logging.getLogger(__name__).error(f"Failed to load fc2 results from {path}: {e}")
+        logging.getLogger(__name__).error(
+            f"Failed to load fc2 results from {path}: {e}"
+        )
         return None
 
-#Load preprocessed data from .npz files
+
+# Load preprocessed data from .npz files
 def load_npz_dict(path_to_npz: Path) -> dict:
     """
     Load all arrays (and scalars) from an .npz file into a Python dict.
@@ -142,7 +156,9 @@ def load_npz_dict(path_to_npz: Path) -> dict:
             out[key] = arr
     data.close()
     return out
-#%%
+
+
+# %%
 def make_file_path(save_path, prefix, window_size, lag, n_animals, nodes):
     """
     Generate a consistent save path for cached files.
@@ -161,11 +177,18 @@ def make_file_path(save_path, prefix, window_size, lag, n_animals, nodes):
     if save_path:
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
-        if prefix== 'speed':
-            return save_path / f"{prefix}_window_size={window_size}_tau={lag}_animals={n_animals}_regions={nodes}.npz"
+        if prefix == "speed":
+            return (
+                save_path
+                / f"{prefix}_window_size={window_size}_tau={lag}_animals={n_animals}_regions={nodes}.npz"
+            )
         else:
-            return save_path / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
+            return (
+                save_path
+                / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
+            )
     return None
+
 
 def load_from_cache(file_path, key, logger=None, label=None):
     """
@@ -194,7 +217,7 @@ def load_from_cache(file_path, key, logger=None, label=None):
         except Exception as e:
             print(f"Failed to load cached {label or key} (reason: {e}). Recomputing...")
     return None
-        
+
 
 def save2disk(save_path, prefix, **data):
     """
@@ -208,7 +231,7 @@ def save2disk(save_path, prefix, **data):
     Returns:
         Path or None: The path where data was saved, or None if save_path not given.
     """
-    print('here')
+    print("here")
     if save_path:
         # file_path = save_path / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
         print(f"Saving {prefix} stream to: {save_path}")
@@ -216,9 +239,12 @@ def save2disk(save_path, prefix, **data):
         return save_path
     return None
 
-#%%
+
+# %%
 # Check if the prefix files exist and their sizes: using the check_and_rerun_missing_files function and get_missing_files function
-def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, size_threshold=1_000_000):
+def get_missing_files(
+    paths, prefix, time_window_range, lag, n_animals, roi, size_threshold=1_000_000
+):
     """
     Check if the prefix files exist for all specified window sizes after computing.
     If a file is empty/corrupt, it will be added to the *missing_files* list.
@@ -231,7 +257,7 @@ def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, siz
         roi (list): List of regions of interest.
         size_threshold (int): Minimum file size threshold to consider a file valid.
     Returns:
-        missing_files (list): List of time window sizes for which files are missing or invalid.     
+        missing_files (list): List of time window sizes for which files are missing or invalid.
     """
     missing_files = []
     for ws in time_window_range:
@@ -241,7 +267,9 @@ def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, siz
             missing_files.append(ws)
         # 2. Check if the file is empty or corrupt (less than 1 MB)
         else:
-            if file_path.stat().st_size < size_threshold:  # This will raise an error if the file is not valid
+            if (
+                file_path.stat().st_size < size_threshold
+            ):  # This will raise an error if the file is not valid
                 # Remove the file if it's empty or corrupt
                 print(f"File {file_path} exists but is empty or corrupt. Removing it.")
                 file_path.unlink(missing_ok=True)
@@ -249,36 +277,37 @@ def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, siz
     return missing_files
 
 
+# %%
 
 
-#%%
-
-#%%
+# %%
 def filename_sort_mat(folder_path):
     """Read and sort MATLAB file names in a given folder path."""
-    files_name      = np.sort(os.listdir(folder_path))
+    files_name = np.sort(os.listdir(folder_path))
     return files_name
 
 
-def extract_hash_numbers(filenames, prefix='lot3_'):
+def extract_hash_numbers(filenames, prefix="lot3_"):
     """Extract hash numbers from filenames based on a given prefix."""
-    hash_numbers    = [int(name.split(prefix)[-1][:4]) for name in filenames if prefix in name]
+    hash_numbers = [
+        int(name.split(prefix)[-1][:4]) for name in filenames if prefix in name
+    ]
     return hash_numbers
+
 
 def load_matdata(folder_data, specific_folder, files_name):
     ts_list = []
-    hash_dir        = Path(folder_data) / specific_folder
+    hash_dir = Path(folder_data) / specific_folder
 
-    for idx,file_name in enumerate(files_name):
-        file_path       = hash_dir / file_name
-        
+    for idx, file_name in enumerate(files_name):
+        file_path = hash_dir / file_name
+
         try:
-            data = loadmat(file_path)['tc']
+            data = loadmat(file_path)["tc"]
             ts_list.append(data)
         except Exception as e:
             print(f"Error loading data from {file_path}: {e}")
-    
-    
+
     # Check if the first dimension is consistent
     first_dim_size = ts_list[0].shape[0]
     if all(data.shape[0] == first_dim_size for data in ts_list):

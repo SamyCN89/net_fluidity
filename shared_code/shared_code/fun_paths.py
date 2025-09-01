@@ -1,4 +1,3 @@
-
 """
 Path helpers for datasets, results, and figures.
 
@@ -19,10 +18,11 @@ from typing import Dict, Optional
 # Load environment variables from ../../.env if present
 load_dotenv()
 
+
 # =============================================================================
 # Get Paths folder
 # =============================================================================
-def get_root_path(env='LOCAL') -> Path:
+def get_root_path(env="LOCAL") -> Path:
     """
     Resolve the project root for a given environment label.
 
@@ -41,51 +41,50 @@ def get_root_path(env='LOCAL') -> Path:
         raise EnvironmentError(f"Environment variable PROJECT_ROOT_{env} is not set.")
     return Path(root)
 
+
 # =============================================================================
 def build_paths(
     root: Path,
     dataset_name: str,
     timecourse_folder: str,
     cognitive_data_file: str,
-    anat_labels_file: str
+    anat_labels_file: str,
 ) -> Dict[str, Path]:
     """
     Build canonical dataset/results/figures subpaths under a given root.
 
     Returns a dictionary with keys like `timeseries`, `results`, `dfc`, `speed`, and `figures`.
     """
-    
-    
+
     # Define paths based on dataset_name
-    dataset = root / 'dataset' / dataset_name
-    results = root / 'results' / dataset_name
-    figures = root / 'fig' / dataset_name
+    dataset = root / "dataset" / dataset_name
+    results = root / "results" / dataset_name
+    figures = root / "fig" / dataset_name
 
     return {
-        'root': root,
+        "root": root,
         # Load raw dataset paths
-        'timeseries': dataset / timecourse_folder,
-        'cog_data': dataset / 'cog_data' / cognitive_data_file,
-        'labels': dataset / 'cog_data' / anat_labels_file,
-        
+        "timeseries": dataset / timecourse_folder,
+        "cog_data": dataset / "cog_data" / cognitive_data_file,
+        "labels": dataset / "cog_data" / anat_labels_file,
         # Results paths
-        'results': results,
-        'sorted': results / 'sorted_data',
-        'preprocessed': results / 'preprocessed_data',
-        'mc': results / 'mc',
-        'dfc': results / 'dfc',
-        'speed': results / 'speed',
-        'mc_mod': results / 'mc_mod',
-        'allegiance': results / 'allegiance',
-        'trimers': results / 'trimers',
-
+        "results": results,
+        "sorted": results / "sorted_data",
+        "preprocessed": results / "preprocessed_data",
+        "mc": results / "mc",
+        "dfc": results / "dfc",
+        "speed": results / "speed",
+        "mc_mod": results / "mc_mod",
+        "allegiance": results / "allegiance",
+        "trimers": results / "trimers",
         # Figures paths
-        'figures': figures,
-        'fmodularity': figures / 'modularity',
-        'f_mod': figures / 'modularity',
-        'f_cog': figures / 'cog',
-        'f_speed': figures / 'speed'
+        "figures": figures,
+        "fmodularity": figures / "modularity",
+        "f_mod": figures / "modularity",
+        "f_cog": figures / "cog",
+        "f_speed": figures / "speed",
     }
+
 
 # =============================================================================
 def create_directories(paths: Dict[str, Path]) -> None:
@@ -95,6 +94,7 @@ def create_directories(paths: Dict[str, Path]) -> None:
     for path in paths.values():
         if not path.suffix and not path.exists():
             path.mkdir(parents=True, exist_ok=True)
+
 
 # =============================================================================
 def check_write_permissions(paths: Dict[str, Path]) -> None:
@@ -117,6 +117,7 @@ def check_write_permissions(paths: Dict[str, Path]) -> None:
     if unwritable:
         raise PermissionError(f"Write permission denied for: {unwritable}")
 
+
 # =============================================================================
 def get_paths(
     dataset_name: Optional[str] = None,
@@ -125,7 +126,7 @@ def get_paths(
     anat_labels_file: str = "all_ROI_coimagine.txt",
     create: bool = True,
     check_write: bool = False,
-    env: str = 'LOCAL'
+    env: str = "LOCAL",
 ) -> Dict[str, Path]:
     """
     Generate a dictionary of canonical paths for data, results, and figures.
@@ -141,7 +142,9 @@ def get_paths(
 
     # Define paths based on dataset_name
     if not dataset_name:
-        raise ValueError("dataset_name must be provided or set in environment variables.")
+        raise ValueError(
+            "dataset_name must be provided or set in environment variables."
+        )
 
     # Build paths dictionary
     paths = build_paths(

@@ -94,7 +94,7 @@ time_window_range = np.arange(time_window_min, time_window_max + 1, time_window_
 
 label_ref = label_variables[1][0]  # The label of the reference matrix
 ind_ref = mask_groups[1][0]  # the mask of the reference matrix
-# %% 
+# %%
 # =========================Load metaconnectivity modularity =========================
 # Load the metaconnectivity modularity dataset
 save_filename = paths[
@@ -113,7 +113,7 @@ mc_mod_idx = data_analysis["mc_mod_idx"]
 mc_reg_idx = data_analysis["mc_reg_idx"]
 fc_reg_idx = data_analysis["fc_reg_idx"]
 
-#%%
+# %%
 # Compute FC for the animals
 fc = np.array(
     [
@@ -140,22 +140,22 @@ dfc_stream = np.array(
 mc_nplets_mask, mc_nplets_index = compute_mc_nplets_mask_and_index(
     regions, allegiance_sort=sort_allegiance
 )
-#%%
+# %%
 # # ===============================================
 # # Genuine trimers MC_{ir,jr}>FC_{ij}
 # #Threshold for the FC_{ij}
 # # =============================================================================
 # Threshold for the FC_{ij}
 # Mask to identify valid trimers entries in MC (root+1 Marked)
-trimer_mask = mc_nplets_index>0
+trimer_mask = mc_nplets_index > 0
 
-#Get region index pairs of the trimers
-trimers_idx = fc_reg_idx[trimer_mask] # trimers index
+# Get region index pairs of the trimers
+trimers_idx = fc_reg_idx[trimer_mask]  # trimers index
 
 # Get the leaves and root of the trimers
 trimer_leaves = np.array(
     [trimers_leaves_fc(tri) for tri in trimers_idx]
-)  # (n_trimers, 2) trimers leaves region number 
+)  # (n_trimers, 2) trimers leaves region number
 trimers_root = np.squeeze(
     [trimers_root_fc(tri) for tri in trimers_idx]
 )  # (n_trimers,) trimers root region number
@@ -167,12 +167,16 @@ root_idx = trimers_root - 1
 
 # Retrieve FC values between leaves (i, j) and root (r)
 fc_leaves_values = fc[:, leaf1_idx, leaf2_idx]  # (i, j)leaves values
-fc_root_leaf1 = fc[:, root_idx, leaf1_idx] # (r, i) root-leaf1 values
-fc_root_leaf2 = fc[:, root_idx, leaf2_idx] # (r, j) root-leaf2 values
+fc_root_leaf1 = fc[:, root_idx, leaf1_idx]  # (r, i) root-leaf1 values
+fc_root_leaf2 = fc[:, root_idx, leaf2_idx]  # (r, j) root-leaf2 values
 
 fc_leaves_sign = np.sign(fc_leaves_values)  # sign of the FC values between leaves
-fc_root_leaf1_sign = np.sign(fc_root_leaf1)  # sign of the FC values between root and leaf1
-fc_root_leaf2_sign = np.sign(fc_root_leaf2)  # sign of the FC values between root and leaf2
+fc_root_leaf1_sign = np.sign(
+    fc_root_leaf1
+)  # sign of the FC values between root and leaf1
+fc_root_leaf2_sign = np.sign(
+    fc_root_leaf2
+)  # sign of the FC values between root and leaf2
 
 
 # %%
@@ -190,9 +194,7 @@ trimers_genuine_fc_root_leaves = (fc_root_min) > np.abs(fc_leaves_values)
 # For MC_{ir,jr} > dFC_{i,j} and given time windows
 # =============================================================================
 
-dfc_leaves_values = dfc_stream[
-    :, leaf1_idx, leaf2_idx
-]
+dfc_leaves_values = dfc_stream[:, leaf1_idx, leaf2_idx]
 dfc_leaves_values_mean = np.mean(dfc_leaves_values, axis=-1)
 # trimers_leaves_fc(dfc_stream)
 # %%
@@ -204,11 +206,17 @@ dfc_leaves_values_mean = np.mean(dfc_leaves_values, axis=-1)
 #     fc_leaves_values
 # )  # genuine trimers by MC_{ir,jr} > FC_{i,j}
 
+
 def compute_trimers_genuine(mc_val, dfc_leaves_values_mean, trimer_mask):
     return np.abs(mc_val[:, trimer_mask]) > np.abs(dfc_leaves_values_mean)
 
-trimers_genuine_mc_root_fc_leaves = compute_trimers_genuine(mc_val, fc_leaves_values, trimer_mask)
-trimers_genuine_mc_root_dfc_leaves = compute_trimers_genuine(mc_val, dfc_leaves_values_mean, trimer_mask)
+
+trimers_genuine_mc_root_fc_leaves = compute_trimers_genuine(
+    mc_val, fc_leaves_values, trimer_mask
+)
+trimers_genuine_mc_root_dfc_leaves = compute_trimers_genuine(
+    mc_val, dfc_leaves_values_mean, trimer_mask
+)
 
 
 # Global trimer mask with animal consistency applied
@@ -217,11 +225,12 @@ genuine_trimers_dfc[:, trimer_mask] = trimers_genuine_mc_root_dfc_leaves
 
 # %%
 
-#%% Save trimers
+# %% Save trimers
 # Save the computed data
-save_filename = (
-    paths['trimers'] / 
-    f"trimers_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(' ','')
+save_filename = paths[
+    "trimers"
+] / f"trimers_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(
+    " ", ""
 )
 
 # Ensure the directory exists before saving
@@ -229,12 +238,12 @@ save_filename.parent.mkdir(parents=True, exist_ok=True)
 
 np.savez_compressed(
     save_filename,
-    nplets_index                      = mc_nplets_index,
-    nplets_mask                      = mc_nplets_mask,
-    genuine_trimers_dfc             = genuine_trimers_dfc,
+    nplets_index=mc_nplets_index,
+    nplets_mask=mc_nplets_mask,
+    genuine_trimers_dfc=genuine_trimers_dfc,
 )
 
-#%%
+# %%
 from matplotlib import pyplot as plt
 
 label_fc_root_fc_leaves = r"$min(FC_{i,r}, FC_{j,r}) > FC_{i,j}$"
@@ -315,7 +324,6 @@ plt.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1)
 plt.xlabel(label_mc_root_fc_leaves)
 plt.ylabel(label_mc_root_dfc_leaves)
 plt.tight_layout()
-
 
 
 # %%

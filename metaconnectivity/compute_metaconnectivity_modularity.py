@@ -6,9 +6,10 @@ Created on Mon Sep 23 13:26:30 2024
 @author: samy
 """
 
-#%%
+# %%
 import numpy as np
 import time
+
 # from functions_analysis import *
 from pathlib import Path
 
@@ -17,11 +18,12 @@ from shared_code.fun_dfcspeed import *
 
 from shared_code.fun_metaconnectivity import *
 
-from shared_code.fun_utils import (set_figure_params, 
-                       load_cognitive_data,
-                       load_timeseries_data,
-                       load_grouping_data,
-                       )
+from shared_code.fun_utils import (
+    set_figure_params,
+    load_cognitive_data,
+    load_timeseries_data,
+    load_grouping_data,
+)
 from shared_code.fun_paths import get_paths
 
 # ===============================================================================
@@ -29,62 +31,67 @@ from shared_code.fun_paths import get_paths
 # ========================== Figure parameters ================================
 save_fig = set_figure_params(False)
 
-paths = get_paths(dataset_name='ines_abdullah', 
-                  timecourse_folder='Timecourses_updated_03052024',
-                  cognitive_data_file='ROIs.xlsx',
-                  anat_labels_file='41_Allen.txt')
+paths = get_paths(
+    dataset_name="ines_abdullah",
+    timecourse_folder="Timecourses_updated_03052024",
+    cognitive_data_file="ROIs.xlsx",
+    anat_labels_file="41_Allen.txt",
+)
 
-folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
+folders = {"2mois": "TC_2months", "4mois": "TC_4months"}
 
 # ========================== Load data =========================
-cog_data_filtered = load_cognitive_data(paths['preprocessed'] / 'cog_data_sorted_2m4m.csv')
-data_ts = load_timeseries_data(paths['preprocessed'] / 'ts_and_meta_2m4m.npz')
-mask_groups, label_variables = load_grouping_data(paths['preprocessed'] / "grouping_data_oip.pkl")
+cog_data_filtered = load_cognitive_data(
+    paths["preprocessed"] / "cog_data_sorted_2m4m.csv"
+)
+data_ts = load_timeseries_data(paths["preprocessed"] / "ts_and_meta_2m4m.npz")
+mask_groups, label_variables = load_grouping_data(
+    paths["preprocessed"] / "grouping_data_oip.pkl"
+)
 
 
 # ========================== Indices ==========================================
-ts=data_ts['ts']
-n_animals = data_ts['n_animals']
-regions = data_ts['regions']
-anat_labels = data_ts['anat_labels']
+ts = data_ts["ts"]
+n_animals = data_ts["n_animals"]
+regions = data_ts["regions"]
+anat_labels = data_ts["anat_labels"]
 
 
-#%%
+# %%
 # ======================== Metaconnectivigty ==========================================
-#Parameters speed
+# Parameters speed
 
-PROCESSORS =-1
+PROCESSORS = -1
 
-lag=1
-tau=5
+lag = 1
+tau = 5
 window_size = 100
-window_parameter = (5,100,1)
+window_parameter = (5, 100, 1)
 
-#Parameters allegiance analysis
+# Parameters allegiance analysis
 n_runs_allegiance = 1000
 gamma_pt_allegiance = 9
 
-tau_array       = np.append(np.arange(0,tau), tau ) 
-lentau          = len(tau_array)
+tau_array = np.append(np.arange(0, tau), tau)
+lentau = len(tau_array)
 
 time_window_min, time_window_max, time_window_step = window_parameter
-time_window_range = np.arange(time_window_min,
-                              time_window_max+1,
-                              time_window_step)
+time_window_range = np.arange(time_window_min, time_window_max + 1, time_window_step)
 
 
-#%%compute metaconnectivity
+# %%compute metaconnectivity
 start = time.time()
-mc = compute_metaconnectivity(ts, 
-                              window_size=window_size, 
-                              lag=lag, 
-                              n_jobs =PROCESSORS,
-                              save_path = paths['mc'],
-                              )
+mc = compute_metaconnectivity(
+    ts,
+    window_size=window_size,
+    lag=lag,
+    n_jobs=PROCESSORS,
+    save_path=paths["mc"],
+)
 stop = time.time()
-print(f'Metaconnectivity time {stop-start}')
+print(f"Metaconnectivity time {stop-start}")
 
-#%% Modularity analysis
+# %% Modularity analysis
 # # Choose reference condition
 # # label_ref = 'good2M_recurrecy' #The label of the reference matrix
 # # label_ref = 'wt2M_recurrecy' #The label of the reference matrix
@@ -95,43 +102,51 @@ print(f'Metaconnectivity time {stop-start}')
 
 # # ========================Communities ==========================================
 # #Set reference
-label_ref = label_variables[2][0] #The label of the reference matrix
-ind_ref = mask_groups[2][0] # the mask of the reference matrix
-mc_ref = np.mean(mc[ind_ref],axis=0)
-#%% Compute allegiance
-mc_ref_allegiance_communities, sort_allegiance, contingency_matrix = fun_allegiance_communities(mc_ref, 
-                                                                                                       n_runs = n_runs_allegiance, 
-                                                                                                       gamma_pt = gamma_pt_allegiance, 
-                                                                                                       save_path=paths['allegiance'],
-                                                                                                       ref_name=label_ref, 
-                                                                                                       n_jobs=PROCESSORS,
-                                                                                                       )
+label_ref = label_variables[2][0]  # The label of the reference matrix
+ind_ref = mask_groups[2][0]  # the mask of the reference matrix
+mc_ref = np.mean(mc[ind_ref], axis=0)
+# %% Compute allegiance
+mc_ref_allegiance_communities, sort_allegiance, contingency_matrix = (
+    fun_allegiance_communities(
+        mc_ref,
+        n_runs=n_runs_allegiance,
+        gamma_pt=gamma_pt_allegiance,
+        save_path=paths["allegiance"],
+        ref_name=label_ref,
+        n_jobs=PROCESSORS,
+    )
+)
 
-#sorted initial mc by communities
+# sorted initial mc by communities
 mc_allegiance = mc[:, sort_allegiance][:, :, sort_allegiance]
-#Optional -fill with 0 the diagonal
-idx = np.arange(int(regions*(regions-1)/2))
-mc_allegiance[..., idx, idx] = np.nan # Zero the diagonal across the last two dimensions
+# Optional -fill with 0 the diagonal
+idx = np.arange(int(regions * (regions - 1) / 2))
+mc_allegiance[..., idx, idx] = (
+    np.nan
+)  # Zero the diagonal across the last two dimensions
 
-#%% Compute Modules
+# %% Compute Modules
 # ========================Modules==========================================
 
-intramodules_idx, intramodule_indices, mc_modules_mask = intramodule_indices_mask(mc_ref_allegiance_communities)
+intramodules_idx, intramodule_indices, mc_modules_mask = intramodule_indices_mask(
+    mc_ref_allegiance_communities
+)
 mc_modules_mask = mc_modules_mask[sort_allegiance][:, sort_allegiance]
 
 # Build basic indices
 fc_idx, mc_idx = get_fc_mc_indices(regions, allegiance_sort=sort_allegiance)
 
 # Get the indices of the regions in the functional connectivity matrix
-mc_reg_idx, fc_reg_idx = get_mc_region_identities(fc_idx, mc_idx)#, sort_allegiance)
+mc_reg_idx, fc_reg_idx = get_mc_region_identities(fc_idx, mc_idx)  # , sort_allegiance)
 
 # Get the indices of the regions in the metaconnectivity matrix
 mc_val = mc_allegiance[:, mc_idx[:, 0], mc_idx[:, 1]]
 mc_mod_idx = mc_modules_mask[mc_idx[:, 0], mc_idx[:, 1]].astype(int)
-#%% Save modularity
-save_filename = (
-    paths['mc_mod'] / 
-    f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(' ','')
+# %% Save modularity
+save_filename = paths[
+    "mc_mod"
+] / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(
+    " ", ""
 )
 
 # Ensure the directory exists before saving
@@ -139,20 +154,17 @@ save_filename.parent.mkdir(parents=True, exist_ok=True)
 
 np.savez_compressed(
     save_filename,
-    mc                              = mc_allegiance,
-    mc_ref_allegiance_communities   = mc_ref_allegiance_communities,
-    sort_allegiance          = sort_allegiance,
-    mc_val_tril                     = mc_val,
-
-    mc_idx_tril                     = mc_idx,
-    fc_idx_tril                     = fc_idx,
-    mc_modules_mask                 = mc_modules_mask,
-
-    fc_reg_idx                      = fc_reg_idx,
-    mc_reg_idx                      = mc_reg_idx,
-    mc_mod_idx                      = mc_mod_idx,
+    mc=mc_allegiance,
+    mc_ref_allegiance_communities=mc_ref_allegiance_communities,
+    sort_allegiance=sort_allegiance,
+    mc_val_tril=mc_val,
+    mc_idx_tril=mc_idx,
+    fc_idx_tril=fc_idx,
+    mc_modules_mask=mc_modules_mask,
+    fc_reg_idx=fc_reg_idx,
+    mc_reg_idx=mc_reg_idx,
+    mc_mod_idx=mc_mod_idx,
 )
-
 
 
 # %%

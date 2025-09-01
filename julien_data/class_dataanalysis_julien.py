@@ -1,5 +1,4 @@
-
-#%%
+# %%
 """
 This script is part of the fluidity analysis for the Julien Caillette dataset.
 It loads raw timeseries data, cognitive data, and region labels,
@@ -15,19 +14,25 @@ import pickle
 
 from shared_code.fun_paths import get_paths
 from shared_code.fun_loaddata import (
-    load_mat_timeseries, extract_mouse_ids, load_npz_dict, make_file_path, load_pickle, load_fc2_npz
+    load_mat_timeseries,
+    extract_mouse_ids,
+    load_npz_dict,
+    make_file_path,
+    load_pickle,
+    load_fc2_npz,
 )
 from shared_code.shared_code.fun_loaddata import load_pickle
-#%%
+
+
+# %%
 class DFCAnalysis:
-    def __init__(self, dataset_name='julien_caillette'):
+    def __init__(self, dataset_name="julien_caillette"):
         self.paths = get_paths(
             dataset_name=dataset_name,
-            timecourse_folder='time_courses_2',
-            cognitive_data_file='mice_groups_comp_index_2.xlsx',
-            anat_labels_file='all_ROI_coimagine_2.txt'
+            timecourse_folder="time_courses_2",
+            cognitive_data_file="mice_groups_comp_index_2.xlsx",
+            anat_labels_file="all_ROI_coimagine_2.txt",
         )
-
 
         self.metadata = None
         self.ts_list = None
@@ -45,53 +50,69 @@ class DFCAnalysis:
 
     # 1.1 Raw data loading
     def load_raw_timeseries(self):
-        self.ts_list, self.ts_shapes, loaded_files = load_mat_timeseries(self.paths['timeseries'])
+        self.ts_list, self.ts_shapes, loaded_files = load_mat_timeseries(
+            self.paths["timeseries"]
+        )
         self.ts_ids = extract_mouse_ids(loaded_files)
-    
+
     # 1.2 Load raw cognitive data
     def load_raw_cognitive_data(self):
-        self.cog_data = pd.read_excel(self.paths['cog_data'], sheet_name='mice_groups_comp_index')
+        self.cog_data = pd.read_excel(
+            self.paths["cog_data"], sheet_name="mice_groups_comp_index"
+        )
 
     # 1.3 Load raw region labels
     def load_raw_region_labels(self):
-        self.region_labels = np.loadtxt(self.paths['labels'], dtype=str).tolist()
+        self.region_labels = np.loadtxt(self.paths["labels"], dtype=str).tolist()
 
-    #-----------------------------------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------------------------------
     # 2. Preprocessed data loading
     # 2.1 Metadata loading
     def get_metadata(self, meta_filename=None):
-        preproc = Path(self.paths['preprocessed'])
-        
+        preproc = Path(self.paths["preprocessed"])
+
         # Find the metadata pickle file
         if meta_filename is None:
             files = list(preproc.glob("metadata_animals_*.pkl"))
             if not files:
-                raise FileNotFoundError("No metadata pickle file found in preprocessed directory.")
+                raise FileNotFoundError(
+                    "No metadata pickle file found in preprocessed directory."
+                )
             meta_file = files[0]
         else:
             meta_file = preproc / meta_filename
         with open(meta_file, "rb") as f:
             metadata_dict = pickle.load(f)
-        
+
         # Set attributes from dict
         self.metadata = metadata_dict
-        self.cog_data_filtered = metadata_dict.get('mouse_metadata', None)
-        self.region_labels_preprocessed = metadata_dict.get('region_labels', None)
-        self.n_animals = metadata_dict.get('n_animals', None)
-        self.regions = metadata_dict.get('regions', None)
-        self.total_tr = metadata_dict.get('total_tr', None)
-        self.filter_mode = metadata_dict.get('filter_mode', "unknown")
+        self.cog_data_filtered = metadata_dict.get("mouse_metadata", None)
+        self.region_labels_preprocessed = metadata_dict.get("region_labels", None)
+        self.n_animals = metadata_dict.get("n_animals", None)
+        self.regions = metadata_dict.get("regions", None)
+        self.total_tr = metadata_dict.get("total_tr", None)
+        self.filter_mode = metadata_dict.get("filter_mode", "unknown")
         print(f"Loaded metadata for {self.n_animals} animals from {meta_file.name}.")
 
     # 2.2 Preprocessed timeseries data loading
     def get_ts_preprocessed(self):
-        data_ts_preprocessed = load_npz_dict(self.paths['preprocessed'] / Path(f'ts_filtered_animals_{self.n_animals}_regions_{self.regions}_tr_{self.total_tr}.npz'))
-        self.ts = data_ts_preprocessed['ts']
+        data_ts_preprocessed = load_npz_dict(
+            self.paths["preprocessed"]
+            / Path(
+                f"ts_filtered_animals_{self.n_animals}_regions_{self.regions}_tr_{self.total_tr}.npz"
+            )
+        )
+        self.ts = data_ts_preprocessed["ts"]
 
     # 2.3 Cognitive data preprocessed loading
     def get_cogdata_preprocessed(self):
-        self.cog_data_filtered = pd.read_csv(self.paths['preprocessed'] / Path(f"cog_data_filtered_animals_{self.n_animals}_regions_{self.regions}_tr_{self.total_tr}.csv"))
-        self.groups = self.cog_data_filtered.groupby(['genotype', 'treatment']).groups
+        self.cog_data_filtered = pd.read_csv(
+            self.paths["preprocessed"]
+            / Path(
+                f"cog_data_filtered_animals_{self.n_animals}_regions_{self.regions}_tr_{self.total_tr}.csv"
+            )
+        )
+        self.groups = self.cog_data_filtered.groupby(["genotype", "treatment"]).groups
 
     # 2.4 Get preprocessed data
     def load_preprocessed_data(self):
@@ -99,7 +120,7 @@ class DFCAnalysis:
         self.get_ts_preprocessed()  # Load preprocessed timeseries
         self.get_cogdata_preprocessed()  # Load preprocessed cognitive data
 
-    #-----------------------------------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------------------------------
     # 3.1 Analyzed data
     def get_temporal_parameters(self):
         """
@@ -107,22 +128,31 @@ class DFCAnalysis:
         It can be customized based on the specific requirements of the analysis.
         """
         # Example parameters, adjust as needed
-        self.lag = self.metadata.get('lag', 1)  # Default to 1 if not found
-        self.tau = self.metadata.get('tau', 3)  # Default to 3 if not found
-        self.window_parameter = self.metadata.get('window_range', (5, 100, 1))  # Default to (5, 50, 1) if not found
+        self.lag = self.metadata.get("lag", 1)  # Default to 1 if not found
+        self.tau = self.metadata.get("tau", 3)  # Default to 3 if not found
+        self.window_parameter = self.metadata.get(
+            "window_range", (5, 100, 1)
+        )  # Default to (5, 50, 1) if not found
 
-        self.time_window_min, self.time_window_max, self.time_window_step = self.window_parameter
-        self.time_window_range = np.arange(self.time_window_min,
-                                           self.time_window_max + 1,
-                                           self.time_window_step)
+        self.time_window_min, self.time_window_max, self.time_window_step = (
+            self.window_parameter
+        )
+        self.time_window_range = np.arange(
+            self.time_window_min, self.time_window_max + 1, self.time_window_step
+        )
+
     # 3.2 Load 1 dfc window
     def load_dfc_1_window(self, lag=1, window=9, regions=48):
-        prefix = 'dfc'
-        self.dfc_file_path = make_file_path(self.paths['dfc'], prefix, window, lag, self.n_animals, regions)
+        prefix = "dfc"
+        self.dfc_file_path = make_file_path(
+            self.paths["dfc"], prefix, window, lag, self.n_animals, regions
+        )
         results = load_npz_dict(self.dfc_file_path)
         # print(results.keys())
         self.dfc_stream = results[prefix]
-        print(f"Loaded dfc stream for window size {window} with lag {lag} from {self.dfc_file_path.name}.")
+        print(
+            f"Loaded dfc stream for window size {window} with lag {lag} from {self.dfc_file_path.name}."
+        )
         return self.dfc_stream
 
     # 3.3 Load dfc stream
@@ -130,22 +160,39 @@ class DFCAnalysis:
         self.dfc_streams = {}
         time_window_range = np.arange(*window_range)
         for window_size in time_window_range:
-            prefix = 'dfc'
-            file_path = make_file_path(self.paths['dfc'], prefix, window_size, lag, self.n_animals, self.regions)
+            prefix = "dfc"
+            file_path = make_file_path(
+                self.paths["dfc"],
+                prefix,
+                window_size,
+                lag,
+                self.n_animals,
+                self.regions,
+            )
             results = load_npz_dict(file_path)
-            self.dfc_streams[window_size] = self.load_dfc_1_window( lag, window_size)
+            self.dfc_streams[window_size] = self.load_dfc_1_window(lag, window_size)
 
     # 3.4 Load speed analysis
-    def get_speed_analysis(self, tau_arange=np.arange(4), time_window_range=np.arange(5, 50+1, 1)):
-        prefix='speed'
-        file_path =self.paths['speed'] /  f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_arange)}_animals_{self.n_animals}.pkl"
+    def get_speed_analysis(
+        self, tau_arange=np.arange(4), time_window_range=np.arange(5, 50 + 1, 1)
+    ):
+        prefix = "speed"
+        file_path = (
+            self.paths["speed"]
+            / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_arange)}_animals_{self.n_animals}.pkl"
+        )
         self.speed = load_pickle(file_path)
         # self.speeds_all = self.speed['speeds_all']
 
     # 3.5 Load speed fc analysis
-    def get_speed_fc_analysis(self, tau_arange=np.arange(4), time_window_range = np.arange(5, 50+1, 1)):
-        prefix = 'speed_fc'
-        file_path = self.paths['speed'] / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_arange)}_animals_{self.n_animals}.npz"
+    def get_speed_fc_analysis(
+        self, tau_arange=np.arange(4), time_window_range=np.arange(5, 50 + 1, 1)
+    ):
+        prefix = "speed_fc"
+        file_path = (
+            self.paths["speed"]
+            / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_arange)}_animals_{self.n_animals}.npz"
+        )
         self.speed_fc = load_fc2_npz(file_path)
 
     # def load_speed_fc_analysis(self, tau=3, window_range=(5, 50, 1)):
@@ -155,32 +202,33 @@ class DFCAnalysis:
     #         file_path = make_file_path(self.paths['speed'], prefix, window_size, tau, self.n_animals, self.regions)
     #         results = load_npz_dict(file_path)
 
-#%%
-        #     self.speeds.append(results['speed'])
-        #     self.fc_speeds.append(results['fc2'])
-        # # Example post-processing:
-        # self.speeds_all = [self.speeds[ws] for ws in np.arange(len(time_window_range))]
-        # self.n_windows = len(self.speeds_all)
-        # self.n_animals = self.speeds_all[0].shape[0]
-        # ...you can add more post-processing as in your script...
-        
-    # def load_speed_analysis(self, tau=3, window_range=(5, 50, 1)):
-    # 3.5 Load fc stream
-    # def load_fc_stream(self, lag=1, tau=3, window_range=(5, 50, 1)):
-    
-    # Add more methods as needed for other processing steps*
-    # 3.5 Load Metaconnectivity
-    # 3.6 Load allegiance
-    # 3.7 Load trimers
-    
-    # def load_metaconnectivity(self, lag=1, window=9):
-    #     prefix = 'metaconnectivity'
-    #     self.metaconnectivity_file_path = make_file_path(self.paths['metaconnectivity'], prefix, window, lag, self.n_animals, self.regions)
-    #     results = load_npz_dict(self.metaconnectivity_file_path)
-    #     self.metaconnectivity = results[prefix]
 
-#-----------------------------------------------------------------------------------------------------
-#%%
+# %%
+#     self.speeds.append(results['speed'])
+#     self.fc_speeds.append(results['fc2'])
+# # Example post-processing:
+# self.speeds_all = [self.speeds[ws] for ws in np.arange(len(time_window_range))]
+# self.n_windows = len(self.speeds_all)
+# self.n_animals = self.speeds_all[0].shape[0]
+# ...you can add more post-processing as in your script...
+
+# def load_speed_analysis(self, tau=3, window_range=(5, 50, 1)):
+# 3.5 Load fc stream
+# def load_fc_stream(self, lag=1, tau=3, window_range=(5, 50, 1)):
+
+# Add more methods as needed for other processing steps*
+# 3.5 Load Metaconnectivity
+# 3.6 Load allegiance
+# 3.7 Load trimers
+
+# def load_metaconnectivity(self, lag=1, window=9):
+#     prefix = 'metaconnectivity'
+#     self.metaconnectivity_file_path = make_file_path(self.paths['metaconnectivity'], prefix, window, lag, self.n_animals, self.regions)
+#     results = load_npz_dict(self.metaconnectivity_file_path)
+#     self.metaconnectivity = results[prefix]
+
+# -----------------------------------------------------------------------------------------------------
+# %%
 # def example_usage():
 #     """
 #     Example usage of the DFCAnalysis class.
@@ -228,16 +276,10 @@ class DFCAnalysis:
 # analysis.load_speed_analysis()
 # #-----------------------------------------------------------------------------------------------------
 
-#%%
+# %%
 
 
-#%%
-
-
-
-
-
-
+# %%
 
 
 # #%% 1 F
@@ -268,7 +310,7 @@ class DFCAnalysis:
 #     if pooled:
 #         group_speeds = np.concatenate(pooled)
 #         if group_speeds.size > 0:
-#             plt.hist(group_speeds, bins=100, alpha=0.5, 
+#             plt.hist(group_speeds, bins=100, alpha=0.5,
 #                      label=f"{group}", histtype='step', linewidth=1.7, density=True)
 
 # plt.xlabel("DFC Speed")
@@ -285,8 +327,6 @@ class DFCAnalysis:
 # filtered_df = cog_data_filtered[cog_data_filtered['n_timepoints'] >= 500]
 # grouped = filtered_df.groupby(['genotype', 'treatment'])['index_NOR'].agg(['mean', 'sem', 'count']).reset_index()
 # print(grouped)
-
-
 
 
 # all_speeds = np.concatenate([speed for animal in speeds_all_T for speed in animal]).astype(np.float32)
@@ -314,8 +354,7 @@ class DFCAnalysis:
 # plt.show()
 
 # # %% 2 F
-# # =========  Histogram per group, all animals, all windows 
-
+# # =========  Histogram per group, all animals, all windows
 
 
 # import numpy as np
@@ -331,7 +370,7 @@ class DFCAnalysis:
 #     for animal_idx in animal_idxs:
 #         # For each tau for this animal, concatenate all non-nan speeds
 #         animal_tau_speeds = [
-#             speed_arr.astype(float)[~np.isnan(speed_arr)] 
+#             speed_arr.astype(float)[~np.isnan(speed_arr)]
 #             for speed_arr in speeds_all_T[animal_idx] if speed_arr is not None
 #         ]
 #         if animal_tau_speeds:
@@ -339,7 +378,7 @@ class DFCAnalysis:
 #     if pooled:
 #         group_speeds = np.concatenate(pooled)
 #         if len(group_speeds) > 0:
-#             plt.hist(group_speeds, bins=75, alpha=0.5, 
+#             plt.hist(group_speeds, bins=75, alpha=0.5,
 #                      label=f"{group}", histtype='step', linewidth=1.7, density=True)
 
 # plt.xlabel("DFC Speed")
@@ -388,19 +427,19 @@ class DFCAnalysis:
 #         for speed in speeds_all_T[animal_idx]
 #     ])
 #     group_speeds = group_speeds[~np.isnan(group_speeds)]
-    
+
 #     color = palette[idx]
-#     plt.hist(group_speeds, bins=100, alpha=0.5, label=f"{group}", 
+#     plt.hist(group_speeds, bins=100, alpha=0.5, label=f"{group}",
 #              histtype='step', linewidth=1.7, density=True, color=color)
-    
+
 #     # Stats
 #     median = np.median(group_speeds)
 #     q05 = np.quantile(group_speeds, 0.05)
 #     q95 = np.quantile(group_speeds, 0.95)
-    
-#     plt.axvline(median, color=color, linestyle='-', linewidth=1, 
+
+#     plt.axvline(median, color=color, linestyle='-', linewidth=1,
 #                 label=f"{group} median")
-#     plt.axvline(q05, color=color, linestyle='--', linewidth=1, 
+#     plt.axvline(q05, color=color, linestyle='--', linewidth=1,
 #                 label=f"{group} q=0.05/0.95")
 #     plt.axvline(q95, color=color, linestyle='--', linewidth=1)
 
@@ -429,10 +468,10 @@ class DFCAnalysis:
 #         for speed in speeds_all_T[animal_idx]
 #     ])
 #     group_speeds = group_speeds[~np.isnan(group_speeds)]
-    
+
 #     color = palette[idx]
 #     # Plot histogram
-#     plt.hist(group_speeds, bins=100, alpha=0.5, label=f"{group}", 
+#     plt.hist(group_speeds, bins=100, alpha=0.5, label=f"{group}",
 #              histtype='step', linewidth=1.7, density=True, color=color)
 #     # Median and quantiles
 #     median = np.median(group_speeds)
@@ -468,10 +507,10 @@ class DFCAnalysis:
 #         for speed in speeds_all_T[animal_idx]
 #     ])
 #     group_speeds = group_speeds[~np.isnan(group_speeds)]
-    
+
 #     color = palette[idx]
 #     # Plot histogram (label for legend)
-#     plt.hist(group_speeds, bins=75, alpha=0.5, label=f"{group}", 
+#     plt.hist(group_speeds, bins=75, alpha=0.5, label=f"{group}",
 #              histtype='step', linewidth=1.7, density=True, color=color)
 #     # Median and quantiles (no label)
 #     median = np.median(group_speeds)
@@ -610,9 +649,9 @@ class DFCAnalysis:
 
 # plt.figure(figsize=(10, 5))
 # im = plt.imshow(
-#     np.log(speed_matrix), 
-#     aspect='auto', 
-#     origin='lower', 
+#     np.log(speed_matrix),
+#     aspect='auto',
+#     origin='lower',
 #     extent=[window_sizes[0], window_sizes[-1], quantile_levels[0], quantile_levels[-1]],
 #     cmap='viridis'
 # )
@@ -632,9 +671,9 @@ class DFCAnalysis:
 
 # plt.figure(figsize=(10, 5))
 # im = plt.imshow(
-#     speed_matrix, 
-#     aspect='auto', 
-#     origin='lower', 
+#     speed_matrix,
+#     aspect='auto',
+#     origin='lower',
 #     extent=[window_sizes[0], window_sizes[-1], quantile_levels[0], quantile_levels[-1]],
 #     cmap='viridis',
 #     norm=mcolors.LogNorm(vmin=np.nanmin(speed_matrix[speed_matrix > 0]), vmax=np.nanmax(speed_matrix))
@@ -689,9 +728,9 @@ class DFCAnalysis:
 #     vmin = np.nanmin(speed_matrix[valid]) if np.any(valid) else 1e-6
 #     vmax = np.nanmax(speed_matrix[valid]) if np.any(valid) else 1
 #     im = plt.imshow(
-#         speed_matrix, 
-#         aspect='auto', 
-#         origin='lower', 
+#         speed_matrix,
+#         aspect='auto',
+#         origin='lower',
 #         extent=[window_sizes[0], window_sizes[-1], quantile_levels[0], quantile_levels[-1]],
 #         cmap='viridis',
 #         norm=mcolors.LogNorm(vmin=vmin, vmax=vmax)
@@ -914,7 +953,7 @@ class DFCAnalysis:
 
 # diff_AB = speed_matrices[0] - speed_matrices[1]   # A - B
 # diff_AC = speed_matrices[0] - speed_matrices[2]   # A - C
-# diff_AD = speed_matrices[0] - speed_matrices[3]   # A - D   
+# diff_AD = speed_matrices[0] - speed_matrices[3]   # A - D
 # diff_BC = speed_matrices[1] - speed_matrices[2]   # B - C
 # diff_BD = speed_matrices[1] - speed_matrices[3]   # B - D
 # diff_CD = speed_matrices[2] - speed_matrices[3]   # C - D

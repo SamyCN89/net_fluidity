@@ -1,5 +1,4 @@
-
-#%%
+# %%
 import pickle
 import numpy as np
 import pandas as pd
@@ -9,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Union
 
-from scipy.stats import theilslopes, spearmanr, kruskal, mannwhitneyu  
+from scipy.stats import theilslopes, spearmanr, kruskal, mannwhitneyu
 from scipy import stats
 import statsmodels.api as sm
 
@@ -21,35 +20,37 @@ import string
 
 
 data = DFCAnalysis()
-data.load_preprocessed_data()# %%
+data.load_preprocessed_data()  # %%
 data.get_temporal_parameters()
+
 
 # Context class for data loading and processing
 @dataclass
 class SpeedContext:
-    all_speed: list                # len = n_windows; each is (n_animals, n_taus, T_w)
-    window_sizes: np.ndarray       # same as time_window_range
-    groups: dict                   # {(genotype,treatment): [animal indices]}
-    cog_df: pd.DataFrame           # data.cog_data_filtered (aligned to animals)
-    region_label: str              # e.g., "ACC" or whatever label
-    n_animals: int                 # convenience
-    n_taus: int                    # convenience
+    all_speed: list  # len = n_windows; each is (n_animals, n_taus, T_w)
+    window_sizes: np.ndarray  # same as time_window_range
+    groups: dict  # {(genotype,treatment): [animal indices]}
+    cog_df: pd.DataFrame  # data.cog_data_filtered (aligned to animals)
+    region_label: str  # e.g., "ACC" or whatever label
+    n_animals: int  # convenience
+    n_taus: int  # convenience
 
 
-
-
-#%%
+# %%
 
 
 # Create a context instance
 def build_speed_context(data, ind_reg, prefix="speed") -> SpeedContext:
-    save_path = data.paths['speed']
+    save_path = data.paths["speed"]
     time_window_range = data.time_window_range
     tau_range = np.arange(0, data.tau + 1)
     n_animals = data.n_animals
 
-    pkl = save_path / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
-    with open(pkl, 'rb') as f:
+    pkl = (
+        save_path
+        / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
+    )
+    with open(pkl, "rb") as f:
         all_speed = pickle.load(f)
 
     # sanity: infer n_taus from first window
@@ -62,9 +63,10 @@ def build_speed_context(data, ind_reg, prefix="speed") -> SpeedContext:
         cog_df=data.cog_data_filtered.reset_index(drop=True),
         region_label=data.region_labels_preprocessed[ind_reg],
         n_animals=n_animals,
-        n_taus=n_taus
+        n_taus=n_taus,
     )
-    
+
+
 # # --- TEMP: test one region end-to-end, no plotting changes yet ---
 # test_region = 16  # pick one you like
 # ctx = build_speed_context(data, test_region)
@@ -75,7 +77,7 @@ def build_speed_context(data, ind_reg, prefix="speed") -> SpeedContext:
 #     print(f"  window[{i}] shape = {arr.shape}")  # (n_animals, n_taus, T_w)
 # print(f"[Context] groups: { {k: len(v) for k,v in ctx.groups.items()} }")
 # print(f"[Context] n_animals={ctx.n_animals}, n_taus={ctx.n_taus}")
-#%%
+# %%
 # --- Pooling utilities ---
 
 
@@ -84,7 +86,7 @@ def pool_speeds(
     animals: List[int],
     windows: Optional[Union[List[int], np.ndarray]] = None,
     taus: Optional[Union[List[int], np.ndarray]] = None,
-    weighting: str = "sample",   # "sample" (current behavior) or "animal"
+    weighting: str = "sample",  # "sample" (current behavior) or "animal"
 ) -> Union[np.ndarray, List[np.ndarray]]:
     """
     Gather speed values for given animals, window indices, and tau indices.
@@ -150,7 +152,7 @@ def per_animal_summary(
     reducer: str = "median",
     windows=None,
     taus=None,
-    weighting: str = "sample",   # "sample" or "animal"
+    weighting: str = "sample",  # "sample" or "animal"
     equalize_length: bool = False,
     replace: bool = False,
     random_state: int | None = 0,
@@ -207,31 +209,34 @@ def per_animal_summary(
     return out
 
 
-#%%
+# %%
 # --- Density plot with equal-weight options ---
+
 
 def plot_group_distributions(
     ctx: SpeedContext,
     windows=None,
     taus=None,
     equal_animal_weight: bool = True,
-    equal_method: str = "kde",        # "kde" or "subsample"
+    equal_method: str = "kde",  # "kde" or "subsample"
     n_per_animal: int | None = None,  # used in "subsample"
     replace: bool = False,
     random_state: int | None = 0,
     scale: str = "linear",
-    normalize_density: bool = True,   # True=area=1, False=absolute counts
+    normalize_density: bool = True,  # True=area=1, False=absolute counts
     save_fig: bool = False,
 ):
-    sns.set_theme(style='white', palette='deep', context='talk')
-    palette = sns.color_palette('tab10', n_colors=len(ctx.groups))
+    sns.set_theme(style="white", palette="deep", context="talk")
+    palette = sns.color_palette("tab10", n_colors=len(ctx.groups))
 
-    for (i, (group, animal_idx)) in enumerate(ctx.groups.items()):
+    for i, (group, animal_idx) in enumerate(ctx.groups.items()):
         label = f"{group[0]}-{group[1]}".lower()
         color = palette[i]
 
         if equal_animal_weight:
-            per_animal = pool_speeds(ctx.all_speed, animal_idx, windows, taus, weighting="animal")
+            per_animal = pool_speeds(
+                ctx.all_speed, animal_idx, windows, taus, weighting="animal"
+            )
 
             if equal_method == "kde":
                 xs = np.linspace(0, 2, 500)
@@ -241,8 +246,11 @@ def plot_group_distributions(
                     min_len = min(arr.size for arr in per_animal if arr.size > 0)
                     rng = np.random.default_rng(random_state)
                     per_animal = [
-                        arr[rng.choice(arr.size, size=min_len, replace=replace)]
-                        if arr.size > 0 else arr
+                        (
+                            arr[rng.choice(arr.size, size=min_len, replace=replace)]
+                            if arr.size > 0
+                            else arr
+                        )
                         for arr in per_animal
                     ]
 
@@ -265,50 +273,87 @@ def plot_group_distributions(
                         mean_y = np.nansum(stacked, axis=0) / stacked.shape[0]
                     plt.plot(xs, mean_y, lw=2.5, label=label, color=color)
 
-                    pooled = np.concatenate([a for a in per_animal if a.size]) if per_animal else np.array([])
+                    pooled = (
+                        np.concatenate([a for a in per_animal if a.size])
+                        if per_animal
+                        else np.array([])
+                    )
                     if pooled.size:
-                        for v, ls, a in [(np.median(pooled), '-', .9),
-                                         (np.quantile(pooled, .05), '--', .6),
-                                         (np.quantile(pooled, .95), '--', .6)]:
-                            plt.axvline(v, color=color, linestyle=ls, linewidth=1, alpha=a)
+                        for v, ls, a in [
+                            (np.median(pooled), "-", 0.9),
+                            (np.quantile(pooled, 0.05), "--", 0.6),
+                            (np.quantile(pooled, 0.95), "--", 0.6),
+                        ]:
+                            plt.axvline(
+                                v, color=color, linestyle=ls, linewidth=1, alpha=a
+                            )
 
             elif equal_method == "subsample":
-                pooled = subsample_equal_length(per_animal, n_per_animal=n_per_animal, replace=replace, random_state=random_state)
+                pooled = subsample_equal_length(
+                    per_animal,
+                    n_per_animal=n_per_animal,
+                    replace=replace,
+                    random_state=random_state,
+                )
                 if pooled.size:
-                    sns.kdeplot(pooled, bw_adjust=.5, label=label, color=color, linewidth=2.5, clip=(0, 2),
-                                common_norm=normalize_density)
-                    for v, ls, a in [(np.median(pooled), '-', .9),
-                                     (np.quantile(pooled, .05), '--', .6),
-                                     (np.quantile(pooled, .95), '--', .6)]:
+                    sns.kdeplot(
+                        pooled,
+                        bw_adjust=0.5,
+                        label=label,
+                        color=color,
+                        linewidth=2.5,
+                        clip=(0, 2),
+                        common_norm=normalize_density,
+                    )
+                    for v, ls, a in [
+                        (np.median(pooled), "-", 0.9),
+                        (np.quantile(pooled, 0.05), "--", 0.6),
+                        (np.quantile(pooled, 0.95), "--", 0.6),
+                    ]:
                         plt.axvline(v, color=color, linestyle=ls, linewidth=1, alpha=a)
             else:
                 raise ValueError("equal_method must be 'kde' or 'subsample'.")
 
         else:
-            pooled = pool_speeds(ctx.all_speed, animal_idx, windows, taus, weighting="sample")
+            pooled = pool_speeds(
+                ctx.all_speed, animal_idx, windows, taus, weighting="sample"
+            )
             if pooled.size:
-                sns.kdeplot(pooled, bw_adjust=.5, label=label, color=color, linewidth=2.5, clip=(0, 2),
-                            common_norm=normalize_density)
-                for v, ls, a in [(np.median(pooled), '-', .9),
-                                 (np.quantile(pooled, .05), '--', .6),
-                                 (np.quantile(pooled, .95), '--', .6)]:
+                sns.kdeplot(
+                    pooled,
+                    bw_adjust=0.5,
+                    label=label,
+                    color=color,
+                    linewidth=2.5,
+                    clip=(0, 2),
+                    common_norm=normalize_density,
+                )
+                for v, ls, a in [
+                    (np.median(pooled), "-", 0.9),
+                    (np.quantile(pooled, 0.05), "--", 0.6),
+                    (np.quantile(pooled, 0.95), "--", 0.6),
+                ]:
                     plt.axvline(v, color=color, linestyle=ls, linewidth=1, alpha=a)
 
     plt.xlabel("dFC Speed")
     plt.ylabel("Density" if normalize_density else "Count")
     plt.yscale(scale)
-    plt.title(f"dFC Speeds by Group (region={ctx.region_label})\n"
-              f"{'Equal animal weight: ' + equal_method if equal_animal_weight else 'Sample-weighted'}"
-              + ("" if normalize_density else " (absolute counts)"))
-    plt.legend(title='group', frameon=True)
+    plt.title(
+        f"dFC Speeds by Group (region={ctx.region_label})\n"
+        f"{'Equal animal weight: ' + equal_method if equal_animal_weight else 'Sample-weighted'}"
+        + ("" if normalize_density else " (absolute counts)")
+    )
+    plt.legend(title="group", frameon=True)
     plt.tight_layout()
     sns.despine(trim=True)
     if save_fig:
         suffix = f"{scale}_{'equalA-'+equal_method if equal_animal_weight else 'sample'}_{'norm' if normalize_density else 'abs'}"
-        out = data.paths['f_speed'] / f'{ctx.region_label}_dFC_speed_dist_{suffix}.png'
+        out = data.paths["f_speed"] / f"{ctx.region_label}_dFC_speed_dist_{suffix}.png"
         plt.savefig(out, dpi=200)
 
+
 # --- Correlation plots using the new summary ---
+
 
 def plot_dfc_speed_vs_cog_scores(
     ctx: SpeedContext,
@@ -322,26 +367,44 @@ def plot_dfc_speed_vs_cog_scores(
     random_state=0,
 ):
     per_animal_vals = per_animal_summary(
-        ctx.all_speed, reducer=reducer, windows=windows, taus=taus,
-        weighting=weighting, equalize_length=equalize_length, random_state=random_state
+        ctx.all_speed,
+        reducer=reducer,
+        windows=windows,
+        taus=taus,
+        weighting=weighting,
+        equalize_length=equalize_length,
+        random_state=random_state,
     )
     cog_scores = ctx.cog_df[cog_var].values
 
-    plt.figure(figsize=(7,5))
-    plt.scatter(per_animal_vals, cog_scores, c='k', alpha=0.85)
-    plt.xlabel(f'{reducer} dFC Speed per animal')
+    plt.figure(figsize=(7, 5))
+    plt.scatter(per_animal_vals, cog_scores, c="k", alpha=0.85)
+    plt.xlabel(f"{reducer} dFC Speed per animal")
     plt.ylabel(cog_var)
-    plt.title(f'Region={ctx.region_label} — dFC speed vs {cog_var}\n(weighting={weighting}, equal_len={equalize_length})')
+    plt.title(
+        f"Region={ctx.region_label} — dFC speed vs {cog_var}\n(weighting={weighting}, equal_len={equalize_length})"
+    )
 
     mask = ~np.isnan(per_animal_vals) & ~np.isnan(cog_scores)
     rho, pval = spearmanr(per_animal_vals[mask], cog_scores[mask])
-    plt.text(0.05, 0.95, f"Spearman r={rho:.2f}, p={pval:.3g}",
-             transform=plt.gca().transAxes, va='top', ha='left', fontsize=12)
+    plt.text(
+        0.05,
+        0.95,
+        f"Spearman r={rho:.2f}, p={pval:.3g}",
+        transform=plt.gca().transAxes,
+        va="top",
+        ha="left",
+        fontsize=12,
+    )
 
     plt.tight_layout()
     if save_fig:
-        out = data.paths['f_speed'] / f'{ctx.region_label}_dfc_vs_{cog_var}_{weighting}_eq{equalize_length}.png'
+        out = (
+            data.paths["f_speed"]
+            / f"{ctx.region_label}_dfc_vs_{cog_var}_{weighting}_eq{equalize_length}.png"
+        )
         plt.savefig(out, dpi=200)
+
 
 def plot_dfc_speed_vs_cog_scores_per_group(
     ctx: SpeedContext,
@@ -353,11 +416,16 @@ def plot_dfc_speed_vs_cog_scores_per_group(
     equalize_length=False,
     save_fig=False,
     fig_path=None,
-    random_state=0
+    random_state=0,
 ):
     per_animal_vals = per_animal_summary(
-        ctx.all_speed, reducer=reducer, windows=windows, taus=taus,
-        weighting=weighting, equalize_length=equalize_length, random_state=random_state
+        ctx.all_speed,
+        reducer=reducer,
+        windows=windows,
+        taus=taus,
+        weighting=weighting,
+        equalize_length=equalize_length,
+        random_state=random_state,
     )
 
     cog_scores = ctx.cog_df[cog_var].values
@@ -377,9 +445,13 @@ def plot_dfc_speed_vs_cog_scores_per_group(
         ax.scatter(x, y, label="-".join(grp_name), alpha=0.85, color=color)
 
         rho, pval = spearmanr(x, y)
-        ax.text(0.04, 0.96 - 0.08 * group_items.index((grp_name, animal_indices)),
-                f"{'-'.join(grp_name)}: ρ={rho:.2f}, p={pval:.3g}",
-                color=color, transform=ax.transAxes)
+        ax.text(
+            0.04,
+            0.96 - 0.08 * group_items.index((grp_name, animal_indices)),
+            f"{'-'.join(grp_name)}: ρ={rho:.2f}, p={pval:.3g}",
+            color=color,
+            transform=ax.transAxes,
+        )
 
         slope, intercept, _, _ = stats.theilslopes(y, x, 0.95)
         xx = np.linspace(x.min(), x.max(), 100)
@@ -387,20 +459,26 @@ def plot_dfc_speed_vs_cog_scores_per_group(
 
     ax.set_xlabel(f"{reducer} dFC Speed")
     ax.set_ylabel(cog_var)
-    ax.set_title(f"{ctx.region_label} — dFC speed vs {cog_var}\n(weighting={weighting}, equal_len={equalize_length})")
+    ax.set_title(
+        f"{ctx.region_label} — dFC speed vs {cog_var}\n(weighting={weighting}, equal_len={equalize_length})"
+    )
     ax.legend()
     plt.tight_layout()
 
     if save_fig:
         if fig_path is None:
-            fig_path = data.paths['f_speed'] / f"dfc_vs_{cog_var}_{ctx.region_label}_{weighting}_eq{equalize_length}.png"
+            fig_path = (
+                data.paths["f_speed"]
+                / f"dfc_vs_{cog_var}_{ctx.region_label}_{weighting}_eq{equalize_length}.png"
+            )
         plt.savefig(fig_path, dpi=300)
         plt.close(fig)
     else:
         plt.show()
-        
 
-#%%
+
+# %%
+
 
 def corr_speed_cog_vs_window(
     ctx,
@@ -440,16 +518,20 @@ def corr_speed_cog_vs_window(
                     rho, p = spearmanr(x[idx][mask], y[idx][mask])
                 else:
                     rho, p = np.nan, np.nan
-                rows.append({
-                    "window_idx": w_idx,
-                    "window_size": wsize,
-                    "group": "-".join(grp),
-                    "rho": rho, "p": p, "n": n,
-                    "weighting": weighting,
-                    "equalize_length": equalize_length,
-                    "reducer": reducer,
-                    "cog_var": cog_var,
-                })
+                rows.append(
+                    {
+                        "window_idx": w_idx,
+                        "window_size": wsize,
+                        "group": "-".join(grp),
+                        "rho": rho,
+                        "p": p,
+                        "n": n,
+                        "weighting": weighting,
+                        "equalize_length": equalize_length,
+                        "reducer": reducer,
+                        "cog_var": cog_var,
+                    }
+                )
         else:
             mask = ~np.isnan(x) & ~np.isnan(y)
             n = int(mask.sum())
@@ -457,16 +539,20 @@ def corr_speed_cog_vs_window(
                 rho, p = spearmanr(x[mask], y[mask])
             else:
                 rho, p = np.nan, np.nan
-            rows.append({
-                "window_idx": w_idx,
-                "window_size": wsize,
-                "group": "ALL",
-                "rho": rho, "p": p, "n": n,
-                "weighting": weighting,
-                "equalize_length": equalize_length,
-                "reducer": reducer,
-                "cog_var": cog_var,
-            })
+            rows.append(
+                {
+                    "window_idx": w_idx,
+                    "window_size": wsize,
+                    "group": "ALL",
+                    "rho": rho,
+                    "p": p,
+                    "n": n,
+                    "weighting": weighting,
+                    "equalize_length": equalize_length,
+                    "reducer": reducer,
+                    "cog_var": cog_var,
+                }
+            )
 
     return pd.DataFrame(rows)
 
@@ -492,18 +578,36 @@ def plot_corr_vs_window(
             sub = df[df["group"] == lab].sort_values("window_size")
             if sub.empty:
                 continue
-            plt.plot(sub["window_size"], sub["rho"], "-o", color=color, label=lab, zorder=2)
+            plt.plot(
+                sub["window_size"], sub["rho"], "-o", color=color, label=lab, zorder=2
+            )
             sig = sub[(sub["p"] < alpha) & sub["rho"].notna()]
             if not sig.empty:
-                plt.scatter(sig["window_size"], sig["rho"], marker="*", s=120,
-                            color=color, edgecolor="k", linewidth=0.6, zorder=4)
+                plt.scatter(
+                    sig["window_size"],
+                    sig["rho"],
+                    marker="*",
+                    s=120,
+                    color=color,
+                    edgecolor="k",
+                    linewidth=0.6,
+                    zorder=4,
+                )
     else:
         sub = df.sort_values("window_size")
         plt.plot(sub["window_size"], sub["rho"], "-o", color="k", label="ALL", zorder=2)
         sig = sub[(sub["p"] < alpha) & sub["rho"].notna()]
         if not sig.empty:
-            plt.scatter(sig["window_size"], sig["rho"], marker="*", s=120,
-                        color="k", edgecolor="k", linewidth=0.6, zorder=4)
+            plt.scatter(
+                sig["window_size"],
+                sig["rho"],
+                marker="*",
+                s=120,
+                color="k",
+                edgecolor="k",
+                linewidth=0.6,
+                zorder=4,
+            )
 
     plt.axhline(0, color="grey", linestyle="--", linewidth=1, zorder=1)
     plt.xlabel("Window Size")
@@ -523,9 +627,11 @@ def plot_corr_vs_window(
 
     if save_fig:
         if fig_path is None:
-            fig_path = data.paths["f_speed"] / f"{ctx.region_label}_corr_vs_window_{w}_eq{eq}.png"
+            fig_path = (
+                data.paths["f_speed"]
+                / f"{ctx.region_label}_corr_vs_window_{w}_eq{eq}.png"
+            )
         plt.savefig(fig_path, dpi=200)
-
 
 
 def plot_group_distributions(
@@ -533,31 +639,33 @@ def plot_group_distributions(
     windows=None,
     taus=None,
     equal_animal_weight: bool = True,
-    equal_method: str = "kde",        # "kde" or "subsample"
+    equal_method: str = "kde",  # "kde" or "subsample"
     n_per_animal: int | None = None,  # used in "subsample"
     replace: bool = False,
     random_state: int | None = 0,
     scale: str = "linear",
-    normalize_density: bool = True,   # True=area=1, False=absolute counts
+    normalize_density: bool = True,  # True=area=1, False=absolute counts
     save_fig: bool = False,
     ax: plt.Axes | None = None,
     add_title: bool = True,
     add_legend: bool = True,
     tight: bool = True,
 ):
-    sns.set_theme(style='white', palette='deep', context='talk')
+    sns.set_theme(style="white", palette="deep", context="talk")
     if ax is None:
         fig, ax = plt.subplots(figsize=(10, 6))
     else:
         fig = ax.figure
-    palette = sns.color_palette('tab10', n_colors=len(ctx.groups))
+    palette = sns.color_palette("tab10", n_colors=len(ctx.groups))
 
-    for (i, (group, animal_idx)) in enumerate(ctx.groups.items()):
+    for i, (group, animal_idx) in enumerate(ctx.groups.items()):
         label = f"{group[0]}-{group[1]}".lower()
         color = palette[i]
 
         if equal_animal_weight:
-            per_animal = pool_speeds(ctx.all_speed, animal_idx, windows, taus, weighting="animal")
+            per_animal = pool_speeds(
+                ctx.all_speed, animal_idx, windows, taus, weighting="animal"
+            )
 
             if equal_method == "kde":
                 xs = np.linspace(0, 2, 500)
@@ -567,8 +675,11 @@ def plot_group_distributions(
                     min_len = min(arr.size for arr in per_animal if arr.size > 0)
                     rng = np.random.default_rng(random_state)
                     per_animal = [
-                        arr[rng.choice(arr.size, size=min_len, replace=replace)]
-                        if arr.size > 0 else arr
+                        (
+                            arr[rng.choice(arr.size, size=min_len, replace=replace)]
+                            if arr.size > 0
+                            else arr
+                        )
                         for arr in per_animal
                     ]
 
@@ -591,54 +702,96 @@ def plot_group_distributions(
                         mean_y = np.nansum(stacked, axis=0) / stacked.shape[0]
                     ax.plot(xs, mean_y, lw=2.5, label=label, color=color)
 
-                    pooled = np.concatenate([a for a in per_animal if a.size]) if per_animal else np.array([])
+                    pooled = (
+                        np.concatenate([a for a in per_animal if a.size])
+                        if per_animal
+                        else np.array([])
+                    )
                     if pooled.size:
-                        for v, ls, a_ in [(np.median(pooled), '-', .9),
-                                          (np.quantile(pooled, .05), '--', .6),
-                                          (np.quantile(pooled, .95), '--', .6)]:
-                            ax.axvline(v, color=color, linestyle=ls, linewidth=1, alpha=a_)
+                        for v, ls, a_ in [
+                            (np.median(pooled), "-", 0.9),
+                            (np.quantile(pooled, 0.05), "--", 0.6),
+                            (np.quantile(pooled, 0.95), "--", 0.6),
+                        ]:
+                            ax.axvline(
+                                v, color=color, linestyle=ls, linewidth=1, alpha=a_
+                            )
 
             elif equal_method == "subsample":
-                pooled = subsample_equal_length(per_animal, n_per_animal=n_per_animal, replace=replace, random_state=random_state)
+                pooled = subsample_equal_length(
+                    per_animal,
+                    n_per_animal=n_per_animal,
+                    replace=replace,
+                    random_state=random_state,
+                )
                 if pooled.size:
-                    sns.kdeplot(pooled, bw_adjust=.5, label=label, color=color, linewidth=2.5, clip=(0, 2),
-                                common_norm=normalize_density, ax=ax)
-                    for v, ls, a_ in [(np.median(pooled), '-', .9),
-                                      (np.quantile(pooled, .05), '--', .6),
-                                      (np.quantile(pooled, .95), '--', .6)]:
+                    sns.kdeplot(
+                        pooled,
+                        bw_adjust=0.5,
+                        label=label,
+                        color=color,
+                        linewidth=2.5,
+                        clip=(0, 2),
+                        common_norm=normalize_density,
+                        ax=ax,
+                    )
+                    for v, ls, a_ in [
+                        (np.median(pooled), "-", 0.9),
+                        (np.quantile(pooled, 0.05), "--", 0.6),
+                        (np.quantile(pooled, 0.95), "--", 0.6),
+                    ]:
                         ax.axvline(v, color=color, linestyle=ls, linewidth=1, alpha=a_)
             else:
                 raise ValueError("equal_method must be 'kde' or 'subsample'.")
 
         else:
-            pooled = pool_speeds(ctx.all_speed, animal_idx, windows, taus, weighting="sample")
+            pooled = pool_speeds(
+                ctx.all_speed, animal_idx, windows, taus, weighting="sample"
+            )
             if pooled.size:
-                sns.kdeplot(pooled, bw_adjust=.5, label=label, color=color, linewidth=2.5, clip=(0, 2),
-                            common_norm=normalize_density, ax=ax)
-                for v, ls, a_ in [(np.median(pooled), '-', .9),
-                                  (np.quantile(pooled, .05), '--', .6),
-                                  (np.quantile(pooled, .95), '--', .6)]:
+                sns.kdeplot(
+                    pooled,
+                    bw_adjust=0.5,
+                    label=label,
+                    color=color,
+                    linewidth=2.5,
+                    clip=(0, 2),
+                    common_norm=normalize_density,
+                    ax=ax,
+                )
+                for v, ls, a_ in [
+                    (np.median(pooled), "-", 0.9),
+                    (np.quantile(pooled, 0.05), "--", 0.6),
+                    (np.quantile(pooled, 0.95), "--", 0.6),
+                ]:
                     ax.axvline(v, color=color, linestyle=ls, linewidth=1, alpha=a_)
 
     ax.set_xlabel("dFC Speed")
     ax.set_ylabel("Density" if normalize_density else "Count")
     ax.set_yscale(scale)
     if add_title:
-        ax.set_title(f"{'Equal animal weight: ' + equal_method if equal_animal_weight else 'Sample-weighted'}"
-                     + ("" if normalize_density else " (absolute counts)"))
+        ax.set_title(
+            f"{'Equal animal weight: ' + equal_method if equal_animal_weight else 'Sample-weighted'}"
+            + ("" if normalize_density else " (absolute counts)")
+        )
     if add_legend:
-        ax.legend(title='group', frameon=True)
+        ax.legend(title="group", frameon=True)
     sns.despine(ax=ax, trim=True)
     if tight:
         fig.tight_layout()
 
     if save_fig:
         suffix = f"{scale}_{'equalA-'+equal_method if equal_animal_weight else 'sample'}_{'norm' if normalize_density else 'abs'}"
-        out = data.paths['f_speed'] / f'{ctx.region_label}_dFC_speed_dist_{suffix}.png'
+        out = data.paths["f_speed"] / f"{ctx.region_label}_dFC_speed_dist_{suffix}.png"
         fig.savefig(out, dpi=200)
 
 
-def get_window_pools(ctx: SpeedContext, mode: str = "half", split_at: int | None = None, quantile: float = 0.5):
+def get_window_pools(
+    ctx: SpeedContext,
+    mode: str = "half",
+    split_at: int | None = None,
+    quantile: float = 0.5,
+):
     """
     Returns dict with two entries: {'short': idxs, 'long': idxs}
     - mode='half': first half vs second half of ctx.window_sizes
@@ -652,12 +805,16 @@ def get_window_pools(ctx: SpeedContext, mode: str = "half", split_at: int | None
     elif mode == "threshold":
         if split_at is None:
             raise ValueError("split_at must be set for mode='threshold'")
-        return {"short": np.where(ws < split_at)[0], "long": np.where(ws >= split_at)[0]}
+        return {
+            "short": np.where(ws < split_at)[0],
+            "long": np.where(ws >= split_at)[0],
+        }
     elif mode == "quantile":
         t = np.quantile(ws, quantile)
         return {"short": np.where(ws <= t)[0], "long": np.where(ws > t)[0]}
     else:
         raise ValueError("mode must be 'half', 'threshold', or 'quantile'")
+
 
 def plot_short_long_distributions(
     ctx: SpeedContext,
@@ -714,27 +871,33 @@ def plot_short_long_distributions(
     )
     axes[1].set_title("Long windows")
 
-    fig.suptitle(f"Distribution of dFC Speeds by Group — {ctx.region_label}\n"
-                 f"{'Equal animal weight: ' + equal_method if equal_animal_weight else 'Sample-weighted'}"
-                 + ("" if normalize_density else " (absolute counts)"), y=1.02)
+    fig.suptitle(
+        f"Distribution of dFC Speeds by Group — {ctx.region_label}\n"
+        f"{'Equal animal weight: ' + equal_method if equal_animal_weight else 'Sample-weighted'}"
+        + ("" if normalize_density else " (absolute counts)"),
+        y=1.02,
+    )
     fig.tight_layout()
 
     if save_fig:
         suffix = f"{scale}_{'equalA-'+equal_method if equal_animal_weight else 'sample'}_{'norm' if normalize_density else 'abs'}"
-        out = data.paths['f_speed'] / f"{ctx.region_label}_short_long_{mode}_{suffix}.png"
+        out = (
+            data.paths["f_speed"] / f"{ctx.region_label}_short_long_{mode}_{suffix}.png"
+        )
         fig.savefig(out, dpi=200)
 
 
-#%%
+# %%
+
 
 def build_groups_for_tests(
     ctx: SpeedContext,
     windows=None,
     taus=None,
-    approach: str = "per-animal",     # "per-animal" (recommended) or "per-sample"
-    weighting: str = "animal",        # only used when approach="per-sample" (for direct pooling)
-    equalize_length: bool = True,     # recommended for fairness
-    reducer: str = "median",          # only used when approach="per-animal"
+    approach: str = "per-animal",  # "per-animal" (recommended) or "per-sample"
+    weighting: str = "animal",  # only used when approach="per-sample" (for direct pooling)
+    equalize_length: bool = True,  # recommended for fairness
+    reducer: str = "median",  # only used when approach="per-animal"
     n_per_animal: int | None = None,
     replace: bool = False,
     random_state: int | None = 0,
@@ -747,10 +910,13 @@ def build_groups_for_tests(
     """
     if approach == "per-animal":
         vals = per_animal_summary(
-            ctx.all_speed, reducer=reducer, windows=windows, taus=taus,
-            weighting="sample",              # single-animal pooling; weighting doesn't matter
-            equalize_length=equalize_length, # make each animal contribute same #samples
-            random_state=random_state
+            ctx.all_speed,
+            reducer=reducer,
+            windows=windows,
+            taus=taus,
+            weighting="sample",  # single-animal pooling; weighting doesn't matter
+            equalize_length=equalize_length,  # make each animal contribute same #samples
+            random_state=random_state,
         )
         out = {}
         for g, idxs in ctx.groups.items():
@@ -763,15 +929,22 @@ def build_groups_for_tests(
     elif approach == "per-sample":
         # Use the same pooling rules you used elsewhere
         return build_group_values(
-            ctx, windows=windows, taus=taus,
-            weighting=weighting, equalize_length=(equalize_length if weighting=="animal" else False),
-            n_per_animal=n_per_animal, replace=replace, random_state=random_state
+            ctx,
+            windows=windows,
+            taus=taus,
+            weighting=weighting,
+            equalize_length=(equalize_length if weighting == "animal" else False),
+            n_per_animal=n_per_animal,
+            replace=replace,
+            random_state=random_state,
         )
 
     else:
         raise ValueError("approach must be 'per-animal' or 'per-sample'")
 
+
 from scipy import stats
+
 
 def kruskal_speed_groups(group_arrays: dict) -> dict:
     """
@@ -798,10 +971,12 @@ def kruskal_speed_groups(group_arrays: dict) -> dict:
         "Ns": Ns,
         "groups": list(labs),
     }
-    
+
+
 import numpy as np
 import pandas as pd
 from itertools import combinations
+
 
 def _rank_biserial_from_u(U, n1, n2, med1, med2):
     # rank-biserial correlation; sign via median difference
@@ -809,9 +984,11 @@ def _rank_biserial_from_u(U, n1, n2, med1, med2):
     sign = np.sign(med1 - med2)
     return float(sign * abs(r))
 
+
 def _p_adjust_bonf(pvals):
     p = np.asarray(pvals, float)
     return np.minimum(p * len(p), 1.0)
+
 
 def _p_adjust_fdr_bh(pvals):
     p = np.asarray(pvals, float)
@@ -823,24 +1000,34 @@ def _p_adjust_fdr_bh(pvals):
     p_adj[order] = np.minimum(q, 1.0)
     return p_adj
 
-def pairwise_mwu_speed_groups(group_arrays: dict, correction="bonferroni") -> pd.DataFrame:
+
+def pairwise_mwu_speed_groups(
+    group_arrays: dict, correction="bonferroni"
+) -> pd.DataFrame:
     rows = []
     keys = list(group_arrays.keys())
     for g1, g2 in combinations(keys, 2):
         a = np.asarray(group_arrays[g1], float)
         b = np.asarray(group_arrays[g2], float)
-        a = a[~np.isnan(a)]; b = b[~np.isnan(b)]
+        a = a[~np.isnan(a)]
+        b = b[~np.isnan(b)]
         if (a.size < 1) or (b.size < 1):
             continue
         U, p = stats.mannwhitneyu(a, b, alternative="two-sided")
         rbs = _rank_biserial_from_u(U, len(a), len(b), np.median(a), np.median(b))
-        rows.append({
-            "group1": "-".join(g1), "group2": "-".join(g2),
-            "n1": len(a), "n2": len(b),
-            "U": float(U), "p": float(p),
-            "rank_biserial": rbs,
-            "median1": float(np.median(a)), "median2": float(np.median(b))
-        })
+        rows.append(
+            {
+                "group1": "-".join(g1),
+                "group2": "-".join(g2),
+                "n1": len(a),
+                "n2": len(b),
+                "U": float(U),
+                "p": float(p),
+                "rank_biserial": rbs,
+                "median1": float(np.median(a)),
+                "median2": float(np.median(b)),
+            }
+        )
 
     df = pd.DataFrame(rows)
     if df.empty:
@@ -859,15 +1046,14 @@ def pairwise_mwu_speed_groups(group_arrays: dict, correction="bonferroni") -> pd
     return df.sort_values("p_adj").reset_index(drop=True)
 
 
-#%%
+# %%
 
-        
-        
+
 def build_group_values(
     ctx: SpeedContext,
     windows=None,
     taus=None,
-    weighting: str = "animal",     # "animal" (fair) or "sample" (old pooled)
+    weighting: str = "animal",  # "animal" (fair) or "sample" (old pooled)
     equalize_length: bool = True,  # only relevant for "animal"
     n_per_animal: int | None = None,
     replace: bool = False,
@@ -880,27 +1066,35 @@ def build_group_values(
     out = {}
     for group, animal_idxs in ctx.groups.items():
         if weighting == "animal":
-            per_animal = pool_speeds(ctx.all_speed, animal_idxs, windows, taus, weighting="animal")
+            per_animal = pool_speeds(
+                ctx.all_speed, animal_idxs, windows, taus, weighting="animal"
+            )
             per_animal = [a for a in per_animal if a.size > 0]
             if not per_animal:
                 out[group] = np.array([])
                 continue
             if equalize_length:
                 pooled = subsample_equal_length(
-                    per_animal, n_per_animal=n_per_animal,
-                    replace=replace, random_state=random_state
+                    per_animal,
+                    n_per_animal=n_per_animal,
+                    replace=replace,
+                    random_state=random_state,
                 )
             else:
                 pooled = np.concatenate(per_animal)
             out[group] = pooled
         elif weighting == "sample":
-            out[group] = pool_speeds(ctx.all_speed, animal_idxs, windows, taus, weighting="sample")
+            out[group] = pool_speeds(
+                ctx.all_speed, animal_idxs, windows, taus, weighting="sample"
+            )
         else:
             raise ValueError("weighting must be 'animal' or 'sample'")
     return out
 
+
 from itertools import combinations
 import string
+
 
 def plot_qq_groups(
     ctx: SpeedContext,
@@ -922,9 +1116,14 @@ def plot_qq_groups(
     """
     # build pooled arrays per group
     gvals = build_group_values(
-        ctx, windows=windows, taus=taus,
-        weighting=weighting, equalize_length=equalize_length,
-        n_per_animal=n_per_animal, replace=replace, random_state=random_state
+        ctx,
+        windows=windows,
+        taus=taus,
+        weighting=weighting,
+        equalize_length=equalize_length,
+        n_per_animal=n_per_animal,
+        replace=replace,
+        random_state=random_state,
     )
     groups_list = list(gvals.keys())
     valid = {g: v for g, v in gvals.items() if v.size > 0}
@@ -940,58 +1139,103 @@ def plot_qq_groups(
     pairs = list(combinations(groups_list, 2))
     n_pairs = len(pairs)
     n_rows = int(np.ceil(n_pairs / n_cols))
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5.6*n_cols, 5.6*n_rows), squeeze=False)
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(5.6 * n_cols, 5.6 * n_rows), squeeze=False
+    )
     q = np.linspace(0, 1, n_points)
 
     handles = None
     for idx, ((g1, g2), ax) in enumerate(zip(pairs, axes.flat)):
         a1, a2 = gvals[g1], gvals[g2]
         if a1.size == 0 or a2.size == 0:
-            ax.axis('off'); continue
+            ax.axis("off")
+            continue
 
         q1 = np.quantile(a1, q)
         q2 = np.quantile(a2, q)
 
         above = q2 > q1
         below = q2 < q1
-        h1 = ax.fill_between(q1, q1, q2, where=above, color='firebrick', alpha=0.35, label='Group2 > Group1')
-        h2 = ax.fill_between(q1, q1, q2, where=below, color='dodgerblue', alpha=0.35, label='Group2 < Group1')
+        h1 = ax.fill_between(
+            q1,
+            q1,
+            q2,
+            where=above,
+            color="firebrick",
+            alpha=0.35,
+            label="Group2 > Group1",
+        )
+        h2 = ax.fill_between(
+            q1,
+            q1,
+            q2,
+            where=below,
+            color="dodgerblue",
+            alpha=0.35,
+            label="Group2 < Group1",
+        )
 
         if handles is None:
             handles = [h1, h2]
 
-        ax.plot(q1, q2, color='k', lw=2)                 # Q–Q curve
-        ax.plot([gmin, gmax], [gmin, gmax], 'k--', lw=1.2)  # 45° line
+        ax.plot(q1, q2, color="k", lw=2)  # Q–Q curve
+        ax.plot([gmin, gmax], [gmin, gmax], "k--", lw=1.2)  # 45° line
 
-        def lab(g): return f"{g[0]}-{g[1]}"
-        ax.set_xlabel(f'Quantiles: {lab(g1)}', fontsize=12)
-        ax.set_ylabel(f'Quantiles: {lab(g2)}', fontsize=12)
+        def lab(g):
+            return f"{g[0]}-{g[1]}"
+
+        ax.set_xlabel(f"Quantiles: {lab(g1)}", fontsize=12)
+        ax.set_ylabel(f"Quantiles: {lab(g2)}", fontsize=12)
         ax.set_title(f"Q–Q: {lab(g2)} vs {lab(g1)}", fontsize=14)
-        ax.set_xlim(gmin, gmax); ax.set_ylim(gmin, gmax)
-        ax.grid(True, which='both', linestyle=':', linewidth=0.8, alpha=0.15)
-        ax.text(-0.10, 1.05, string.ascii_lowercase[idx], transform=ax.transAxes,
-                fontsize=16, fontweight='bold', va='top', ha='left')
+        ax.set_xlim(gmin, gmax)
+        ax.set_ylim(gmin, gmax)
+        ax.grid(True, which="both", linestyle=":", linewidth=0.8, alpha=0.15)
+        ax.text(
+            -0.10,
+            1.05,
+            string.ascii_lowercase[idx],
+            transform=ax.transAxes,
+            fontsize=16,
+            fontweight="bold",
+            va="top",
+            ha="left",
+        )
 
     # hide unused axes
     for ax in axes.flat[n_pairs:]:
-        ax.axis('off')
+        ax.axis("off")
 
     # legend + titles
-    fig.legend(handles, ['Group2 > Group1', 'Group2 < Group1'],
-               loc='lower center', bbox_to_anchor=(0.5, -0.06), ncol=2, fontsize=12, frameon=True)
+    fig.legend(
+        handles,
+        ["Group2 > Group1", "Group2 < Group1"],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.06),
+        ncol=2,
+        fontsize=12,
+        frameon=True,
+    )
 
-    title = (f"Q–Q plots — {ctx.region_label}\n"
-             f"weighting={weighting}, equal_len={equalize_length}, "
-             f"n_per_animal={'min' if n_per_animal is None else n_per_animal}")
+    title = (
+        f"Q–Q plots — {ctx.region_label}\n"
+        f"weighting={weighting}, equal_len={equalize_length}, "
+        f"n_per_animal={'min' if n_per_animal is None else n_per_animal}"
+    )
     fig.suptitle(title, fontsize=16, y=1.02)
-    fig.subplots_adjust(left=0.08, right=0.97, top=0.92, bottom=0.12, wspace=0.28, hspace=0.28)
+    fig.subplots_adjust(
+        left=0.08, right=0.97, top=0.92, bottom=0.12, wspace=0.28, hspace=0.28
+    )
 
     if save_fig:
         if fig_path is None:
-            fig_path = data.paths['f_speed'] / f"{ctx.region_label}_qq_weight-{weighting}_eq{equalize_length}.png"
+            fig_path = (
+                data.paths["f_speed"]
+                / f"{ctx.region_label}_qq_weight-{weighting}_eq{equalize_length}.png"
+            )
         fig.savefig(fig_path, dpi=200)
-        
-#%%
+
+
+# %%
 
 # Build your analysis object and context
 data = DFCAnalysis()
@@ -1001,14 +1245,20 @@ data.get_temporal_parameters()
 ctx = build_speed_context(data, ind_reg=16)  # ENT (your example)
 
 # Distributions (equal animal weight; absolute counts)
-plot_group_distributions(ctx, equal_animal_weight=True, equal_method="kde", normalize_density=False, save_fig=True)
+plot_group_distributions(
+    ctx,
+    equal_animal_weight=True,
+    equal_method="kde",
+    normalize_density=False,
+    save_fig=True,
+)
 
 # Correlation overall (equal-length fairness)
 plot_dfc_speed_vs_cog_scores(ctx, weighting="animal", equalize_length=True)
 
 # Correlation per group (equal-length fairness)
 plot_dfc_speed_vs_cog_scores_per_group(ctx, weighting="animal", equalize_length=True)
-#%%
+# %%
 
 
 # compute
@@ -1016,16 +1266,16 @@ df_corr = corr_speed_cog_vs_window(
     ctx,
     cog_var="index_NOR",
     reducer="median",
-    by_group=True,                # or False for pooled-all
-    weighting="animal",           # fairness by default
-    equalize_length=True,         # same #samples per animal
-    taus=None                     # or pass a list of tau indices
+    by_group=True,  # or False for pooled-all
+    weighting="animal",  # fairness by default
+    equalize_length=True,  # same #samples per animal
+    taus=None,  # or pass a list of tau indices
 )
 
 # plot
 plot_corr_vs_window(df_corr, ctx, alpha=0.05, by_group=True, save_fig=False)
 
-#%%
+# %%
 # Split by half; plot in absolute counts with equal animal weight (KDE averaging)
 plot_short_long_distributions(
     ctx,
@@ -1034,7 +1284,7 @@ plot_short_long_distributions(
     equal_method="kde",
     normalize_density=False,  # absolute counts
     scale="linear",
-    save_fig=True
+    save_fig=True,
 )
 
 # Same but normalized densities
@@ -1044,7 +1294,7 @@ plot_short_long_distributions(
     equal_animal_weight=True,
     equal_method="kde",
     normalize_density=True,
-    save_fig=False
+    save_fig=False,
 )
 
 # Threshold at a specific window length (e.g., <30 vs >=30)
@@ -1054,11 +1304,11 @@ plot_short_long_distributions(
     split_at=30,
     equal_animal_weight=True,
     equal_method="subsample",
-    n_per_animal=None,   # min length per animal
+    n_per_animal=None,  # min length per animal
     normalize_density=True,
-    save_fig=False
+    save_fig=False,
 )
-#%%
+# %%
 # 1) All windows, fair per-animal weighting with equal-length samples
 plot_qq_groups(
     ctx,
@@ -1066,7 +1316,7 @@ plot_qq_groups(
     weighting="animal",
     equalize_length=True,
     random_state=0,
-    save_fig=False
+    save_fig=False,
 )
 
 # 2) Only LONG windows (reuse your helper from Step 5b)
@@ -1077,13 +1327,14 @@ plot_qq_groups(
     weighting="animal",
     equalize_length=True,
     random_state=0,
-    save_fig=True
+    save_fig=True,
 )
 
-#%%
+# %%
 import numpy as np
 import pandas as pd
 from itertools import combinations
+
 
 def _rank_biserial_from_u(U, n1, n2, med1, med2):
     # rank-biserial correlation; sign via median difference
@@ -1091,9 +1342,11 @@ def _rank_biserial_from_u(U, n1, n2, med1, med2):
     sign = np.sign(med1 - med2)
     return float(sign * abs(r))
 
+
 def _p_adjust_bonf(pvals):
     p = np.asarray(pvals, float)
     return np.minimum(p * len(p), 1.0)
+
 
 def _p_adjust_fdr_bh(pvals):
     p = np.asarray(pvals, float)
@@ -1105,24 +1358,34 @@ def _p_adjust_fdr_bh(pvals):
     p_adj[order] = np.minimum(q, 1.0)
     return p_adj
 
-def pairwise_mwu_speed_groups(group_arrays: dict, correction="bonferroni") -> pd.DataFrame:
+
+def pairwise_mwu_speed_groups(
+    group_arrays: dict, correction="bonferroni"
+) -> pd.DataFrame:
     rows = []
     keys = list(group_arrays.keys())
     for g1, g2 in combinations(keys, 2):
         a = np.asarray(group_arrays[g1], float)
         b = np.asarray(group_arrays[g2], float)
-        a = a[~np.isnan(a)]; b = b[~np.isnan(b)]
+        a = a[~np.isnan(a)]
+        b = b[~np.isnan(b)]
         if (a.size < 1) or (b.size < 1):
             continue
         U, p = stats.mannwhitneyu(a, b, alternative="two-sided")
         rbs = _rank_biserial_from_u(U, len(a), len(b), np.median(a), np.median(b))
-        rows.append({
-            "group1": "-".join(g1), "group2": "-".join(g2),
-            "n1": len(a), "n2": len(b),
-            "U": float(U), "p": float(p),
-            "rank_biserial": rbs,
-            "median1": float(np.median(a)), "median2": float(np.median(b))
-        })
+        rows.append(
+            {
+                "group1": "-".join(g1),
+                "group2": "-".join(g2),
+                "n1": len(a),
+                "n2": len(b),
+                "U": float(U),
+                "p": float(p),
+                "rank_biserial": rbs,
+                "median1": float(np.median(a)),
+                "median2": float(np.median(b)),
+            }
+        )
 
     df = pd.DataFrame(rows)
     if df.empty:
@@ -1140,7 +1403,8 @@ def pairwise_mwu_speed_groups(group_arrays: dict, correction="bonferroni") -> pd
 
     return df.sort_values("p_adj").reset_index(drop=True)
 
-#%%
+
+# %%
 # Choose windows: all / short / long
 pools = get_window_pools(ctx, mode="half")
 win_idxs = pools["long"]  # or "short", or None for all
@@ -1150,9 +1414,9 @@ group_arrays = build_groups_for_tests(
     ctx,
     windows=win_idxs,
     approach="per-animal",
-    equalize_length=True,   # each animal contributes same # samples to its median
+    equalize_length=True,  # each animal contributes same # samples to its median
     reducer="median",
-    random_state=0
+    random_state=0,
 )
 
 # Kruskal–Wallis across groups
@@ -1167,7 +1431,7 @@ print(df_mwu.head())
 # df_mwu.to_csv(data.paths['f_speed'] / f"{ctx.region_label}_pairwise_mwu_peranimal_eq.csv", index=False)
 
 
- #%%
+# %%
 # Load raw data
 # data.load_raw_timeseries()
 # data.load_raw_cognitive_data()
@@ -1176,47 +1440,53 @@ print(df_mwu.head())
 # Load preprocessed data
 data.load_preprocessed_data()
 
-cog_data_filtered=data.cog_data_filtered
+cog_data_filtered = data.cog_data_filtered
 df_cog = cog_data_filtered.copy()
 data.get_temporal_parameters()
-#%%
+# %%
 # Match these variables to your last run:
 prefix = "speed"
-save_path = data.paths['speed']  # <-- update this!
-time_window_range = data.time_window_range           # <-- list of window sizes, same as in your analysis
-tau_range = np.arange(0,data.tau+ 1)                   # <-- as above
-n_animals = data.n_animals                # <-- as above
+save_path = data.paths["speed"]  # <-- update this!
+time_window_range = (
+    data.time_window_range
+)  # <-- list of window sizes, same as in your analysis
+tau_range = np.arange(0, data.tau + 1)  # <-- as above
+n_animals = data.n_animals  # <-- as above
 data.load_preprocessed_data()
 
 groups = data.groups  # Dictionary of groups, e.g., {'WT': [0, 1, 2], 'KO': [3, 4]}
 
 
+# %%
 
-#%%
-
-#%%
+# %%
 # Plot a histogram of dFC speed for each group, pooling all windows and taus
 
 
 # Set publication style (can customize further)
-sns.set_theme(style='white', palette='deep', context='talk')
+sns.set_theme(style="white", palette="deep", context="talk")
 
-plt.rcParams.update({'font.size': 16, 'axes.labelsize': 18, 'axes.titlesize': 20, 'legend.fontsize': 14})
+plt.rcParams.update(
+    {"font.size": 16, "axes.labelsize": 18, "axes.titlesize": 20, "legend.fontsize": 14}
+)
 
 # Use a color palette with distinct colors for groups
-palette = sns.color_palette('tab10', n_colors=len(data.groups))
+palette = sns.color_palette("tab10", n_colors=len(data.groups))
 
-#%%%
-#Borrar
+# %%%
+# Borrar
 ind_reg = 16
-reg=16
-# for ind_reg, reg in enumerate(range(data.regions)): 
-print(ind_reg,data.region_labels_preprocessed[reg])
+reg = 16
+# for ind_reg, reg in enumerate(range(data.regions)):
+print(ind_reg, data.region_labels_preprocessed[reg])
 # window_file_total = save_path / f"{prefix}_windows{len(time_window_range)}_tau{len(tau_range)}_animals_{n_animals}.pkl"
-window_file_total = save_path / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
+window_file_total = (
+    save_path
+    / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
+)
 
-#All the speed values for all windows and taus
-with open(window_file_total, 'rb') as f:
+# All the speed values for all windows and taus
+with open(window_file_total, "rb") as f:
     all_speed = pickle.load(f)
 
 # Now all_speed is a list (or similar) with each entry for one window_size.
@@ -1227,19 +1497,17 @@ last_speed = all_speed[-1]  # This is the speed array for the last window size
 print(f"Loaded speed for window {time_window_range[-1]}: shape = {last_speed.shape}")
 
 
-
-
-#print the shape of each time windows
+# print the shape of each time windows
 for i, speed in enumerate(all_speed):
     print(f"Window size {time_window_range[i]}: shape = {speed.shape}")
 
 # Plot a hist distribution that pools (ravel or flatten) all the speed together
 
 # -----------------  Pool all speed values from all windows -----------------
-all_speeds_flat = np.concatenate([np.concatenate([s.flatten() for s in speed]) 
-                                for speed in all_speed])
-([np.shape([s.flatten() for s in speed]) 
-for speed in all_speed])
+all_speeds_flat = np.concatenate(
+    [np.concatenate([s.flatten() for s in speed]) for speed in all_speed]
+)
+([np.shape([s.flatten() for s in speed]) for speed in all_speed])
 
 
 np.shape(all_speeds_flat)
@@ -1248,10 +1516,11 @@ window_sizes = time_window_range  # Your array/list of window sizes
 n_windows = len(all_speed)
 
 
-#%%
+# %%
 
 
-#helper to clean arrays
+# helper to clean arrays
+
 
 def get_valid_array(arr):
     """Convert to float, remove NaNs, and return as a 1D array."""
@@ -1259,28 +1528,37 @@ def get_valid_array(arr):
     arr = arr[~np.isnan(arr)]
     return arr
 
+
 for (group_name, animal_indices), color in zip(data.groups.items(), palette):
     print(f"Processing group {group_name} with n animals {len(animal_indices)}")
     pooled = []
     for win_idx, win_list in enumerate(all_speed):  # Each window size
         print(f"Processing window size {window_sizes[win_idx]} for group {group_name}")
-        print(f"Shape of win_list: {win_list.shape}")        
+        print(f"Shape of win_list: {win_list.shape}")
         for animal_idx in animal_indices:
             print(f"Processing animal index {animal_idx} in group {group_name}")
             for tau in range(win_list.shape[1]):
-                print(f"Processing tau {tau} for animal {animal_idx} in group {group_name}")
+                print(
+                    f"Processing tau {tau} for animal {animal_idx} in group {group_name}"
+                )
                 arr = win_list[animal_idx, tau, :]
                 arr = get_valid_array(arr)
                 if arr.size > 0:
                     pooled.append(arr)
 
-#%%
-def get_pooled_speed_arrays(all_speed, animal_indices, 
-                           window_indices=None, tau_indices=None, 
-                           verbose=False, window_sizes=None):
+
+# %%
+def get_pooled_speed_arrays(
+    all_speed,
+    animal_indices,
+    window_indices=None,
+    tau_indices=None,
+    verbose=False,
+    window_sizes=None,
+):
     """
     Pool valid speed arrays for given animals, selected windows, and selected taus.
-    
+
     Parameters
     ----------
     all_speed : list of ndarray
@@ -1295,16 +1573,17 @@ def get_pooled_speed_arrays(all_speed, animal_indices,
         Print details.
     window_sizes : list or None
         If provided, print human-readable window size.
-    
+
     Returns
     -------
     pooled : list of 1D ndarray
     """
+
     def get_valid_array(arr):
         """Convert to float, remove NaNs, and return as a 1D array."""
         arr = np.asarray(arr, dtype=float)
         return arr[~np.isnan(arr)]
-    
+
     pooled = []
     # Set defaults
     if window_indices is None:
@@ -1312,7 +1591,7 @@ def get_pooled_speed_arrays(all_speed, animal_indices,
     if tau_indices is None:
         # Get taus from first window (assume all the same shape)
         tau_indices = range(all_speed[0].shape[1])
-    
+
     for w_idx in window_indices:
         win_list = all_speed[w_idx]
         if verbose and window_sizes is not None:
@@ -1328,28 +1607,36 @@ def get_pooled_speed_arrays(all_speed, animal_indices,
                 if arr.size > 0:
                     pooled.append(arr)
     return pooled
-pooled = get_pooled_speed_arrays(all_speed, animal_indices, 
-                           window_indices=None, tau_indices=None, 
-                           verbose=False, window_sizes=None)
-    # if pooled:
-    #     group_speeds = np.concatenate(pooled)
-    #     if group_speeds.size > 0:
-    #         # KDE plot for smooth, publication-ready curves
-    #         sns.kdeplot(group_speeds, 
-    #                     bw_adjust=.5, 
-    #                     label=f"{group_name[0]}-{group_name[1]}".lower(),
-    #                     color=color, linewidth=2.5, clip=(0, 2))
 
-            # # Stats lines: not in legend (set label to "_nolegend_")
-            # median = np.median(group_speeds)
-            # q05 = np.quantile(group_speeds, 0.05)
-            # q95 = np.quantile(group_speeds, 0.95)
-            # plt.axvline(median, color=color, linestyle='-', linewidth=1, alpha=0.8, label='_nolegend_')
-            # plt.axvline(q05, color=color, linestyle='--', linewidth=1, alpha=0.6, label='_nolegend_')
-            # plt.axvline(q95, color=color, linestyle='--', linewidth=1, alpha=0.6, label='_nolegend_')
-#%%%
 
-def plot_flatten_speed_array(data, scale='linear', save_fig=False):
+pooled = get_pooled_speed_arrays(
+    all_speed,
+    animal_indices,
+    window_indices=None,
+    tau_indices=None,
+    verbose=False,
+    window_sizes=None,
+)
+# if pooled:
+#     group_speeds = np.concatenate(pooled)
+#     if group_speeds.size > 0:
+#         # KDE plot for smooth, publication-ready curves
+#         sns.kdeplot(group_speeds,
+#                     bw_adjust=.5,
+#                     label=f"{group_name[0]}-{group_name[1]}".lower(),
+#                     color=color, linewidth=2.5, clip=(0, 2))
+
+# # Stats lines: not in legend (set label to "_nolegend_")
+# median = np.median(group_speeds)
+# q05 = np.quantile(group_speeds, 0.05)
+# q95 = np.quantile(group_speeds, 0.95)
+# plt.axvline(median, color=color, linestyle='-', linewidth=1, alpha=0.8, label='_nolegend_')
+# plt.axvline(q05, color=color, linestyle='--', linewidth=1, alpha=0.6, label='_nolegend_')
+# plt.axvline(q95, color=color, linestyle='--', linewidth=1, alpha=0.6, label='_nolegend_')
+# %%%
+
+
+def plot_flatten_speed_array(data, scale="linear", save_fig=False):
     """Flatten speed array for a given animal index across all taus."""
 
     for (group_name, animal_indices), color in zip(data.groups.items(), palette):
@@ -1366,33 +1653,64 @@ def plot_flatten_speed_array(data, scale='linear', save_fig=False):
             group_speeds = np.concatenate(pooled)
             if group_speeds.size > 0:
                 # KDE plot for smooth, publication-ready curves
-                sns.kdeplot(group_speeds, 
-                            bw_adjust=.5, 
-                            label=f"{group_name[0]}-{group_name[1]}".lower(),
-                            color=color, linewidth=2.5, clip=(0, 2))
+                sns.kdeplot(
+                    group_speeds,
+                    bw_adjust=0.5,
+                    label=f"{group_name[0]}-{group_name[1]}".lower(),
+                    color=color,
+                    linewidth=2.5,
+                    clip=(0, 2),
+                )
 
                 # Stats lines: not in legend (set label to "_nolegend_")
                 median = np.median(group_speeds)
                 q05 = np.quantile(group_speeds, 0.05)
                 q95 = np.quantile(group_speeds, 0.95)
-                plt.axvline(median, color=color, linestyle='-', linewidth=1, alpha=0.8, label='_nolegend_')
-                plt.axvline(q05, color=color, linestyle='--', linewidth=1, alpha=0.6, label='_nolegend_')
-                plt.axvline(q95, color=color, linestyle='--', linewidth=1, alpha=0.6, label='_nolegend_')
-                            
+                plt.axvline(
+                    median,
+                    color=color,
+                    linestyle="-",
+                    linewidth=1,
+                    alpha=0.8,
+                    label="_nolegend_",
+                )
+                plt.axvline(
+                    q05,
+                    color=color,
+                    linestyle="--",
+                    linewidth=1,
+                    alpha=0.6,
+                    label="_nolegend_",
+                )
+                plt.axvline(
+                    q95,
+                    color=color,
+                    linestyle="--",
+                    linewidth=1,
+                    alpha=0.6,
+                    label="_nolegend_",
+                )
+
     plt.xlabel("dFC Speed", labelpad=10)
     plt.ylabel("Density", labelpad=10)
     plt.yscale(scale)  # Log scale for better visibility of tails
-    plt.title("Distribution of dFC Speeds by Group\n(All taus, all windows pooled)", pad=15)
-    plt.legend(frameon=True, loc='best', title='Group')
+    plt.title(
+        "Distribution of dFC Speeds by Group\n(All taus, all windows pooled)", pad=15
+    )
+    plt.legend(frameon=True, loc="best", title="Group")
     plt.tight_layout()
 
     # Remove top/right spines for a cleaner look
     sns.despine(trim=True)
     if save_fig:
         # Save the figure to the specified path
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dFC_speed_distribution_{scale}.png')
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dFC_speed_distribution_{scale}.png"
+        )
 
-def plot_median_speed_vs_window(data, scale='linear', save_fig=False):
+
+def plot_median_speed_vs_window(data, scale="linear", save_fig=False):
 
     for idx, (group_name, animal_indices) in enumerate(data.groups.items()):
         medians_per_window = []
@@ -1423,26 +1741,41 @@ def plot_median_speed_vs_window(data, scale='linear', save_fig=False):
             q75_per_window.append(q75)
         color = palette[idx]
         label = f"{group_name[0]}-{group_name[1]}".lower()
-        plt.plot(window_sizes, medians_per_window, marker='.', label=label, color=color, linewidth=2)
-        plt.fill_between(window_sizes, q25_per_window, q75_per_window, color=color, alpha=0.1)
+        plt.plot(
+            window_sizes,
+            medians_per_window,
+            marker=".",
+            label=label,
+            color=color,
+            linewidth=2,
+        )
+        plt.fill_between(
+            window_sizes, q25_per_window, q75_per_window, color=color, alpha=0.1
+        )
 
     plt.xlabel("Time Window Size")
     plt.ylabel("Median dFC Speed (group, all tau pooled)")
     plt.yscale(scale)  # Log scale for better visibility of tails
     plt.title("Median dFC Speed vs. Window Size by Group\nShading = 25–75% quantile")
-    plt.legend(title='group', fontsize=10, ncol=2)
+    plt.legend(title="group", fontsize=10, ncol=2)
     plt.tight_layout()
     sns.despine(trim=True)
     if save_fig:
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_window_size_{scale}.png')
-#%%
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_window_size_{scale}.png"
+        )
+
+
+# %%
 
 # ------------------------ NOR scores vs dFC speed ------------------------
+
 
 def plot_dfc_speed_vs_cog_scores(data, save_fig=False):
 
     # Load cognitive data
-    cog_scores = data.cog_data_filtered['index_NOR'].values
+    cog_scores = data.cog_data_filtered["index_NOR"].values
 
     # 1. Compute per-animal dFC speed median
     # Assume all_speed: list of window arrays (n_animals, n_taus, n_timepoints)
@@ -1466,39 +1799,49 @@ def plot_dfc_speed_vs_cog_scores(data, save_fig=False):
     # cog_scores = data.cog_data_filtered.loc[:n_animals-1, 'index_NOR'].values  # adjust column as needed
 
     # 3. Scatter plot
-    plt.scatter(per_animal_speeds, cog_scores, c='k', alpha=0.8)
-    plt.xlabel('Median dFC Speed per animal')
-    plt.ylabel('Cognitive score (e.g., NOR index)')
-    plt.title('Relationship between dFC speed and cognitive score')
+    plt.scatter(per_animal_speeds, cog_scores, c="k", alpha=0.8)
+    plt.xlabel("Median dFC Speed per animal")
+    plt.ylabel("Cognitive score (e.g., NOR index)")
+    plt.title("Relationship between dFC speed and cognitive score")
 
     # 4. Correlation
     mask = ~np.isnan(per_animal_speeds) & ~np.isnan(cog_scores)
     rho, pval = spearmanr(per_animal_speeds[mask], cog_scores[mask])
-    plt.text(0.05, 0.95, f"Spearman r={rho:.2f}, p={pval:.3g}",
-            transform=plt.gca().transAxes, va='top', ha='left', fontsize=12)
+    plt.text(
+        0.05,
+        0.95,
+        f"Spearman r={rho:.2f}, p={pval:.3g}",
+        transform=plt.gca().transAxes,
+        va="top",
+        ha="left",
+        fontsize=12,
+    )
 
     plt.tight_layout()
     if save_fig:
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_cog_scores.png')
-        
-#%%
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_cog_scores.png"
+        )
 
+
+# %%
 
 
 def plot_dfc_speed_vs_cog_scores_per_group(data, save_fig=False):
     """
     Plot dFC speed vs cognitive scores, stratified by genotype and treatment.
-    
+
     Parameters:
     - data: Data object containing groups and paths.
     - all_speed: List of speed arrays for each time window.
     - time_window_range: Range of time windows used in the analysis.
     """
 
-    
     # Ensure data is filtered correctly
-    cog_data_filtered = data.cog_data_filtered  # Assuming this is a DataFrame with 'genotype', 'treatment', and 'index_NOR'
-
+    cog_data_filtered = (
+        data.cog_data_filtered
+    )  # Assuming this is a DataFrame with 'genotype', 'treatment', and 'index_NOR'
 
     # Median dFC speed per animal
     n_animals = all_speed[0].shape[0]
@@ -1519,14 +1862,14 @@ def plot_dfc_speed_vs_cog_scores_per_group(data, save_fig=False):
 
     # Cognitive scores and group labels
     cog_df = cog_data_filtered.reset_index(drop=True)
-    cog_scores = cog_df['index_NOR'].values
-    group_labels = list(zip(cog_df['genotype'], cog_df['treatment']))
+    cog_scores = cog_df["index_NOR"].values
+    group_labels = list(zip(cog_df["genotype"], cog_df["treatment"]))
 
     # Assign color/marker per group
     groups = sorted(set(group_labels))
-    palette = sns.color_palette('tab10', n_colors=len(groups))
+    palette = sns.color_palette("tab10", n_colors=len(groups))
     group2color = {g: palette[i] for i, g in enumerate(groups)}
-    markers = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', '+', 'x']
+    markers = ["o", "s", "^", "D", "v", "P", "X", "*", "+", "x"]
     group2marker = {g: markers[i % len(markers)] for i, g in enumerate(groups)}
 
     for i, group in enumerate(groups):
@@ -1534,40 +1877,59 @@ def plot_dfc_speed_vs_cog_scores_per_group(data, save_fig=False):
         speeds = per_animal_speeds[idxs]
         scores = cog_scores[idxs]
         plt.scatter(
-            speeds, scores,
-            color=group2color[group], marker=group2marker[group],
-            label=f"{group[0]}-{group[1]}", s=70, alpha=0.85
+            speeds,
+            scores,
+            color=group2color[group],
+            marker=group2marker[group],
+            label=f"{group[0]}-{group[1]}",
+            s=70,
+            alpha=0.85,
         )
         # Only fit if enough data
         mask = ~np.isnan(speeds) & ~np.isnan(scores)
         if np.sum(mask) > 2:
             # Theil-Sen regression (robust to outliers)
-            ts_slope, ts_intercept, ts_low, ts_high = theilslopes(scores[mask], speeds[mask])
+            ts_slope, ts_intercept, ts_low, ts_high = theilslopes(
+                scores[mask], speeds[mask]
+            )
             xfit = np.linspace(np.nanmin(speeds[mask]), np.nanmax(speeds[mask]), 100)
             yfit = ts_slope * xfit + ts_intercept
             plt.plot(
-                xfit, yfit, color=group2color[group],
-                linestyle='-', linewidth=2,
-                alpha=0.75
+                xfit,
+                yfit,
+                color=group2color[group],
+                linestyle="-",
+                linewidth=2,
+                alpha=0.75,
             )
             # Spearman correlation
             rho, pval = spearmanr(speeds[mask], scores[mask])
             plt.text(
-                0.98, 0.98-i*0.09,
+                0.98,
+                0.98 - i * 0.09,
                 f"{group[0]}-{group[1]}: ρ={rho:.2f}, p={pval:.2g}",
                 color=group2color[group],
-                transform=plt.gca().transAxes, fontsize=10, ha='right', va='top'
+                transform=plt.gca().transAxes,
+                fontsize=10,
+                ha="right",
+                va="top",
             )
 
-    plt.xlabel('Median dFC Speed per animal')
-    plt.ylabel('Cognitive score (NOR index)')
-    plt.title('dFC speed vs. cognitive score, stratified by group\n(Theil-Sen + Spearman)')
-    plt.legend(title='Genotype-Treatment', fontsize=10, title_fontsize=12)
+    plt.xlabel("Median dFC Speed per animal")
+    plt.ylabel("Cognitive score (NOR index)")
+    plt.title(
+        "dFC speed vs. cognitive score, stratified by group\n(Theil-Sen + Spearman)"
+    )
+    plt.legend(title="Genotype-Treatment", fontsize=10, title_fontsize=12)
     plt.tight_layout()
     if save_fig:
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_cog_scores_per_group.png')
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_cog_scores_per_group.png"
+        )
 
-#%%
+
+# %%
 # Plot dFC speed vs cognitive scores across different window sizes
 
 
@@ -1580,14 +1942,14 @@ def plot_dfc_speed_vs_cog_scores_per_window(data, save_fig=False):
     group_dict = data.groups
     cog_df = cog_data_filtered.reset_index(drop=True)
 
-    palette = sns.color_palette('tab10', n_colors=len(group_dict))
+    palette = sns.color_palette("tab10", n_colors=len(group_dict))
 
-    #Plotting correlations between dFC speed and cognitive scores across different window sizes
+    # Plotting correlations between dFC speed and cognitive scores across different window sizes
 
     for idx, (group, animal_indices) in enumerate(group_dict.items()):
         correlations = []
         pvalues = []
-        group_scores = cog_df.loc[animal_indices, 'index_NOR'].values
+        group_scores = cog_df.loc[animal_indices, "index_NOR"].values
 
         for win_idx in range(n_windows):
             win_arr = all_speed[win_idx]
@@ -1611,45 +1973,56 @@ def plot_dfc_speed_vs_cog_scores_per_window(data, save_fig=False):
                 rho, pval = np.nan, np.nan
             correlations.append(rho)
             pvalues.append(pval)
-            
-
 
         label = f"{group[0]}-{group[1]}".lower()
-        plt.plot(window_sizes, correlations, '-o', color=palette[idx], label=label, zorder=2)
+        plt.plot(
+            window_sizes, correlations, "-o", color=palette[idx], label=label, zorder=2
+        )
         # Overlay significance marker for p < 0.05
         correlations = np.array(correlations)
         pvalues = np.array(pvalues)
-        sig_idx = np.where((pvalues < 0.05) & ~np.isnan(pvalues) & ~np.isnan(correlations))[0]
+        sig_idx = np.where(
+            (pvalues < 0.05) & ~np.isnan(pvalues) & ~np.isnan(correlations)
+        )[0]
         # Plot filled stars at significant points
-        plt.scatter(np.array(window_sizes)[sig_idx], correlations[sig_idx],
-                    color=palette[idx], marker='*', s=110, edgecolor='k', linewidth=0.8, zorder=4, label=None)
-        
+        plt.scatter(
+            np.array(window_sizes)[sig_idx],
+            correlations[sig_idx],
+            color=palette[idx],
+            marker="*",
+            s=110,
+            edgecolor="k",
+            linewidth=0.8,
+            zorder=4,
+            label=None,
+        )
 
-
-    plt.axhline(0, color='grey', linestyle='--', linewidth=1, zorder=1)
-    plt.xlabel('Window Size')
+    plt.axhline(0, color="grey", linestyle="--", linewidth=1, zorder=1)
+    plt.xlabel("Window Size")
     plt.ylabel("Spearman correlation (dFC speed, cognitive score)")
     plt.title("Correlation vs. Window Size by Group\nStars = p < 0.05")
     plt.ylim(-1, 1)
-    plt.xlim(window_sizes[0]-1, window_sizes[-1]+1)
-    plt.legend(title='Group')
+    plt.xlim(window_sizes[0] - 1, window_sizes[-1] + 1)
+    plt.legend(title="Group")
     plt.tight_layout()
     if save_fig:
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_cog_scores_per_window.png')
-#%%
-def plot_dfc_speed_distribution(data, scale='linear', save_fig=False):
-    """Plot the distribution of dFC speeds for short and long window pools.
-    """
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dFC_speed_vs_cog_scores_per_window.png"
+        )
+
+
+# %%
+def plot_dfc_speed_distribution(data, scale="linear", save_fig=False):
+    """Plot the distribution of dFC speeds for short and long window pools."""
     short_idx = np.arange(len(window_sizes) // 2)
     long_idx = np.arange(len(window_sizes) // 2, len(window_sizes))
-    pool_defs = {'Short windows': short_idx, 'Long windows': long_idx}
-    palette = sns.color_palette('tab10', n_colors=len(groups))
-
+    pool_defs = {"Short windows": short_idx, "Long windows": long_idx}
+    palette = sns.color_palette("tab10", n_colors=len(groups))
 
     for pool_i, (pool_name, idxs) in enumerate(pool_defs.items()):
-        plt.subplot(1, 2, pool_i+1)
+        plt.subplot(1, 2, pool_i + 1)
         for g_idx, (group, animal_idxs) in enumerate(data.groups.items()):
-
 
             # Pool all speeds for this group and this pool
             group_speeds = []
@@ -1661,39 +2034,61 @@ def plot_dfc_speed_distribution(data, scale='linear', save_fig=False):
                         arr = arr[~np.isnan(arr)]
                         if arr.size > 0:
                             group_speeds.append(arr)
-            group_speeds = np.concatenate(group_speeds) if group_speeds else np.array([])
+            group_speeds = (
+                np.concatenate(group_speeds) if group_speeds else np.array([])
+            )
             # Histogram (step)
-            sns.histplot(group_speeds, bins=60, stat='density', element='step', fill=False,
-                        color=palette[g_idx], linewidth=1.6, label=f'{group}', alpha=0.6)
+            sns.histplot(
+                group_speeds,
+                bins=60,
+                stat="density",
+                element="step",
+                fill=False,
+                color=palette[g_idx],
+                linewidth=1.6,
+                label=f"{group}",
+                alpha=0.6,
+            )
             # KDE (over histogram)
             if group_speeds.size > 10:  # Avoid noise for tiny samples
                 sns.kdeplot(group_speeds, color=palette[g_idx], lw=2.1, label=None)
             # Median
-            plt.axvline(np.median(group_speeds), color=palette[g_idx], linestyle='--', lw=1)
+            plt.axvline(
+                np.median(group_speeds), color=palette[g_idx], linestyle="--", lw=1
+            )
         plt.xlabel("dFC Speed")
         plt.ylabel("Density")
         plt.yscale(scale)
         plt.title(f"{pool_name}")
         # plt.yscale('log')  # Log scale for better visibility
         if pool_i == 0:
-            plt.legend(title='Group', fontsize=10)
+            plt.legend(title="Group", fontsize=10)
         else:
             plt.legend().set_visible(False)
         plt.tight_layout()
 
-    plt.suptitle("Distribution of dFC Speeds by Group\nShort vs. Long Window Pools", fontsize=15, y=1.02)
+    plt.suptitle(
+        "Distribution of dFC Speeds by Group\nShort vs. Long Window Pools",
+        fontsize=15,
+        y=1.02,
+    )
     sns.despine()
     plt.tight_layout()
     if save_fig:
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dfc_speed_distribution_short_long_pools_{scale}.png')
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dfc_speed_distribution_short_long_pools_{scale}.png"
+        )
 
-#%%
+
+# %%
 
 
 # Suppose you have: all_speed, window_sizes, groups from previous code
 
-def plot_qq_plot(data, scale='linear', save_fig=False):
-    long_win_indices = np.arange(len(window_sizes)//2, len(window_sizes))
+
+def plot_qq_plot(data, scale="linear", save_fig=False):
+    long_win_indices = np.arange(len(window_sizes) // 2, len(window_sizes))
     group_speeds_dict = {}
 
     for group, animal_idxs in data.groups.items():
@@ -1710,7 +2105,6 @@ def plot_qq_plot(data, scale='linear', save_fig=False):
             group_speeds_dict[group] = np.concatenate(pooled_speeds)
         else:
             group_speeds_dict[group] = np.array([])
-
 
     # Helper: tuple to label
     def group_to_str(group):
@@ -1730,14 +2124,18 @@ def plot_qq_plot(data, scale='linear', save_fig=False):
     global_min = float(np.nanmin(all_vals))
     global_max = float(np.nanmax(all_vals))
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5.7*n_cols, 5.7*n_rows), squeeze=False)
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(5.7 * n_cols, 5.7 * n_rows), squeeze=False
+    )
     legend_handles = []
 
-    for panel_idx, (ax, (g1, g2)) in enumerate(zip(axes.flat, combinations(groups_list, 2))):
+    for panel_idx, (ax, (g1, g2)) in enumerate(
+        zip(axes.flat, combinations(groups_list, 2))
+    ):
         arr1 = group_speeds_dict[g1]
         arr2 = group_speeds_dict[g2]
         if len(arr1) == 0 or len(arr2) == 0:
-            ax.axis('off')
+            ax.axis("off")
             continue
         q = np.linspace(0, 1, n_points)
         quant1 = np.quantile(arr1, q)
@@ -1746,54 +2144,102 @@ def plot_qq_plot(data, scale='linear', save_fig=False):
         below = quant2 < quant1
 
         # Fill areas
-        h1 = ax.fill_between(quant1, quant1, quant2, where=above, color='firebrick', alpha=0.40, label='Group2 > Group1')
-        h2 = ax.fill_between(quant1, quant1, quant2, where=below, color='dodgerblue', alpha=0.40, label='Group2 < Group1')
+        h1 = ax.fill_between(
+            quant1,
+            quant1,
+            quant2,
+            where=above,
+            color="firebrick",
+            alpha=0.40,
+            label="Group2 > Group1",
+        )
+        h2 = ax.fill_between(
+            quant1,
+            quant1,
+            quant2,
+            where=below,
+            color="dodgerblue",
+            alpha=0.40,
+            label="Group2 < Group1",
+        )
         if not legend_handles:
             legend_handles = [h1, h2]
         # Q-Q and diagonal
-        ax.plot(quant1, quant2, color='k', lw=2)
-        ax.plot([global_min, global_max], [global_min, global_max], 'k--', lw=1.3)
+        ax.plot(quant1, quant2, color="k", lw=2)
+        ax.plot([global_min, global_max], [global_min, global_max], "k--", lw=1.3)
 
         # Labels and title
         lab1 = group_to_str(g1)
         lab2 = group_to_str(g2)
-        ax.set_xlabel(f'Quantiles: {lab1}', fontsize=15, fontweight='bold')
-        ax.set_ylabel(f'Quantiles: {lab2}', fontsize=15, fontweight='bold')
-        ax.set_title(f"Q-Q: {lab2} vs {lab1}", fontsize=15, fontweight='bold', pad=13)
+        ax.set_xlabel(f"Quantiles: {lab1}", fontsize=15, fontweight="bold")
+        ax.set_ylabel(f"Quantiles: {lab2}", fontsize=15, fontweight="bold")
+        ax.set_title(f"Q-Q: {lab2} vs {lab1}", fontsize=15, fontweight="bold", pad=13)
         # Axis scale
         ax.set_xlim(global_min, global_max)
         ax.set_ylim(global_min, global_max)
-        ax.tick_params(axis='both', labelsize=15, width=1.2)
+        ax.tick_params(axis="both", labelsize=15, width=1.2)
         # Panel label (a, b, c, ...)
-        ax.text(-0.10, 1.05, string.ascii_lowercase[panel_idx],
-                fontsize=19, fontweight='bold', transform=ax.transAxes, va='top', ha='left')
+        ax.text(
+            -0.10,
+            1.05,
+            string.ascii_lowercase[panel_idx],
+            fontsize=19,
+            fontweight="bold",
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+        )
         # Optional faint grid
-        ax.grid(True, which='both', linestyle=':', linewidth=0.8, alpha=0.15)
+        ax.grid(True, which="both", linestyle=":", linewidth=0.8, alpha=0.15)
 
     # Hide unused axes
     for ax in axes.flat[n_pairs:]:
-        ax.axis('off')
+        ax.axis("off")
 
     # Shared legend below all panels
-    fig.legend(legend_handles, ['Group2 > Group1', 'Group2 < Group1'],
-            loc='lower center', bbox_to_anchor=(0.5, -0.08), ncol=2,
-            fontsize=14, frameon=True, borderaxespad=1.0)
+    fig.legend(
+        legend_handles,
+        ["Group2 > Group1", "Group2 < Group1"],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.08),
+        ncol=2,
+        fontsize=14,
+        frameon=True,
+        borderaxespad=1.0,
+    )
 
     # Interpretation hint below legend
-    fig.text(0.5, -0.13,
-            "Red fill: Group2 > Group1 (Q–Q curve above diagonal). Blue fill: Group2 < Group1.",
-            ha='center', va='center', fontsize=13, color='dimgray')
+    fig.text(
+        0.5,
+        -0.13,
+        "Red fill: Group2 > Group1 (Q–Q curve above diagonal). Blue fill: Group2 < Group1.",
+        ha="center",
+        va="center",
+        fontsize=13,
+        color="dimgray",
+    )
 
     # Supertitle above panels
-    fig.suptitle('Q–Q Plots (Filled): All Group Pairwise Comparisons',
-                fontsize=18, fontweight='semibold', y=1.03)
+    fig.suptitle(
+        "Q–Q Plots (Filled): All Group Pairwise Comparisons",
+        fontsize=18,
+        fontweight="semibold",
+        y=1.03,
+    )
 
-    plt.subplots_adjust(left=0.09, right=0.96, bottom=0.13, top=0.94, wspace=0.25, hspace=0.28)
-    if save_fig==True:
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dfc_speed_qq_plots_{scale}.png')
+    plt.subplots_adjust(
+        left=0.09, right=0.96, bottom=0.13, top=0.94, wspace=0.25, hspace=0.28
+    )
+    if save_fig == True:
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dfc_speed_qq_plots_{scale}.png"
+        )
+
+
 # data.region_labels_preprocessed[ind_reg]
 
-#%%
+# %%
 # Build the per-group pooled speed dictionary for the long windows
 
 
@@ -1801,7 +2247,7 @@ def plot_qq_plot_long(data, save_fig=False):
 
     # Split window indices into long windows (second half)
 
-    long_win_indices = np.arange(len(window_sizes)//2, len(window_sizes))
+    long_win_indices = np.arange(len(window_sizes) // 2, len(window_sizes))
 
     group_speeds_dict_long = {}
     for group, animal_idxs in data.groups.items():
@@ -1832,18 +2278,24 @@ def plot_qq_plot_long(data, save_fig=False):
     n_rows = int(np.ceil(n_pairs / n_cols))
     n_points = 1000
 
-    all_vals = np.concatenate([v for v in group_speeds_dict_long.values() if len(v) > 0])
+    all_vals = np.concatenate(
+        [v for v in group_speeds_dict_long.values() if len(v) > 0]
+    )
     global_min = float(np.nanmin(all_vals))
     global_max = float(np.nanmax(all_vals))
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5.7*n_cols, 5.7*n_rows), squeeze=False)
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(5.7 * n_cols, 5.7 * n_rows), squeeze=False
+    )
     legend_handles = []
 
-    for panel_idx, (ax, (g1, g2)) in enumerate(zip(axes.flat, combinations(groups_list, 2))):
+    for panel_idx, (ax, (g1, g2)) in enumerate(
+        zip(axes.flat, combinations(groups_list, 2))
+    ):
         arr1 = group_speeds_dict_long[g1]
         arr2 = group_speeds_dict_long[g2]
         if len(arr1) == 0 or len(arr2) == 0:
-            ax.axis('off')
+            ax.axis("off")
             continue
         q = np.linspace(0, 1, n_points)
         quant1 = np.quantile(arr1, q)
@@ -1851,55 +2303,109 @@ def plot_qq_plot_long(data, save_fig=False):
         above = quant2 > quant1
         below = quant2 < quant1
 
-        h1 = ax.fill_between(quant1, quant1, quant2, where=above, color='firebrick', alpha=0.40, label='Group2 > Group1')
-        h2 = ax.fill_between(quant1, quant1, quant2, where=below, color='dodgerblue', alpha=0.40, label='Group2 < Group1')
+        h1 = ax.fill_between(
+            quant1,
+            quant1,
+            quant2,
+            where=above,
+            color="firebrick",
+            alpha=0.40,
+            label="Group2 > Group1",
+        )
+        h2 = ax.fill_between(
+            quant1,
+            quant1,
+            quant2,
+            where=below,
+            color="dodgerblue",
+            alpha=0.40,
+            label="Group2 < Group1",
+        )
         if not legend_handles:
             legend_handles = [h1, h2]
 
-        ax.plot(quant1, quant2, color='k', lw=2)
-        ax.plot([global_min, global_max], [global_min, global_max], 'k--', lw=1.3)
+        ax.plot(quant1, quant2, color="k", lw=2)
+        ax.plot([global_min, global_max], [global_min, global_max], "k--", lw=1.3)
 
         lab1 = group_to_str(g1)
         lab2 = group_to_str(g2)
-        ax.set_xlabel(f'Quantiles: {lab1}', fontsize=15, fontweight='bold')
-        ax.set_ylabel(f'Quantiles: {lab2}', fontsize=15, fontweight='bold')
-        ax.set_title(f"Quantile–Quantile: {lab2} vs {lab1}", fontsize=15, fontweight='bold', pad=13)
+        ax.set_xlabel(f"Quantiles: {lab1}", fontsize=15, fontweight="bold")
+        ax.set_ylabel(f"Quantiles: {lab2}", fontsize=15, fontweight="bold")
+        ax.set_title(
+            f"Quantile–Quantile: {lab2} vs {lab1}",
+            fontsize=15,
+            fontweight="bold",
+            pad=13,
+        )
         ax.set_xlim(global_min, global_max)
         ax.set_ylim(global_min, global_max)
-        ax.tick_params(axis='both', labelsize=15, width=1.2)
-        ax.text(-0.10, 1.05, string.ascii_lowercase[panel_idx],
-                fontsize=19, fontweight='bold', transform=ax.transAxes, va='top', ha='left')
-        ax.grid(True, which='both', linestyle=':', linewidth=0.8, alpha=0.15)
+        ax.tick_params(axis="both", labelsize=15, width=1.2)
+        ax.text(
+            -0.10,
+            1.05,
+            string.ascii_lowercase[panel_idx],
+            fontsize=19,
+            fontweight="bold",
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+        )
+        ax.grid(True, which="both", linestyle=":", linewidth=0.8, alpha=0.15)
 
     for ax in axes.flat[n_pairs:]:
-        ax.axis('off')
+        ax.axis("off")
 
-    fig.legend(legend_handles, ['Group2 > Group1', 'Group2 < Group1'],
-            loc='lower center', bbox_to_anchor=(0.5, -0.08), ncol=2,
-            fontsize=14, frameon=True, borderaxespad=1.0)
+    fig.legend(
+        legend_handles,
+        ["Group2 > Group1", "Group2 < Group1"],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.08),
+        ncol=2,
+        fontsize=14,
+        frameon=True,
+        borderaxespad=1.0,
+    )
 
-    fig.text(0.5, -0.13,
-            "Red fill: Group2 > Group1 (Q–Q curve above diagonal). Blue fill: Group2 < Group1.",
-            ha='center', va='center', fontsize=13, color='dimgray')
+    fig.text(
+        0.5,
+        -0.13,
+        "Red fill: Group2 > Group1 (Q–Q curve above diagonal). Blue fill: Group2 < Group1.",
+        ha="center",
+        va="center",
+        fontsize=13,
+        color="dimgray",
+    )
 
-    fig.suptitle('Q–Q Plots (Filled): Long Window Pool, All Group Pairwise Comparisons',
-                fontsize=18, fontweight='semibold', y=1.03)
+    fig.suptitle(
+        "Q–Q Plots (Filled): Long Window Pool, All Group Pairwise Comparisons",
+        fontsize=18,
+        fontweight="semibold",
+        y=1.03,
+    )
 
-    plt.subplots_adjust(left=0.09, right=0.96, bottom=0.13, top=0.94, wspace=0.25, hspace=0.28)
+    plt.subplots_adjust(
+        left=0.09, right=0.96, bottom=0.13, top=0.94, wspace=0.25, hspace=0.28
+    )
     if save_fig:
-        plt.savefig(data.paths['f_speed'] / f'{data.region_labels_preprocessed[ind_reg]}_dfc_speed_qq_plots_long.png')
+        plt.savefig(
+            data.paths["f_speed"]
+            / f"{data.region_labels_preprocessed[ind_reg]}_dfc_speed_qq_plots_long.png"
+        )
 
 
-#%%
+# %%
 ind_reg = 16
-reg=16
-for ind_reg, reg in enumerate(range(data.regions)): 
-    print(ind_reg,data.region_labels_preprocessed[reg])
+reg = 16
+for ind_reg, reg in enumerate(range(data.regions)):
+    print(ind_reg, data.region_labels_preprocessed[reg])
     # window_file_total = save_path / f"{prefix}_windows{len(time_window_range)}_tau{len(tau_range)}_animals_{n_animals}.pkl"
-    window_file_total = save_path / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
+    window_file_total = (
+        save_path
+        / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
+    )
 
-    #All the speed values for all windows and taus
-    with open(window_file_total, 'rb') as f:
+    # All the speed values for all windows and taus
+    with open(window_file_total, "rb") as f:
         all_speed = pickle.load(f)
 
     # Now all_speed is a list (or similar) with each entry for one window_size.
@@ -1907,23 +2413,21 @@ for ind_reg, reg in enumerate(range(data.regions)):
     last_speed = all_speed[-1]  # This is the speed array for the last window size
 
     # Example: print shape/info
-    print(f"Loaded speed for window {time_window_range[-1]}: shape = {last_speed.shape}")
+    print(
+        f"Loaded speed for window {time_window_range[-1]}: shape = {last_speed.shape}"
+    )
 
-
-
-
-    #print the shape of each time windows
+    # print the shape of each time windows
     for i, speed in enumerate(all_speed):
         print(f"Window size {time_window_range[i]}: shape = {speed.shape}")
 
     # Plot a hist distribution that pools (ravel or flatten) all the speed together
 
     # -----------------  Pool all speed values from all windows -----------------
-    all_speeds_flat = np.concatenate([np.concatenate([s.flatten() for s in speed]) 
-                                    for speed in all_speed])
-    ([np.shape([s.flatten() for s in speed]) 
-    for speed in all_speed])
-
+    all_speeds_flat = np.concatenate(
+        [np.concatenate([s.flatten() for s in speed]) for speed in all_speed]
+    )
+    ([np.shape([s.flatten() for s in speed]) for speed in all_speed])
 
     np.shape(all_speeds_flat)
 
@@ -1931,20 +2435,20 @@ for ind_reg, reg in enumerate(range(data.regions)):
     n_windows = len(all_speed)
 
     plt.figure(1, figsize=(10, 6))
-    plot_flatten_speed_array(data, scale='linear', save_fig=True)
+    plot_flatten_speed_array(data, scale="linear", save_fig=True)
     plt.figure(2, figsize=(10, 6))
-    plot_flatten_speed_array(data, scale='log', save_fig=True)
+    plot_flatten_speed_array(data, scale="log", save_fig=True)
 
     # Plot median dFC speed vs. time window size, pooling all taus for each group
-    palette = sns.color_palette('tab10', n_colors=len(data.groups))
+    palette = sns.color_palette("tab10", n_colors=len(data.groups))
 
-    plt.figure(3, figsize=(13,6))
-    plot_median_speed_vs_window(data, scale='linear', save_fig=True)
-    plt.figure(4, figsize=(13,6))
-    plot_median_speed_vs_window(data, scale='log', save_fig=True)
+    plt.figure(3, figsize=(13, 6))
+    plot_median_speed_vs_window(data, scale="linear", save_fig=True)
+    plt.figure(4, figsize=(13, 6))
+    plot_median_speed_vs_window(data, scale="log", save_fig=True)
     plt.show()
 
-    plt.figure(5, figsize=(9,6))
+    plt.figure(5, figsize=(9, 6))
     plot_dfc_speed_vs_cog_scores(data, save_fig=True)
     plt.show()
 
@@ -1952,28 +2456,29 @@ for ind_reg, reg in enumerate(range(data.regions)):
     plot_dfc_speed_vs_cog_scores_per_group(data, save_fig=True)
     plt.show()
 
-
-    plt.figure(7,figsize=(13,8))
+    plt.figure(7, figsize=(13, 8))
     plot_dfc_speed_vs_cog_scores_per_window(data, save_fig=True)
     plt.show()
 
     plt.figure(8, figsize=(12, 6))
-    plot_dfc_speed_distribution(data, scale='linear', save_fig=True)
+    plot_dfc_speed_distribution(data, scale="linear", save_fig=True)
     plt.show()
 
     plt.figure(9, figsize=(12, 6))
-    plot_dfc_speed_distribution(data, scale='log', save_fig=True)
+    plot_dfc_speed_distribution(data, scale="log", save_fig=True)
     plt.show()
 
     plt.figure(10, figsize=(12, 6))
-    plot_qq_plot(data, scale='linear', save_fig=True)
+    plot_qq_plot(data, scale="linear", save_fig=True)
     plt.show()
 
     plt.figure(11, figsize=(12, 6))
-    plot_qq_plot_long(data, save_fig=True)   
+    plot_qq_plot_long(data, save_fig=True)
     plt.show()
 
-    print(f"Plots for region {data.region_labels_preprocessed[ind_reg]} saved successfully.")
+    print(
+        f"Plots for region {data.region_labels_preprocessed[ind_reg]} saved successfully."
+    )
 
 # %%
 
@@ -2137,9 +2642,6 @@ for ind_reg, reg in enumerate(range(data.regions)):
 # plt.show()
 
 
-
-
-
 # # %%
 
 
@@ -2236,7 +2738,6 @@ for ind_reg, reg in enumerate(range(data.regions)):
 # plt.show()
 
 
-
 # # %%
 
 # # Assume speed_matrices, group_names, window_sizes, quantile_levels are defined
@@ -2300,11 +2801,10 @@ for ind_reg, reg in enumerate(range(data.regions)):
 # plt.tight_layout(rect=[0, 0, 0.92, 1])
 # plt.show()
 
-#%%
+# %%
 
 
-#%%
-
+# %%
 
 
 # %%
@@ -2312,8 +2812,6 @@ for ind_reg, reg in enumerate(range(data.regions)):
 
 
 # %%
-
-
 
 
 # #---------------------------- Two timescales --------------------------------
@@ -2405,10 +2903,8 @@ for ind_reg, reg in enumerate(range(data.regions)):
 #         window_sizes, all_speed, etc. already defined
 
 
-
 # data.region_labels_preprocessed[ind_reg]
 # %%
-
 
 
 # %%
@@ -2465,7 +2961,7 @@ for ind_reg, reg in enumerate(range(data.regions)):
 
 
 # %%
-#----------- Kruskal-Wallis test for long window speeds -----------
+# ----------- Kruskal-Wallis test for long window speeds -----------
 # %%
 
 # Prepare data for test (lists of arrays)
@@ -2479,34 +2975,38 @@ print(f"Kruskal–Wallis H = {stat:.3f}, p = {pval:.3g}")
 
 
 # Bonferroni correction for multiple comparisons
-n_comps = len(group_speeds_dict) * (len(group_speeds_dict)-1) // 2
+n_comps = len(group_speeds_dict) * (len(group_speeds_dict) - 1) // 2
 for g1, g2 in combinations(group_speeds_dict.keys(), 2):
-    u, p = mannwhitneyu(group_speeds_dict[g1], group_speeds_dict[g2], alternative='two-sided')
-    print(f"{g1} vs {g2}: U = {u:.2g}, uncorrected p = {p:.4f}, Bonferroni-corrected p = {min(p*n_comps,1):.4f}")
+    u, p = mannwhitneyu(
+        group_speeds_dict[g1], group_speeds_dict[g2], alternative="two-sided"
+    )
+    print(
+        f"{g1} vs {g2}: U = {u:.2g}, uncorrected p = {p:.4f}, Bonferroni-corrected p = {min(p*n_comps,1):.4f}"
+    )
 
 # %%
 
-groups = df_summary.groupby(['genotype', 'treatment'])
+groups = df_summary.groupby(["genotype", "treatment"])
 
 results = []
 
 for name, subdf in groups:
-    for pool in ['short', 'long']:
+    for pool in ["short", "long"]:
         # Prepare
-        X = subdf[['dFC_speed_' + pool]].copy()
+        X = subdf[["dFC_speed_" + pool]].copy()
         X = sm.add_constant(X)
-        y = subdf['index_NOR']
+        y = subdf["index_NOR"]
         mask = (~X.isnull().any(axis=1)) & (~y.isnull())
         X_clean = X.loc[mask]
         y_clean = y.loc[mask]
         if X_clean.shape[0] > 3:  # Avoid crashing with tiny groups
             model = sm.OLS(y_clean, X_clean).fit()
-            coef = model.params['dFC_speed_' + pool]
-            pval = model.pvalues['dFC_speed_' + pool]
+            coef = model.params["dFC_speed_" + pool]
+            pval = model.pvalues["dFC_speed_" + pool]
         else:
             coef = np.nan
             pval = np.nan
-        results.append({'group': name, 'window': pool, 'coef': coef, 'pval': pval})
+        results.append({"group": name, "window": pool, "coef": coef, "pval": pval})
 
 df_group_results = pd.DataFrame(results)
 

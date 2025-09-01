@@ -34,14 +34,14 @@ Created on Fri Mar  8 15:56:50 2024
 
 #     for idx,file_name in enumerate(files_name):
 #         file_path       = hash_dir / file_name
-        
+
 #         try:
 #             data = loadmat(file_path)['tc']
 #             ts_list.append(data)
 #         except Exception as e:
 #             print(f"Error loading data from {file_path}: {e}")
-    
-    
+
+
 #     # Check if the first dimension is consistent
 #     first_dim_size = ts_list[0].shape[0]
 #     if all(data.shape[0] == first_dim_size for data in ts_list):

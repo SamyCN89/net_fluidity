@@ -1,7 +1,8 @@
-#%%
+# %%
 # =============================================================================
-# Network analysis functions    
+# Network analysis functions
 # =============================================================================
+
 
 def sort_modularity(fc):
     """
@@ -26,5 +27,6 @@ def sort_modularity(fc):
     order = np.argsort(modules)
     fc_sorted = fc[:, order][order, :]
     return fc_sorted
+
 
 # =============================================================================

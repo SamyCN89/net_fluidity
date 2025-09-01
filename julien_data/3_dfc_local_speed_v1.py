@@ -6,7 +6,7 @@ Created on Mon Oct  2 14:42:38 2023
 @author: samy
 """
 
-#%%
+# %%
 from pathlib import Path
 import re
 import numpy as np
@@ -21,23 +21,26 @@ from typing import Dict, List, Tuple, Optional, Union
 from class_dataanalysis_julien import DFCAnalysis
 from shared_code.fun_loaddata import save_pickle
 from shared_code.fun_utils import set_figure_params
+
 # logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
-#%%
+# %%
 
-def dfc_speed_split(dfc_stream, 
-            vstep=1, 
-            tau_range=0,
-            method='pearson', 
-            return_fc2=False,
-            triu_indices=None,
-            time_offset=0,
-            ):
+
+def dfc_speed_split(
+    dfc_stream,
+    vstep=1,
+    tau_range=0,
+    method="pearson",
+    return_fc2=False,
+    triu_indices=None,
+    time_offset=0,
+):
     """
     Unified function to calculate the speed of variation in dynamic functional connectivity (dFC).
-    
+
     ----------
     dfc_stream : numpy.ndarray
         Dynamic functional connectivity stream. Can be either: 2D array (n_pairs, n_frames) 3D array (n_rois, n_rois, n_frames): Full FC matrices over time
@@ -47,14 +50,14 @@ def dfc_speed_split(dfc_stream,
         Correlation method to use for speed computation (default='pearson').
         Supported methods:
         - 'pearson': Pearson correlation coefficient
-        - 'spearman': Spearman rank correlation 
+        - 'spearman': Spearman rank correlation
         - 'cosine': Cosine similarity
     tril_indices : tuple, optional
         Pre-computed triangular indices for 3D input (default=None).
         If None, will be computed automatically for 3D input.
     return_fc2 : bool, optional
         If True, also return the second FC matrix for each time step (default=False).
-        
+
     Returns
     -------
     speed_median : float
@@ -74,28 +77,32 @@ def dfc_speed_split(dfc_stream,
     from shared_code.fun_optimization import (
         pearson_speed_vectorized,
         spearman_speed,
-        cosine_speed_vectorized
+        cosine_speed_vectorized,
     )
-    
+
     # Input validation
     if not isinstance(dfc_stream, np.ndarray):
         raise TypeError("dfc_stream must be a numpy array")
-    
+
     if dfc_stream.ndim not in [2, 3]:
-        raise ValueError("dfc_stream must be 2D (n_pairs, frames) or 3D (roi, roi, frames)")
-    
+        raise ValueError(
+            "dfc_stream must be 2D (n_pairs, frames) or 3D (roi, roi, frames)"
+        )
+
     if not isinstance(vstep, int) or vstep <= 0:
         raise TypeError("vstep must be a positive integer")
-        
-    if method not in ['pearson', 'spearman', 'cosine']:
-        raise ValueError(f"Unsupported method '{method}'. Use 'pearson', 'spearman', or 'cosine'")
-    
+
+    if method not in ["pearson", "spearman", "cosine"]:
+        raise ValueError(
+            f"Unsupported method '{method}'. Use 'pearson', 'spearman', or 'cosine'"
+        )
+
     # Handle input format conversion
     # 3D input: (n_rois, n_rois, n_frames)
     if dfc_stream.ndim == 3:
         n_rois = dfc_stream.shape[0]
         n_frames = dfc_stream.shape[2]
-        
+
         # Generate triangular indices if not provided
         if triu_indices is None:
             triu_indices = np.triu_indices(n_rois, k=1)
@@ -106,51 +113,65 @@ def dfc_speed_split(dfc_stream,
         # 2D input: (n_pairs, n_frames)
         fc_stream = dfc_stream
         n_frames = fc_stream.shape[1]
-    
+
     # Validate frame count vs vstep
     if vstep >= n_frames:
-        raise ValueError(f"vstep ({vstep}) must be less than number of frames ({n_frames})")
+        raise ValueError(
+            f"vstep ({vstep}) must be less than number of frames ({n_frames})"
+        )
 
     fc1_indices = []
-    fc2_indices = []    
+    fc2_indices = []
 
-    indices_max = n_frames - (vstep + np.max(tau) + time_offset) 
+    indices_max = n_frames - (vstep + np.max(tau) + time_offset)
     indices = np.arange(0, indices_max, 1)
     if np.size(tau_range) > 1:
         for tau_aux in tau_range:
             fc1_indices.append(indices[:-1])  # Indices for the first FC matrix
-            fc2_indices.append(indices[1:]+tau_aux+time_offset+vstep-1)   # Indices for the second FC matrix
+            fc2_indices.append(
+                indices[1:] + tau_aux + time_offset + vstep - 1
+            )  # Indices for the second FC matrix
             # print(indices[:-1], indices[1:]+tau_aux+time_offset+vstep-1)
     else:
         tau_aux = tau_range
         fc1_indices.append(indices[:-1])
-        fc2_indices.append(indices[1:]+tau_aux+time_offset+vstep-1)   # Indices for the second FC matrix
+        fc2_indices.append(
+            indices[1:] + tau_aux + time_offset + vstep - 1
+        )  # Indices for the second FC matrix
 
-    n_speeds = (len(indices)-1) * np.size(tau_range)
+    n_speeds = (len(indices) - 1) * np.size(tau_range)
     n_pairs = fc_stream.shape[0]
-    
+
     # Pre-allocate output arrays for efficiency
     speeds = np.empty((n_speeds, np.size(tau_range)), dtype=np.float32)
     fc2_stream = None
-    
+
     # Extract FC matrices for vectorized computation
-    fc1_matrices = fc_stream[:, np.array(fc1_indices).flatten()]  # Shape: (n_pairs, n_speeds)
-    fc2_matrices = fc_stream[:, np.array(fc2_indices).flatten()]  # Shape: (n_pairs, n_speeds)
+    fc1_matrices = fc_stream[
+        :, np.array(fc1_indices).flatten()
+    ]  # Shape: (n_pairs, n_speeds)
+    fc2_matrices = fc_stream[
+        :, np.array(fc2_indices).flatten()
+    ]  # Shape: (n_pairs, n_speeds)
     if return_fc2:
-        fc2_stream_indices = np.empty(n_speeds, dtype=int)  # Pre-allocate for second FC matrix indices
+        fc2_stream_indices = np.empty(
+            n_speeds, dtype=int
+        )  # Pre-allocate for second FC matrix indices
         # fc2_stream[:, :] = fc2_matrices
         fc2_stream_indices[:] = (np.array(fc2_indices).flatten()).astype(int)
         return fc2_stream_indices
 
     # Use optimized speed computation functions for maximum performance
-    if method == 'pearson':
+    if method == "pearson":
         speeds = pearson_speed_vectorized(fc1_matrices, fc2_matrices)
-    elif method == 'spearman':
+    elif method == "spearman":
         speeds = spearman_speed(fc1_matrices, fc2_matrices)
-    elif method == 'cosine':
+    elif method == "cosine":
         speeds = cosine_speed_vectorized(fc1_matrices, fc2_matrices)
     else:
-        raise ValueError(f"Unsupported method '{method}'. Use 'pearson', 'spearman', or 'cosine'")
+        raise ValueError(
+            f"Unsupported method '{method}'. Use 'pearson', 'spearman', or 'cosine'"
+        )
 
     # Ensure speeds are within valid range [-1, 2] for numerical stability
     speeds = np.clip(speeds, -1.0, 2.0)
@@ -158,30 +179,45 @@ def dfc_speed_split(dfc_stream,
 
     return speeds_mat
 
-#%%
-def run_dfc_speed_analysis(data, time_window_range, tau_range, lag, save_path, n_animals, nodes, load_cache=False, processors=1, **kwargs):
+
+# %%
+def run_dfc_speed_analysis(
+    data,
+    time_window_range,
+    tau_range,
+    lag,
+    save_path,
+    n_animals,
+    nodes,
+    load_cache=False,
+    processors=1,
+    **kwargs,
+):
     """
     DFC speed analysis handler: saves results per animal per tau.
     """
-    
-    # Parameter extraction & checks (same as before)
-    min_tau_zero = kwargs.get('min_tau_zero', True)
-    method = kwargs.get('method', 'pearson')
-    return_fc2 = kwargs.get('return_fc2', False)
-    prefix = kwargs.get('prefix', 'speed')  # Prefix for the DFC speed results
 
+    # Parameter extraction & checks (same as before)
+    min_tau_zero = kwargs.get("min_tau_zero", True)
+    method = kwargs.get("method", "pearson")
+    return_fc2 = kwargs.get("return_fc2", False)
+    prefix = kwargs.get("prefix", "speed")  # Prefix for the DFC speed results
 
     # for ws_idx, window_size in tqdm(enumerate(time_window_range), desc=f"Processing animals for window_size "):
-    def process_window(window_size, regions, scale_vel='global'):
+    def process_window(window_size, regions, scale_vel="global"):
         # Loads one window size of DFC data
-        if scale_vel == 'global':
-            dfc_stream = data.load_dfc_1_window(lag=lag, window=window_size, regions=regions)    # Specify regions here
-        elif scale_vel == 'local':
-            dfc_stream = data.load_dfc_1_window(lag=lag, window=window_size, regions=regions, scale='local')  # Specify regions here
+        if scale_vel == "global":
+            dfc_stream = data.load_dfc_1_window(
+                lag=lag, window=window_size, regions=regions
+            )  # Specify regions here
+        elif scale_vel == "local":
+            dfc_stream = data.load_dfc_1_window(
+                lag=lag, window=window_size, regions=regions, scale="local"
+            )  # Specify regions here
         # dfc_stream = data.dfc_stream
         logging.getLogger(__name__).info(f"Loaded DFC stream shape: {dfc_stream.shape}")
 
-        #Generate the file name for the current window size data
+        # Generate the file name for the current window size data
         window_file = save_path / (
             f"{prefix}_{'fc_' if return_fc2 else ''}win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions}.npz"
         )
@@ -189,85 +225,114 @@ def run_dfc_speed_analysis(data, time_window_range, tau_range, lag, save_path, n
         # Initialize lists to store results for each animal
         results = []
         for animal_idx in range(n_animals):
-            logging.getLogger(__name__).info(f"Processing animal {animal_idx + 1}/{n_animals} for window size {window_size}")
+            logging.getLogger(__name__).info(
+                f"Processing animal {animal_idx + 1}/{n_animals} for window size {window_size}"
+            )
             if load_cache and window_file.exists():
-                logging.getLogger(__name__).info(f"Loading cached results for window {window_file}")
+                logging.getLogger(__name__).info(
+                    f"Loading cached results for window {window_file}"
+                )
                 return
             try:
-                logging.getLogger(__name__).info(f"Computing for window {window_file} and animal {animal_idx + 1}/{n_animals}")
+                logging.getLogger(__name__).info(
+                    f"Computing for window {window_file} and animal {animal_idx + 1}/{n_animals}"
+                )
                 if return_fc2:
                     fc2 = dfc_speed_split(
-                        dfc_stream[animal_idx], vstep=int(window_size), tau_range=0, method=method, return_fc2=return_fc2
+                        dfc_stream[animal_idx],
+                        vstep=int(window_size),
+                        tau_range=0,
+                        method=method,
+                        return_fc2=return_fc2,
                     )
                     results.append(fc2)
-                    logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed FC2")
+                    logging.getLogger(__name__).debug(
+                        f"Animal {animal_idx} window {window_size}: computed FC2"
+                    )
                 else:
                     speeds = dfc_speed_split(
-                        dfc_stream[animal_idx], vstep=int(window_size), tau_range=tau_range, method=method, return_fc2=return_fc2, time_offset=window_size
+                        dfc_stream[animal_idx],
+                        vstep=int(window_size),
+                        tau_range=tau_range,
+                        method=method,
+                        return_fc2=return_fc2,
+                        time_offset=window_size,
                     )
                     results.append(speeds)
-                    logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed speeds")
+                    logging.getLogger(__name__).debug(
+                        f"Animal {animal_idx} window {window_size}: computed speeds"
+                    )
             except Exception as e:
-                logging.getLogger(__name__).error(f"Error for window {window_file}: {e}")
+                logging.getLogger(__name__).error(
+                    f"Error for window {window_file}: {e}"
+                )
 
         # Save the fc2 results if return_fc2 else the speed results
         if return_fc2:
             np.savez_compressed(
                 window_file,
-                fc2=np.array(results, dtype=object),  # Use object dtype for variable-length arrays
-                window_size=window_size
+                fc2=np.array(
+                    results, dtype=object
+                ),  # Use object dtype for variable-length arrays
+                window_size=window_size,
             )
             logging.getLogger(__name__).info(f"✓ Saved fc2 for window {window_file}")
         else:
             np.savez_compressed(
                 window_file,
-                speeds=np.array(results, dtype=object),  # Use object dtype for variable-length arrays
-                window_size=window_size
+                speeds=np.array(
+                    results, dtype=object
+                ),  # Use object dtype for variable-length arrays
+                window_size=window_size,
             )
             logging.getLogger(__name__).info(f"✓ Saved speeds for window {window_file}")
 
     # Use Parallel to handle multiple windows in parallel
     Parallel(n_jobs=processors, verbose=1)(
         delayed(process_window)(ws, nodes)
-    for ws in tqdm(time_window_range, desc=f"Processing windows for ...")
+        for ws in tqdm(time_window_range, desc=f"Processing windows for ...")
     )
 
     logging.getLogger(__name__).info("All windows processed successfully.")
 
 
 # run local speed for all animals
-def run_local_dfc_speed_analysis(data, 
-                                 time_window_range, 
-                                 tau_range, lag, 
-                                 save_path, 
-                                 n_animals, 
-                                 nodes, 
-                                 reg_indices, 
-                                 load_cache=False, 
-                                 processors=1, 
-                                 **kwargs):
+def run_local_dfc_speed_analysis(
+    data,
+    time_window_range,
+    tau_range,
+    lag,
+    save_path,
+    n_animals,
+    nodes,
+    reg_indices,
+    load_cache=False,
+    processors=1,
+    **kwargs,
+):
     """
     DFC speed analysis handler: saves results per animal per tau.
     """
-    
-    # Parameter extraction & checks (same as before)
-    min_tau_zero = kwargs.get('min_tau_zero', True)
-    method = kwargs.get('method', 'pearson')
-    return_fc2 = kwargs.get('return_fc2', False)
-    prefix = kwargs.get('prefix', 'speed')  # Prefix for the DFC speed results
 
+    # Parameter extraction & checks (same as before)
+    min_tau_zero = kwargs.get("min_tau_zero", True)
+    method = kwargs.get("method", "pearson")
+    return_fc2 = kwargs.get("return_fc2", False)
+    prefix = kwargs.get("prefix", "speed")  # Prefix for the DFC speed results
 
     # for ws_idx, window_size in tqdm(enumerate(time_window_range), desc=f"Processing animals for window_size "):
-    def process_window(window_size, regions, scale_vel='global'):
+    def process_window(window_size, regions, scale_vel="global"):
         # Loads one window size of DFC data
-        dfc_stream = data.load_dfc_1_window(lag=lag, window=window_size, regions=regions)    # Specify regions here
+        dfc_stream = data.load_dfc_1_window(
+            lag=lag, window=window_size, regions=regions
+        )  # Specify regions here
         # dfc_stream = data.dfc_stream
         logging.getLogger(__name__).info(f"Loaded DFC stream shape: {dfc_stream.shape}")
 
-        #Generate the file name for the current region and window size data
+        # Generate the file name for the current region and window size data
         for ind_reg in range(regions):
             # print(f"Processing region {ind_reg+1}/{regions} for window size {window_size}")
-            
+
             window_file = save_path / (
                 f"{prefix}_{'fc_' if return_fc2 else ''}region{ind_reg}_win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions}.npz"
             )
@@ -275,57 +340,87 @@ def run_local_dfc_speed_analysis(data,
             # Initialize lists to store results for each animal
             results = []
             for animal_idx in range(n_animals):
-                logging.getLogger(__name__).info(f"Processing animal {animal_idx + 1}/{n_animals} for window size {window_size}")
+                logging.getLogger(__name__).info(
+                    f"Processing animal {animal_idx + 1}/{n_animals} for window size {window_size}"
+                )
                 if load_cache and window_file.exists():
-                    logging.getLogger(__name__).info(f"Loading cached results for window {window_file}")
+                    logging.getLogger(__name__).info(
+                        f"Loading cached results for window {window_file}"
+                    )
                     return
                 try:
-                    logging.getLogger(__name__).info(f"Computing for window {window_file} and animal {animal_idx + 1}/{n_animals}")
+                    logging.getLogger(__name__).info(
+                        f"Computing for window {window_file} and animal {animal_idx + 1}/{n_animals}"
+                    )
                     if return_fc2:
                         fc2 = dfc_speed_split(
-                            dfc_stream[animal_idx, reg_indices[ind_reg]], vstep=int(window_size), tau_range=0, method=method, return_fc2=return_fc2
+                            dfc_stream[animal_idx, reg_indices[ind_reg]],
+                            vstep=int(window_size),
+                            tau_range=0,
+                            method=method,
+                            return_fc2=return_fc2,
                         )
                         results.append(fc2)
-                        logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed FC2")
+                        logging.getLogger(__name__).debug(
+                            f"Animal {animal_idx} window {window_size}: computed FC2"
+                        )
                     else:
                         speeds = dfc_speed_split(
-                            dfc_stream[animal_idx, reg_indices[ind_reg]], vstep=int(window_size), tau_range=tau_range, method=method, return_fc2=return_fc2, time_offset=window_size
+                            dfc_stream[animal_idx, reg_indices[ind_reg]],
+                            vstep=int(window_size),
+                            tau_range=tau_range,
+                            method=method,
+                            return_fc2=return_fc2,
+                            time_offset=window_size,
                         )
                         results.append(speeds)
-                        logging.getLogger(__name__).debug(f"Animal {animal_idx} window {window_size}: computed speeds")
+                        logging.getLogger(__name__).debug(
+                            f"Animal {animal_idx} window {window_size}: computed speeds"
+                        )
                 except Exception as e:
-                    logging.getLogger(__name__).error(f"Error for window {window_file}: {e}")
+                    logging.getLogger(__name__).error(
+                        f"Error for window {window_file}: {e}"
+                    )
 
             # Save the fc2 results if return_fc2 else the speed results
             if return_fc2:
                 np.savez_compressed(
                     window_file,
-                    fc2=np.array(results, dtype=object),  # Use object dtype for variable-length arrays
-                    window_size=window_size
+                    fc2=np.array(
+                        results, dtype=object
+                    ),  # Use object dtype for variable-length arrays
+                    window_size=window_size,
                 )
-                logging.getLogger(__name__).info(f"✓ Saved fc2 for window {window_file}")
+                logging.getLogger(__name__).info(
+                    f"✓ Saved fc2 for window {window_file}"
+                )
             else:
                 np.savez_compressed(
                     window_file,
-                    speeds=np.array(results, dtype=object),  # Use object dtype for variable-length arrays
-                    window_size=window_size
+                    speeds=np.array(
+                        results, dtype=object
+                    ),  # Use object dtype for variable-length arrays
+                    window_size=window_size,
                 )
-                logging.getLogger(__name__).info(f"✓ Saved speeds for window {window_file}")
+                logging.getLogger(__name__).info(
+                    f"✓ Saved speeds for window {window_file}"
+                )
 
     # Use Parallel to handle multiple windows in parallel
     Parallel(n_jobs=processors, verbose=1)(
         delayed(process_window)(ws, nodes)
-    for ws in tqdm(time_window_range, desc=f"Processing windows for ...")
+        for ws in tqdm(time_window_range, desc=f"Processing windows for ...")
     )
 
     logging.getLogger(__name__).info("All windows processed successfully.")
 
-#%%
+
+# %%
 processors = -1  # Use all available processors
 
 data = DFCAnalysis()
 
-#Preprocessed data
+# Preprocessed data
 data.get_metadata()
 data.get_ts_preprocessed()
 data.get_cogdata_preprocessed()
@@ -337,51 +432,61 @@ roi_labels = data.region_labels_preprocessed
 all_i, all_j = np.tril_indices(data.regions, k=-1)
 
 # if all_i==0 or all_j==0:
-#%%
-reg_link_indices = np.zeros((data.regions, data.regions-1))  # Create a boolean mask for the upper triangular part
+# %%
+reg_link_indices = np.zeros(
+    (data.regions, data.regions - 1)
+)  # Create a boolean mask for the upper triangular part
 
 for nreg in range(len(data.region_labels_preprocessed)):
-    print(np.where((all_i==nreg) | (all_j==nreg))[0])  # Remove the first element if it is zero
-    reg_link_indices[nreg] = np.where((all_i==nreg) | (all_j==nreg))[0]  # Get the indices of the upper triangular part where the region is involved
+    print(
+        np.where((all_i == nreg) | (all_j == nreg))[0]
+    )  # Remove the first element if it is zero
+    reg_link_indices[nreg] = np.where((all_i == nreg) | (all_j == nreg))[
+        0
+    ]  # Get the indices of the upper triangular part where the region is involved
 
 reg_link_indices = reg_link_indices.astype(int)
 
-dfc_stream = data.load_dfc_1_window(lag=data.lag, window=data.time_window_range[0], regions=data.regions)  # Load one window size of DFC data
-#%%
-# speed_mat = dfc_speed_split(dfc_stream[0,reg_link_indices[0]], 
-#             vstep=1, 
+dfc_stream = data.load_dfc_1_window(
+    lag=data.lag, window=data.time_window_range[0], regions=data.regions
+)  # Load one window size of DFC data
+# %%
+# speed_mat = dfc_speed_split(dfc_stream[0,reg_link_indices[0]],
+#             vstep=1,
 #             tau_range=tau_range,
-#             method='pearson', 
+#             method='pearson',
 #             return_fc2=False,
 #             triu_indices=None,
 #             time_offset=0,
 #             )
-#%%
+# %%
 tau = data.tau
 lag = data.lag
 n_animals = data.n_animals
 nodes = data.regions
-save_path = data.paths['speed']
+save_path = data.paths["speed"]
 
 min_tau_zero = True
 tau_range = np.arange(0, tau + 1) if min_tau_zero else np.arange(-tau, tau + 1)
 
 time_window_range = data.time_window_range
 
-prefix = 'speed'  # Prefix for the DFC speed results
-data.load_dfc_1_window(lag=data.lag, window=data.time_window_range[0], regions=data.regions)  # Load one window size of DFC data
+prefix = "speed"  # Prefix for the DFC speed results
+data.load_dfc_1_window(
+    lag=data.lag, window=data.time_window_range[0], regions=data.regions
+)  # Load one window size of DFC data
 # dfc_stream = data.dfc_stream
 # Example usage for fc2
 # if return_fc2:
 
 analysis_kwargs = {
-    'method': 'pearson',
-    'prefix': prefix,  # Prefix for the DFC speed results
-    'return_fc2': False,  # Set to True if you want to return the second FC matrix
-    'preprocessors': processors,  # Number of parallel processors to use    
+    "method": "pearson",
+    "prefix": prefix,  # Prefix for the DFC speed results
+    "return_fc2": False,  # Set to True if you want to return the second FC matrix
+    "preprocessors": processors,  # Number of parallel processors to use
 }
 
-#%%
+# %%
 # run_dfc_speed_analysis(data,
 #                         time_window_range,
 #                         tau_range,
@@ -392,64 +497,79 @@ analysis_kwargs = {
 #                         load_cache=False,
 #                         processors=processors,
 #                         **analysis_kwargs)
-#%%
-run_local_dfc_speed_analysis(data,
-                        time_window_range,
-                        tau_range,
-                        lag,
-                        save_path,
-                        n_animals,
-                        nodes,
-                        reg_indices=reg_link_indices,
-                        load_cache=False,
-                        processors=processors,
-                        **analysis_kwargs)
-#%%
+# %%
+run_local_dfc_speed_analysis(
+    data,
+    time_window_range,
+    tau_range,
+    lag,
+    save_path,
+    n_animals,
+    nodes,
+    reg_indices=reg_link_indices,
+    load_cache=False,
+    processors=processors,
+    **analysis_kwargs,
+)
+# %%
 # analysis_kwargs = {
 #     'method': 'pearson',
 #     'prefix': prefix,  # Prefix for the DFC speed results
 #     'return_fc2': False,  # Set to True if you want to return the second FC matrix
 # }
-# run_dfc_speed_analysis(data, 
-#                         time_window_range, 
-#                         tau_range, 
-#                         lag, 
-#                         save_path, 
-#                         n_animals, 
-#                         nodes, 
-#                         load_cache=False, 
+# run_dfc_speed_analysis(data,
+#                         time_window_range,
+#                         tau_range,
+#                         lag,
+#                         save_path,
+#                         n_animals,
+#                         nodes,
+#                         load_cache=False,
 #                         processors=processors,
 #                         **analysis_kwargs)
 
 
 # %%
-#Load results per region and window speed
+# Load results per region and window speed
 # Load the speed results for each window size
 for ind_reg in range(data.regions):
     save_speed = []
     for idx, window_size in enumerate(time_window_range):
-        window_file = save_path / f"{prefix}_region{ind_reg}_win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{data.regions}.npz"
+        window_file = (
+            save_path
+            / f"{prefix}_region{ind_reg}_win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{data.regions}.npz"
+        )
         with np.load(window_file, allow_pickle=True) as arr:
-            if 'speeds' in arr:
-                load_speed = arr['speeds']
+            if "speeds" in arr:
+                load_speed = arr["speeds"]
                 logger.info("Keys in file:", arr.files)
             else:
-                logger.warning(f"Warning: 'speeds' not found in {window_file}, available: {arr.files}")
+                logger.warning(
+                    f"Warning: 'speeds' not found in {window_file}, available: {arr.files}"
+                )
                 continue
         save_speed.append(load_speed)
 
     # Save the total speed results across all windows, tau and animals
-    window_file_total = save_path / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
-    print(f"Loaded speeds for region {ind_reg} and window size {len(time_window_range)}: {np.shape(save_speed[-1])}")
+    window_file_total = (
+        save_path
+        / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
+    )
+    print(
+        f"Loaded speeds for region {ind_reg} and window size {len(time_window_range)}: {np.shape(save_speed[-1])}"
+    )
     save_pickle(save_speed, window_file_total)
 # with open(window_file_total, 'wb') as f:
 #     pickle.dump(save_speed, f)
-#%%
+# %%
 
 # Load the speed results
-ind_reg=1
-window_file_total = save_path / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
-with open(window_file_total, 'rb') as f:
+ind_reg = 1
+window_file_total = (
+    save_path
+    / f"{prefix}_region{ind_reg}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}.pkl"
+)
+with open(window_file_total, "rb") as f:
     load_speed = pickle.load(f)
 
 # Transpose from (T, A, Tau, *) → (A, T, Tau, *)
@@ -465,13 +585,13 @@ reorganized = [
 ]
 
 reorganized_array = np.array(reorganized, dtype=object)
-    
+
 merged = [v for t in reorganized_array for a in t for tau in a for v in tau]
 
-#%%
+# %%
 import matplotlib.pyplot as plt
 
-plt.hist(merged, bins=150, alpha=0.7, histtype='step')
+plt.hist(merged, bins=150, alpha=0.7, histtype="step")
 plt.title("Histogram of Speed Values")
 plt.xlabel("Speed")
 plt.ylabel("Frequency")
@@ -479,17 +599,18 @@ plt.show()
 
 # %%
 
-#print the shape of each time windows
+# print the shape of each time windows
 for i, speed in enumerate(load_speed):
     print(i, speed.shape)
     # print(f"Window size {time_window_range[i]}: shape = {speed.shape}")
 print(load_speed[96].shape)
 
-#%%
+# %%
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 sns.set_theme(style="white")
-#plot the speed results
+# plot the speed results
 plt.figure(figsize=(10, 6))
 # for idx in range(data.regions):
 #     # Plot the speed results for each window size
@@ -523,55 +644,63 @@ plt.show()
 # %%
 
 
-
-with open(Path(data.paths['allegiance']) / 'communities_wt_veh.pkl', 'rb') as f:
+with open(Path(data.paths["allegiance"]) / "communities_wt_veh.pkl", "rb") as f:
     communities = pickle.load(f)
 
 for i, c in enumerate(np.unique(communities)):
-    regions_mod1 = np.sum(communities==c)
+    regions_mod1 = np.sum(communities == c)
 
     data.regions = regions_mod1
     analysis_kwargs = {
-    'method': 'pearson',
-    'prefix': prefix,  # Prefix for the DFC speed results
-    'return_fc2': False,  # Set to True if you want to return the second FC matrix
-}
-    run_dfc_speed_analysis(data, 
-                            time_window_range, 
-                            tau_range, 
-                            lag, 
-                            save_path, 
-                            n_animals, 
-                            regions_mod1, 
-                            load_cache=False, 
-                            processors=processors,
-                            **analysis_kwargs)
+        "method": "pearson",
+        "prefix": prefix,  # Prefix for the DFC speed results
+        "return_fc2": False,  # Set to True if you want to return the second FC matrix
+    }
+    run_dfc_speed_analysis(
+        data,
+        time_window_range,
+        tau_range,
+        lag,
+        save_path,
+        n_animals,
+        regions_mod1,
+        load_cache=False,
+        processors=processors,
+        **analysis_kwargs,
+    )
     save_speed = []
     # Load the speed results for each window size
     for idx, window_size in enumerate(time_window_range):
-        window_file = save_path / f"{prefix}_win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions_mod1}.npz"
+        window_file = (
+            save_path
+            / f"{prefix}_win{window_size}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions_mod1}.npz"
+        )
 
         with np.load(window_file, allow_pickle=True) as arr:
-            if 'speeds' in arr:
-                load_speed = arr['speeds']
+            if "speeds" in arr:
+                load_speed = arr["speeds"]
                 logger.info("Keys in file:", arr.files)
             else:
-                logger.warning(f"Warning: 'speeds' not found in {window_file}, available: {arr.files}")
+                logger.warning(
+                    f"Warning: 'speeds' not found in {window_file}, available: {arr.files}"
+                )
                 continue
         save_speed.append(load_speed)
 
     # Save the total speed results across all windows, tau and animals
-    window_file_total = save_path / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions_mod1}.pkl"
+    window_file_total = (
+        save_path
+        / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{regions_mod1}.pkl"
+    )
     save_pickle(save_speed, window_file_total)
-    #Load the speed results
-    with open(window_file_total, 'wb') as f:
+    # Load the speed results
+    with open(window_file_total, "wb") as f:
         pickle.dump(save_speed, f)
 # Save the total speed results across all windows, tau and animals
 # Save the total speed results across all windows, tau and animals
-        
 
 
 # %%
-#Load results per window speed
+# Load results per window speed
 save_speed = []
 # Load the speed results for each window size

@@ -1,29 +1,31 @@
+# deprecated functions
 
-#deprecated functions
 
 # Deprecated
-def compute_dfc_stream_old(ts_data, window_size=7, lag=1, format_data='3D',save_path=None, n_jobs=-1):
+def compute_dfc_stream_old(
+    ts_data, window_size=7, lag=1, format_data="3D", save_path=None, n_jobs=-1
+):
     """
-    This function calculates dynamic functional connectivity (DFC) streams from time-series data using 
-    a sliding window approach. It supports parallel computation and caching of results 
+    This function calculates dynamic functional connectivity (DFC) streams from time-series data using
+    a sliding window approach. It supports parallel computation and caching of results
     to optimize performance.
 
     -----------
     ts_data : np.ndarray
-        A 3D array of shape (n_animals, n_timepoints, n_regions) representing the 
+        A 3D array of shape (n_animals, n_timepoints, n_regions) representing the
         time-series data for multiple animals and brain regions.
     window_size : int, optional
-        The size of the sliding window used for dynamic functional connectivity (DFC) 
+        The size of the sliding window used for dynamic functional connectivity (DFC)
         computation. Default is 7.
     lag : int, optional
         The lag parameter for time-series analysis. Default is 1.
     return_dfc : bool, optional
         If True, the function also returns the DFC stream. Default is False.
     save_path : str or None, optional
-        The directory path where the computed meta-connectivity and DFC stream will 
+        The directory path where the computed meta-connectivity and DFC stream will
         be saved. If None, results are not saved. Default is None.
     n_jobs : int, optional
-        The number of parallel jobs to use for computation. Use -1 to utilize all 
+        The number of parallel jobs to use for computation. Use -1 to utilize all
         available CPU cores. Default is -1.
 
     --------
@@ -34,7 +36,7 @@ def compute_dfc_stream_old(ts_data, window_size=7, lag=1, format_data='3D',save_
 
     Notes:
     ------
-    - If a `save_path` is provided and a cached result exists, the function will load 
+    - If a `save_path` is provided and a cached result exists, the function will load
       the cached data instead of recomputing it.
     - The function uses joblib for parallel computation, with the "loky" backend.
     - The meta-connectivity matrices are computed by correlating the DFC streams.
@@ -46,17 +48,18 @@ def compute_dfc_stream_old(ts_data, window_size=7, lag=1, format_data='3D',save_
     mc, dfc_stream = compute_metaconnectivity(ts_data, return_dfc=True, n_jobs=4)
     """
 
-    n_animals, tr_points, nodes  = ts_data.shape
-    dfc_stream  = None
-    mc          = None
+    n_animals, tr_points, nodes = ts_data.shape
+    dfc_stream = None
+    mc = None
     dfc_stream_loaded = False  # <- initialize this early
-
 
     # File path setup
     save_path = Path(save_path) if save_path else None
     file_path = (
-        save_path / f"dfc_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
-        if save_path else None
+        save_path
+        / f"dfc_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
+        if save_path
+        else None
     )
     if file_path:
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,18 +71,22 @@ def compute_dfc_stream_old(ts_data, window_size=7, lag=1, format_data='3D',save_
         try:
             print(f"Loading dFC stream from: {file_path}")
             data = np.load(file_path, allow_pickle=True)
-            dfc_stream = data['dfc_stream']
+            dfc_stream = data["dfc_stream"]
             dfc_stream_loaded = True
         except Exception as e:
             print(f"Failed to load cached dFC stream (reason: {e}). Recomputing...")
 
     if not dfc_stream_loaded:
-        print(f"Computing dFC stream in parallel (window_size={window_size}, lag={lag})...")
+        print(
+            f"Computing dFC stream in parallel (window_size={window_size}, lag={lag})..."
+        )
 
         # Parallel DFC stream computation per animal
         with parallel_backend("loky", n_jobs=n_jobs):
             dfc_stream_list = Parallel()(
-                delayed(ts2dfc_stream)(ts_data[i], window_size, lag, format_data=format_data)
+                delayed(ts2dfc_stream)(
+                    ts_data[i], window_size, lag, format_data=format_data
+                )
                 # for i in tqdm(range(n_animals), desc="DFC Streams")
                 for i in range(n_animals)
             )
@@ -91,23 +98,29 @@ def compute_dfc_stream_old(ts_data, window_size=7, lag=1, format_data='3D',save_
         np.savez_compressed(file_path, dfc_stream=dfc_stream)
     return dfc_stream
 
-def extract_hash_numbers(filenames, prefix='lot3_'):
+
+def extract_hash_numbers(filenames, prefix="lot3_"):
     """Extract hash numbers from filenames based on a given prefix."""
-    hash_numbers    = [int(name.split(prefix)[-1][:4]) for name in filenames if prefix in name]
+    hash_numbers = [
+        int(name.split(prefix)[-1][:4]) for name in filenames if prefix in name
+    ]
     return hash_numbers
+
 
 def get_mc_region_identities(fc_idx, mc_idx, sort_ref):
     aux_fc = fc_idx[sort_ref]
     fc_reg_idx = aux_fc[mc_idx]  # shape: (n_mc, 2, 2)
     mc_reg_idx = fc_reg_idx.reshape(-1, 4).T  # shape: (4, n_mc)
     return mc_reg_idx, fc_reg_idx
+
+
 def fun_mc_viscocity(data):
     """
     Compute viscocity from array of trials and their MC, the first dimension must be the trials
 
     Parameters
     ----------
-    data : N,M,M np.array 
+    data : N,M,M np.array
         the trials MC.
 
     Returns
@@ -118,25 +131,41 @@ def fun_mc_viscocity(data):
         The mask is a boolean of the data that is true for negative value.
     """
     n_trials = data.shape[0]
-    
+
     data = copy.deepcopy(data)
-    mc_viscocity_mask = (data<0)
-    mc_viscocity_val = np.array([data[i,mc_viscocity_mask[i]] for i in range(n_trials)] ,dtype='object')
+    mc_viscocity_mask = data < 0
+    mc_viscocity_val = np.array(
+        [data[i, mc_viscocity_mask[i]] for i in range(n_trials)], dtype="object"
+    )
     return mc_viscocity_val, mc_viscocity_mask
-def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin= 0.8, gmax=1.3, cache_path=None, ref_name='', n_jobs=-1):
+
+
+def contingency_matrix_fun(
+    n_runs,
+    mc_data,
+    gamma_range=10,
+    gmin=0.8,
+    gmax=1.3,
+    cache_path=None,
+    ref_name="",
+    n_jobs=-1,
+):
     """
     Compute or load a contingency matrix from community detection runs using joblib and vectorized agreement matrix.
     """
 
     n_nodes = mc_data.shape[0]
     gamma_mod = np.linspace(gmin, gmax, gamma_range)
-    
+
     if cache_path:
         cache_dir = Path(cache_path)
-        cache_dir.mkdir(parents=True, exist_ok = True)
-        full_cache_path = cache_dir / f'contingency_matrix_ref={ref_name}_regions={n_nodes}_nruns={n_runs}_gamma_repetitions={gamma_range}'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        full_cache_path = (
+            cache_dir
+            / f"contingency_matrix_ref={ref_name}_regions={n_nodes}_nruns={n_runs}_gamma_repetitions={gamma_range}"
+        )
         if full_cache_path.exists():
-            with full_cache_path.open('rb') as f:
+            with full_cache_path.open("rb") as f:
                 print(f"[cache] Loading contingency matrix from {full_cache_path}")
                 return pickle.load(f)
     else:
@@ -148,38 +177,40 @@ def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin= 0.8, gmax=1.3,
 
     for idx, gamma in enumerate(tqdm(gamma_mod, desc="Gamma values")):
         # Louvain with per-run progress bar
-        results = list(tqdm(
-            Parallel(n_jobs=n_jobs)(
-                delayed(_run_louvain)(mc_data, gamma) 
-                for _ in range(n_runs)
-            ),
-            total=n_runs,
-            desc=f"Gamma {gamma:.2f}"
-        ))
+        results = list(
+            tqdm(
+                Parallel(n_jobs=n_jobs)(
+                    delayed(_run_louvain)(mc_data, gamma) for _ in range(n_runs)
+                ),
+                total=n_runs,
+                desc=f"Gamma {gamma:.2f}",
+            )
+        )
 
         communities, modularities = zip(*results)
         communities = np.array([np.array(c) for c in communities])
         gamma_qmod_val[idx] = modularities
 
         # Efficient agreement accumulation
-        agreement =build_agreement_matrix_vectorized(communities)
+        agreement = build_agreement_matrix_vectorized(communities)
         gamma_agreement_mat[idx] = agreement
 
         contingency_matrix += agreement
-        
 
-    contingency_matrix /= (n_runs * gamma_range)
+    contingency_matrix /= n_runs * gamma_range
 
     # Save to cache
     if full_cache_path is not None:
-        with full_cache_path.open('wb') as f:
+        with full_cache_path.open("wb") as f:
             pickle.dump((contingency_matrix, gamma_qmod_val, gamma_agreement_mat), f)
             print(f"[cache] Saved to {full_cache_path}")
 
     return contingency_matrix, gamma_qmod_val, gamma_agreement_mat
 
 
-def fun_allegiance_communities_old(mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1):
+def fun_allegiance_communities_old(
+    mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1
+):
     """
     Compute allegiance communities from a single or multiple mc matrices.
     Parameters:
@@ -203,21 +234,24 @@ def fun_allegiance_communities_old(mc_data, n_runs=1000, gamma_pt=100, ref_name=
         contingency_matrix: ndarray
             Contingency matrix from Louvain runs.
     """
-    # Load from the cache if the file already exists    
-    def process_single(mc_matrix):#, n_runs = 10, gamma_pt = 10, ref_name='', save_path=None, n_jobs=-1): # gamma number of points in the defined range
-        #allegiance index, argsort, Q value
-        communities, sort_idx, _, contingency = allegiance_matrix_analysis(mc_matrix, 
-                                                                           n_runs=n_runs, 
-                                                                           gamma_pt=gamma_pt, 
-                                                                           cache_path=save_path, 
-                                                                           ref_name=ref_name, 
-                                                                           n_jobs=n_jobs,
-                                                                           )
+
+    # Load from the cache if the file already exists
+    def process_single(
+        mc_matrix,
+    ):  # , n_runs = 10, gamma_pt = 10, ref_name='', save_path=None, n_jobs=-1): # gamma number of points in the defined range
+        # allegiance index, argsort, Q value
+        communities, sort_idx, _, contingency = allegiance_matrix_analysis(
+            mc_matrix,
+            n_runs=n_runs,
+            gamma_pt=gamma_pt,
+            cache_path=save_path,
+            ref_name=ref_name,
+            n_jobs=n_jobs,
+        )
         return communities, sort_idx, contingency
-        
 
     if mc_data.ndim == 3:
-        # Compute multiple allegiance communities 
+        # Compute multiple allegiance communities
         allegiances = []
         for i in range(mc_data.shape[0]):
             allegiance, _, _ = process_single(mc_data[i])
@@ -228,7 +262,7 @@ def fun_allegiance_communities_old(mc_data, n_runs=1000, gamma_pt=100, ref_name=
         communities, sort_idx, contingency = process_single(mc_data)
     else:
         raise ValueError("Input mc_data must be 2D or 3D.")
-    
+
     communities = communities[sort_idx]
 
     if save_path and ref_name:
@@ -236,7 +270,7 @@ def fun_allegiance_communities_old(mc_data, n_runs=1000, gamma_pt=100, ref_name=
             Path(save_path) / f"allegiance_{ref_name}.npz",
             communities=communities,
             sort_idx=sort_idx,
-            contingency=contingency
+            contingency=contingency,
         )
 
     return communities, sort_idx, contingency
