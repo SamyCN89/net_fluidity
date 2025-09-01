@@ -1,5 +1,11 @@
 {
-    "recommendations": [
-        "visualstudioexptteam.vscodeintellicode"
-    ]
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-toolsai.jupyter",
+    "ms-python.black-formatter",
+    "charliermarsh.ruff",
+    "github.copilot",
+    "OpenAI.codex"
+  ]
 }

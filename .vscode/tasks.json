@@ -1,22 +1,8 @@
 {
   "version": "2.0.0",
   "tasks": [
-    {
-      "label": "Push to GitHub and Cluster",
-      "type": "shell",
-      "command": "git push origin main && git push cluster main",
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
-      }
-    }
+    { "label": "pytest (all)", "type": "shell", "command": "pytest -q", "group": "test", "problemMatcher": "$pytest" },
+    { "label": "ruff check",   "type": "shell", "command": "ruff check ." },
+    { "label": "black check",  "type": "shell", "command": "black --check ." }
   ]
 }
-
