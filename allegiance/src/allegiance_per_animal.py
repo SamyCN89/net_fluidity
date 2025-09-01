@@ -1,25 +1,17 @@
 #%%
-from math import e
-from re import M
-from turtle import st
-from unittest import result
-from joblib import Parallel
-from matplotlib import cm, markers
-import numpy as np
-from pathlib import Path
-from tqdm import tqdm
+import pickle
+
+from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
-from shared_code.fun_paths import get_paths
-from shared_code.fun_metaconnectivity import load_merged_allegiance#%%
-from math import e
-from re import M
-from matplotlib import cm, markers
 import numpy as np
-from pathlib import Path
+from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
-import matplotlib.pyplot as plt
+
+from shared_code.fun_metaconnectivity import (
+    contingency_matrix_fun,
+    load_merged_allegiance,
+)
 from shared_code.fun_paths import get_paths
-from shared_code.fun_metaconnectivity import load_merged_allegiance
 
 # Set consistent config to match previous run
 window_size = 9
@@ -41,17 +33,12 @@ n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
 
 
 #%%
-
-
-#%%
-import pickle
 with open(paths['sorted'] / "grouping_data_oip.pkl", "rb") as f:
     mask_groups, label_variables = pickle.load(f)
 with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
     mask_groups_per_sex, label_variables_per_sex = pickle.load(f)#%%
 
 # ----- Load the mc data -----
-from shared_code.fun_metaconnectivity import compute_mc_nplets_mask_and_index
 # Load the regions and allegiance data
 # Check if the regions and allegiance data are loaded correctly
 
@@ -132,9 +119,7 @@ plt.show()
 
 #%%
 import brainconn as bct  # or bctpy equivalent
-from joblib import Parallel, delayed
 import time
-from scipy.stats import pearsonr
 
 _runs=100
 temporal_agreement_matrix = np.zeros((n_animals, n_regions, n_regions))  # Initialize agreement matrix
@@ -211,7 +196,6 @@ community_agreement_labels, q_values = zip(*results)
 # 3. Apply this mapping to ensure consistent labeling.
 
 
-from scipy.optimize import linear_sum_assignment
 def align_community_labels(communities):
     """
     Align community labels across multiple windows.
@@ -261,8 +245,6 @@ plt.show()
 #%%
 #%# Alognment of temporal partitions using a 
 # Consensus clustering with temporal aggregation matrix as reference
-
-from scipy.optimize import linear_sum_assignment
 
 
 reference = community_agreement_labels[0]  # Use the first window as reference
@@ -360,8 +342,6 @@ cont_mat_n_pairs_animal = np.repeat(np.arange(n_windows), n_animals)  # Shape: (
 # cont_mat_n_pairs_animal = np.repeat(np.arange(np.sum(mask_groups_2[0])), np.sum(mask_groups_2[0]))  # Shape: (n_animals * n_windows,)
 #%%
 #TSNE on one animal of contingency matrix (contingency_matrices[0])
-from sklearn.manifold import TSNE
-from sklearn.preprocessing import StandardScaler
 # Standardize the data
 scaler = StandardScaler()
 dfc_communities_sorted_scaled = scaler.fit_transform(dfc_communities_sorted.reshape(-1, dfc_communities_sorted.shape[-1]))
@@ -372,7 +352,7 @@ cont_mat_n_pairs_tsne = tsne.fit_transform(cont_mat_n_pairs)
 #%%
 # Plot the t-SNE results
 plt.figure(figsize=(10, 8))
-plt.scatter(cont_mat_n_pairs_tsne[:, 0], cont_mat_n_pairs_tsne[:, 1], 
+plt.scatter(cont_mat_n_pairs_tsne[:, 0], cont_mat_n_pairs_tsne[:, 1],
             c=cont_mat_n_pairs_animal,
             s=15,
             marker='.',
@@ -541,7 +521,6 @@ allegiance_matrices = cm_0
 allegiance_avg = allegiance_matrices.mean(axis=0)
 
 # "consensus" community structure over the whole period with Louvain method
-from shared_code.fun_metaconnectivity import contingency_matrix_fun
 # contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=allegiance_avg, gamma_range=10, gmin=0.1, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=dfc_communities_sorted.T, gamma_range=10, gmin=0.5, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 #%%
@@ -613,7 +592,6 @@ dfc_data = np.load(paths['dfc'] / f'dfc_{filename_dfc}.npz')
 n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
 
 #%%
-import pickle
 with open(paths['sorted'] / "grouping_data_oip.pkl", "rb") as f:
     mask_groups, label_variables = pickle.load(f)
 with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
@@ -863,9 +841,8 @@ allegiance_matrices = cm_0
 allegiance_avg = allegiance_matrices.mean(axis=0)
 
 # "consensus" community structure over the whole period with Louvain method
-from shared_code.fun_metaconnectivity import contingency_matrix_fun
 # contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=allegiance_avg, gamma_range=10, gmin=0.1, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
-contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=dfc_communities_sorted.T, gamma_range=10, gmin=0.5, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
+contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun(1000, mc_data=dfc_communities_sorted.T, gamma_range=10, gmin=0.5, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 #%%
 consensus_community =contingency_matrix
 

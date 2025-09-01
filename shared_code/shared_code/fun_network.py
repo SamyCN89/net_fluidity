@@ -4,19 +4,27 @@
 # =============================================================================
 
 def sort_modularity(fc):
-    """Eliminate it soon, peplace by 'allegiance_matrix_analysis' in metaconnectivity"""
-    #Modularity of Louvain
-    # modules, louvain = bct.modularity.modularity_louvain_dir(fc)
+    """
+    Sort an FC matrix by community assignments inferred via Louvain modularity.
+
+    Parameters:
+    - fc: np.ndarray (N × N)
+      Weighted (possibly signed) adjacency/FC matrix.
+
+    Returns:
+    - fc_sorted: np.ndarray (N × N)
+      FC matrix with rows/columns permuted to group nodes by detected modules.
+
+    Notes:
+    - Uses `bct.modularity.modularity_louvain_und_sign` with `gamma=1.1`.
+    - This helper is slated for replacement by an allegiance‑matrix‑based analysis in metaconnectivity.
+    """
     # modules, louvain = bct.modularity.modularity_louvain_dir(fc)
     modules, louvain = bct.modularity.modularity_louvain_und_sign(fc, gamma=1.1)
-    # print(np.unique(modules),louvain)
-    
-    #sort accord the modularity
-    sort_modules = np.argsort(modules)
-    # print(sort_modules)
-    fc_mod = fc[:,sort_modules][sort_modules,:] #fc sorted by modularity
-    
-    return fc_mod
+
+    # Sort FC according to module labels
+    order = np.argsort(modules)
+    fc_sorted = fc[:, order][order, :]
+    return fc_sorted
 
 # =============================================================================
-

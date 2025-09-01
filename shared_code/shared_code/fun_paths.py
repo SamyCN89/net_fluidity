@@ -1,5 +1,15 @@
 
-"""Samy Castro Novoa 04.06.2025"""
+"""
+Path helpers for datasets, results, and figures.
+
+Environment variables (can be placed in a local .env):
+- `PROJECT_ROOT_<ENV>`: absolute path to project root for a given environment (default ENV='LOCAL')
+- `DATASET_NAME` (optional): dataset subfolder name used by `get_paths`
+
+Example:
+    PROJECT_ROOT_LOCAL=/abs/path/to/root
+    DATASET_NAME=ines_abdullah
+"""
 
 from pathlib import Path
 import os
@@ -12,11 +22,23 @@ load_dotenv()
 # =============================================================================
 # Get Paths folder
 # =============================================================================
-def get_root_path(env='LOCAL'):
-    # root = os.environ.get("PROJECT_DATA_ROOT")
+def get_root_path(env='LOCAL') -> Path:
+    """
+    Resolve the project root for a given environment label.
+
+    Parameters:
+    - env: str (default 'LOCAL')
+      Suffix used to read `PROJECT_ROOT_<env>` from the environment.
+
+    Returns:
+    - Path: absolute path to the configured project root.
+
+    Raises:
+    - EnvironmentError: if the corresponding environment variable is not set.
+    """
     root = os.getenv(f"PROJECT_ROOT_{env}")
     if not root:
-        raise EnvironmentError("Environment variable PROJECT_ROOT_EXT is not set.")
+        raise EnvironmentError(f"Environment variable PROJECT_ROOT_{env} is not set.")
     return Path(root)
 
 # =============================================================================
@@ -27,7 +49,11 @@ def build_paths(
     cognitive_data_file: str,
     anat_labels_file: str
 ) -> Dict[str, Path]:
-    """Builds and returns all required paths as a dictionary."""
+    """
+    Build canonical dataset/results/figures subpaths under a given root.
+
+    Returns a dictionary with keys like `timeseries`, `results`, `dfc`, `speed`, and `figures`.
+    """
     
     
     # Define paths based on dataset_name
@@ -63,14 +89,21 @@ def build_paths(
 
 # =============================================================================
 def create_directories(paths: Dict[str, Path]) -> None:
-    """Create all directories that are not files."""
+    """
+    Create all directories in the mapping that are not files (no suffix).
+    """
     for path in paths.values():
         if not path.suffix and not path.exists():
             path.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 def check_write_permissions(paths: Dict[str, Path]) -> None:
-    """Check if directories are writable, raise error if not."""
+    """
+    Check basic write permissions for directories in `paths`.
+
+    Creates and removes a small test file in each directory. Raises a
+    `PermissionError` with the list of failing entries.
+    """
     unwritable = []
     for key, path in paths.items():
         if not path.suffix:  # Only check directories
@@ -95,7 +128,10 @@ def get_paths(
     env: str = 'LOCAL'
 ) -> Dict[str, Path]:
     """
-    Generate a dictionary of paths for various data and result directories.
+    Generate a dictionary of canonical paths for data, results, and figures.
+
+    Parameters mirror `build_paths`. When `create=True`, missing folders are created.
+    Use `env` to select which environment variable to read as the root.
     """
     # Load the root path from environment variable or default to LOCAL
     root = get_root_path(env)
