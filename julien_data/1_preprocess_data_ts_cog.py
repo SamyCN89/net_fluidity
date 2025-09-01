@@ -50,15 +50,19 @@ def main(filter_mode="exclude_shortest"):
     # Extract mouse IDs from filenames
     ts_ids = extract_mouse_ids(loaded_files)
 
+    #print index ts_ids == VEH_135
+    
     # Check if all loaded files have the same shape
     if len(set(ts_shapes)) > 1:
         print("Warning: Not all loaded files have the same shape. \n"
               "They are:")
         #Print only the filename and shape of the smallest time series
         min_shape = min(ts_shapes)
-        for file, shape in zip(loaded_files, ts_shapes):
+        for idx, (file, shape) in enumerate(zip(loaded_files, ts_shapes)):
             if shape == min_shape:
                 print(f"{file}: {shape}")
+                #the index of the smallest time series
+                print(f"Index of the smallest time series: {idx}")
 
     # # Group all time series by shape
     min_timepoints = min(ts.shape[0] for ts in ts_list)
@@ -96,13 +100,14 @@ def main(filter_mode="exclude_shortest"):
 
     #List of time series that match the mouse IDs in the cognitive data, preserving the order
     ts_filtered = [ts for ts, id_ in zip(ts_list, ts_ids) if id_ in matched_ids]
+    ts_ids_filtered = [id_ for id_ in ts_ids if id_ in matched_ids]
 
     # Print excluded mice
-    excluded_ts_ids = [mid for mid in ts_ids if mid not in cog_data['mouse'].values]
-    excluded_cog_ids = [mid for mid in cog_data['mouse'].astype(str).values if mid not in ts_ids]
+    excluded_ts_ids = [mid for mid in ts_ids if mid not in cog_data_filtered['mouse'].values]
+    excluded_cog_ids = [mid for mid in cog_data_filtered['mouse'].astype(str).values if mid not in ts_ids]
 
-    print("Mice with time series but NO cognitive data:", excluded_ts_ids, (set(ts_ids) - set(cog_data['mouse'])))
-    print("Mice with cognitive data but NO time series:", excluded_cog_ids, (set(cog_data['mouse']) - set(ts_ids)))
+    print("Mice with time series but NO cognitive data:", excluded_ts_ids, (set(ts_ids) - set(cog_data_filtered['mouse'])))
+    print("Mice with cognitive data but NO time series:", excluded_cog_ids, (set(cog_data_filtered['mouse']) - set(ts_ids)))
 
     # Check if the number of time series matches the number of cognitive data entries
     if len(ts_filtered) != len(cog_data_filtered):
@@ -174,3 +179,5 @@ def main(filter_mode="exclude_shortest"):
 if __name__ == "__main__":
     # ts_filtered, cog_data_filtered, metadata_dict = main(filter_mode=None)
     ts_filtered, cog_data_filtered, metadata_dict = main(filter_mode='exclude_shortest')
+
+# %%

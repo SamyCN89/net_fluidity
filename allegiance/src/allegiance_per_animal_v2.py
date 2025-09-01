@@ -1,26 +1,16 @@
 #%%
-from calendar import c
-from math import e
-from re import M
-from turtle import st
-from unittest import result
 from joblib import Parallel
-from matplotlib import cm, markers
 import numpy as np
-from pathlib import Path
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from shared_code.fun_paths import get_paths
 from shared_code.fun_metaconnectivity import load_merged_allegiance#%%
-from math import e
-from re import M
-from matplotlib import cm, markers
 import numpy as np
-from pathlib import Path
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from shared_code.fun_paths import get_paths
 from shared_code.fun_metaconnectivity import load_merged_allegiance
+import pickle
 
 # Set consistent config to match previous run
 window_size = 9
@@ -28,8 +18,7 @@ lag = 1
 timecourse_folder = 'Timecourses_updated_03052024'
 paths = get_paths(timecourse_folder=timecourse_folder)
 
-#%%
-# Load meta info to determine shape
+#%% Load meta info to determine shape
 data_ts = np.load(paths['preprocessed'] / 'ts_and_meta_2m4m.npz', allow_pickle=True)
 ts = data_ts['ts']
 n_animals = len(ts)
@@ -39,13 +28,7 @@ anat_labels = data_ts['anat_labels']
 filename_dfc = f'window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}'
 dfc_data = np.load(paths['dfc'] / f'dfc_{filename_dfc}.npz')
 n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
-
-
 #%%
-
-
-#%%
-import pickle
 with open(paths['preprocessed'] / "grouping_data_oip.pkl", "rb") as f:
     mask_groups, label_variables = pickle.load(f)
 with open(paths['preprocessed'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
@@ -54,7 +37,6 @@ with open(paths['preprocessed'] / "grouping_data_new.pkl", "rb") as f:
     groups_sex_geno, groups_sex_pheno_oip, groups_sex_pheno_nor = pickle.load(f)
 
 # ----- Load the mc data -----
-from shared_code.fun_metaconnectivity import compute_mc_nplets_mask_and_index
 # Load the regions and allegiance data
 # Check if the regions and allegiance data are loaded correctly
 
@@ -65,11 +47,7 @@ mc_mod_dataset = paths['mc_mod'] / f"mc_allegiance_ref(runs={label_ref}_gammaval
 #%%
 # Load the merged allegiance data of all animals
 dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance(paths, window_size=9, lag=1)
-
 #%%
-
-#%%
-
 dfc_communities_sorted = np.zeros_like(dfc_communities)
 
 for ani in tqdm(range(n_animals), desc="Animals"):
@@ -98,8 +76,7 @@ plt.ylabel("Number of Modules")
 plt.grid()
 plt.show()
 
-#%%
-# Plot the triu contingency matrices for the first animal
+#%% Plot the triu contingency matrices for the first animal
 n_regions = dfc_communities_sorted.shape[2]
 # Extract the upper triangle indices for n_regions x n_regions matrix
 triu_indices = np.triu_indices(n_regions, k=1)  # Get upper triangle indices for n_regions x n_regions matrix
@@ -246,7 +223,6 @@ plt.plot(time_corr_agreement, 'o-', markersize=5, alpha=0.7)
 #%%
 from scipy.stats import spearmanr, pearsonr
 #adjusted rand index
-from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 # Suppose agreement_matrices: shape (n_windows, n_regions, n_regions)
 similarities = np.zeros((n_windows, n_windows))
 # similarities = np.zeros((n_regions, n_regions))

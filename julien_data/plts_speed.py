@@ -33,7 +33,7 @@ region_labels = np.loadtxt(paths['labels'], dtype=str).tolist()
 data_ts_pre = load_npz_dict(paths['preprocessed'] / Path('ts_filtered_unstacked.npz'))
 ts = data_ts_pre['ts']
 n_animals = data_ts_pre['n_animals']
-total_tr = data_ts_pre['total_tr']
+total_tr = data_ts_pre['total_tp']
 regions = data_ts_pre['regions']
 anat_labels = data_ts_pre['anat_labels']
 

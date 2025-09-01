@@ -109,7 +109,7 @@ class DFCAnalysis:
         # Example parameters, adjust as needed
         self.lag = self.metadata.get('lag', 1)  # Default to 1 if not found
         self.tau = self.metadata.get('tau', 3)  # Default to 3 if not found
-        self.window_parameter = self.metadata.get('window_range', (5, 50, 1))  # Default to (5, 50, 1) if not found
+        self.window_parameter = self.metadata.get('window_range', (5, 100, 1))  # Default to (5, 50, 1) if not found
 
         self.time_window_min, self.time_window_max, self.time_window_step = self.window_parameter
         self.time_window_range = np.arange(self.time_window_min,
@@ -181,32 +181,32 @@ class DFCAnalysis:
 
 #-----------------------------------------------------------------------------------------------------
 #%%
-def example_usage():
-    """
-    Example usage of the DFCAnalysis class.
-    This function demonstrates how to load and process the data.
-    """
-    analysis = DFCAnalysis()
+# def example_usage():
+#     """
+#     Example usage of the DFCAnalysis class.
+#     This function demonstrates how to load and process the data.
+#     """
+#     analysis = DFCAnalysis()
 
-    # Load raw data
-    analysis.load_raw_timeseries()
-    analysis.load_raw_cognitive_data()
-    analysis.load_raw_region_labels()
+#     # Load raw data
+#     analysis.load_raw_timeseries()
+#     analysis.load_raw_cognitive_data()
+#     analysis.load_raw_region_labels()
 
-    # Load preprocessed data
-    analysis.load_preprocessed_data()
+#     # Load preprocessed data
+#     analysis.load_preprocessed_data()
 
-    # Load analyzed data
-    analysis.get_temporal_parameters()
-    analysis.load_dfc_1_window()
-    analysis.load_dfc_stream()
-    analysis.get_speed_analysis()
-    analysis.get_speed_fc_analysis()
-#-----------------------------------------------------------------------------------------------------
+#     # Load analyzed data
+#     analysis.get_temporal_parameters()
+#     analysis.load_dfc_1_window()
+#     analysis.load_dfc_stream()
+#     analysis.get_speed_analysis()
+#     analysis.get_speed_fc_analysis()
+# #-----------------------------------------------------------------------------------------------------
 
-# example_usage()
+# # example_usage()
 
-# # # Example usage:
+# # # # Example usage:
 # analysis = DFCAnalysis()
 
 # # #Raw data loading

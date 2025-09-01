@@ -9,7 +9,7 @@ from pathlib import Path
 
 def main():
     # Load the data
-    results_file = Path("/media/samy/Elements1/Proyectos/LauraHarsan/results/julien_caillette/speed/speed_dfc_lag=1_tau=5_wmax=100_wmin=5.npz")
+    results_file = Path("/media/samy/Elements2/Proyectos/LauraHarsan/results/julien_caillette/speed/speed_dfc_lag=1_tau=5_wmax=100_wmin=5.npz")
     
     print("Loading DFC speed results...")
     data = np.load(results_file, allow_pickle=True)

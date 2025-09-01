@@ -58,6 +58,7 @@ def build_paths(
         'fmodularity': figures / 'modularity',
         'f_mod': figures / 'modularity',
         'f_cog': figures / 'cog',
+        'f_speed': figures / 'speed'
     }
 
 # =============================================================================

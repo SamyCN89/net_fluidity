@@ -46,7 +46,7 @@ PROCESSORS = -1 # Use all available processors
 # ------------------------Configuration------------------------
 # Set the path to the root directory of your dataset
 USE_EXTERNAL_DISK = True
-ROOT = Path('/media/samy/Elements1/Proyectos/LauraHarsan/dataset/julien/') if USE_EXTERNAL_DISK \
+ROOT = Path('/media/samy/Elements2/Proyectos/LauraHarsan/dataset/julien/') if USE_EXTERNAL_DISK \
         else Path('/home/samy/Bureau/Proyect/LauraHarsan/dataset/julien/')
 
 PREPROCESS_DATA = ROOT / 'preprocess_data'
