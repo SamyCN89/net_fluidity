@@ -1,3 +1,9 @@
+"""Tools for analyzing allegiance and community structure per animal.
+
+This script loads dynamic functional connectivity data, aligns community labels,
+and performs consensus clustering for each subject.
+"""
+
 #%%
 import pickle
 
@@ -48,15 +54,17 @@ gamma_pt_allegiance = 100
 mc_mod_dataset = paths['mc_mod'] / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={n_regions}.npz".replace(' ','')
 #%%
 # Load the merged allegiance data of all animals
-dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance(paths, window_size=9, lag=1)
+communities, sort_allegiances, contingency_matrices = load_merged_allegiance(paths, window_size=9, lag=1)
 
 #%%
 
-dfc_communities_sorted = np.zeros_like(dfc_communities)
+# Sort community labels for each animal and window using the precomputed order
+# from ``sort_allegiances`` so that labels are comparable across subjects.
+sorted_communities = np.zeros_like(communities)
 
 for ani in tqdm(range(n_animals), desc="Animals"):
     for ws in range(n_windows):
-        dfc_communities_sorted[ani, ws] = dfc_communities[ani, ws, sort_allegiances[ani, ws].astype(int)]
+        sorted_communities[ani, ws] = communities[ani, ws, sort_allegiances[ani, ws].astype(int)]
 
 
 #%%
@@ -64,7 +72,7 @@ from matplotlib.colors import ListedColormap
 from mizani.palettes import brewer_pal
 # Choose a categorical palette: 'Set1', 'Set2', 'Pastel1', etc.
 palette_func = brewer_pal(type='qual', palette='Set1')
-n_categories = int(dfc_communities_sorted.max() + 1)
+n_categories = int(sorted_communities.max() + 1)
 colors = palette_func(n_categories)
 
 
@@ -75,19 +83,19 @@ tol_bright = ["#BBBBBB",
 ]
 
 
-n_categories = int(dfc_communities_sorted.max() + 1)
+n_categories = int(sorted_communities.max() + 1)
 cmap = ListedColormap(tol_bright[:n_categories])
 #%%
 # for animal in range(n_animals):
 for animal in range(2):
-    #plot one dfc_communities_sorted matrix
+    #plot one sorted_communities matrix
     plt.figure(figsize=(10, 8))
     plt.subplot(1, 1, 1)
     plt.clf()
     # plt.title("Community label - Animal 0, Window 0")
     # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-    # aux_argsort = np.argsort(dfc_communities_sorted)
-    plt.imshow(dfc_communities_sorted[animal].T, aspect='auto', interpolation='none', cmap=cmap)
+    # aux_argsort = np.argsort(sorted_communities)
+    plt.imshow(sorted_communities[animal].T, aspect='auto', interpolation='none', cmap=cmap)
     # plt.imshow(contingency_0[sorting_0][:, sorting_0], aspect='auto', interpolation='none', cmap='viridis')
     # plt.clim(0, 1)
     plt.colorbar()
@@ -95,7 +103,11 @@ for animal in range(2):
     plt.ylabel("Regions")
     plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
     plt.title(f"Community labels - Animal {animal}")
-    plt.savefig(paths['f_mod'] / f"dfc_communities_per_animal_{animal}.png", dpi=300, bbox_inches='tight')
+    plt.savefig(
+        paths['f_mod'] / f"sorted_communities_per_animal_{animal}.png",
+        dpi=300,
+        bbox_inches='tight',
+    )
     plt.show()
 # ]
 
@@ -147,13 +159,13 @@ print(f"Time taken for consensus clustering: {stop_time - start_time} seconds /n
 #%%
 # for animal in range(n_animals):
 for animal in range(2):
-    #plot one dfc_communities_sorted matrix
+    #plot one sorted_communities matrix
     plt.figure(figsize=(10, 8))
     plt.subplot(1, 1, 1)
     plt.clf()
     plt.title(f"Temporal agreement matrix - Animal {animal}")
     # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-    # aux_argsort = np.argsort(dfc_communities_sorted)
+    # aux_argsort = np.argsort(sorted_communities)
     plt.imshow(temporal_agreement_matrix[animal].T, aspect='auto', interpolation='none', cmap=cmap)
     # plt.imshow(contingency_0[sorting_0][:, sorting_0], aspect='auto', interpolation='none', cmap='viridis')
     # plt.clim(0, 1)
@@ -162,7 +174,11 @@ for animal in range(2):
     plt.ylabel("Regions")
     plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
     # plt.title(f"Consensus Clustering - Animal {animal}")
-    plt.savefig(paths['f_mod'] / f"dfc_temp_agreement_per_animal_{animal}.png", dpi=300, bbox_inches='tight')
+    plt.savefig(
+        paths['f_mod'] / f"temporal_agreement_per_animal_{animal}.png",
+        dpi=300,
+        bbox_inches='tight',
+    )
     plt.show()
 #%%
 # # Compute Pearson correlation between the agreement matrix and the temporal aggregation matrix
@@ -202,12 +218,12 @@ def align_community_labels(communities):
     
     Parameters
     ----------
-    communities : 2D array
-        Array of shape (n_windows, n_regions) where each row represents the community labels for a window.
-        
+    communities : ndarray
+        Community labels with shape ``(n_windows, n_regions)``.
+
     Returns
     -------
-    aligned_communities : 2D array
+    ndarray
         Aligned community labels.
     """
     n_windows, n_regions = communities.shape
@@ -228,7 +244,7 @@ def align_community_labels(communities):
     return aligned_communities
 
 # Align community labels across all windows
-aligned_communities_temporal = align_community_labels(dfc_communities_sorted[0].astype(int))
+aligned_communities_temporal = align_community_labels(sorted_communities[0].astype(int))
 #%%
 # Plot the aligned communities for one animal
 plt.figure(figsize=(10, 8))
@@ -237,9 +253,13 @@ plt.colorbar()
 plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
 plt.ylabel("Regions")
 plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
-plt.clim(0, np.max(dfc_communities_sorted[0]))
+plt.clim(0, np.max(sorted_communities[0]))
 plt.title(f"Aligned Communities - Animal {animal}")
-plt.savefig(paths['f_mod'] / f"dfc_aligned_communities_per_animal_{animal}.png", dpi=300, bbox_inches='tight')
+plt.savefig(
+    paths['f_mod'] / f"aligned_communities_per_animal_{animal}.png",
+    dpi=300,
+    bbox_inches='tight',
+)
 plt.show()
 
 #%%
@@ -250,9 +270,23 @@ plt.show()
 reference = community_agreement_labels[0]  # Use the first window as reference
 
 def align_partition_to_reference(partition, reference):
-    
+    """Align community labels to a reference partition.
+
+    Parameters
+    ----------
+    partition : ndarray
+        Community labels that need to be aligned.
+    reference : ndarray
+        Reference community labels providing the desired ordering.
+
+    Returns
+    -------
+    ndarray
+        The partition with labels remapped to best match the reference.
+    """
+
     n_comm = max(partition.max(), reference.max()) + 1
-    
+
     # Build cost matrix: how many nodes overlap between community i (in partition) and community j (in reference)
     cost_matrix = np.zeros((n_comm, n_comm))
     for i in range(n_comm):
@@ -266,9 +300,9 @@ def align_partition_to_reference(partition, reference):
     return aligned
 
 # Align all windows to the first window
-aligned_partitions = np.zeros_like(dfc_communities_sorted)
+aligned_partitions = np.zeros_like(sorted_communities)
 for animal in tqdm(range(n_animals)):
-    partitions = dfc_communities_sorted[animal].astype(int)  # Use the current animal's communities as partitions
+    partitions = sorted_communities[animal].astype(int)  # Use the current animal's communities as partitions
     reference = community_agreement_labels[animal]  # Use the current animal's first window as reference
 
     aligned_partitions[animal] = align_partition_to_reference(partitions, reference)
@@ -283,12 +317,16 @@ plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astyp
 plt.ylabel("Regions")
 plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
 plt.title(f"Aligned Partitions - Animal {animal}")
-plt.savefig(paths['f_mod'] / f"dfc_aligned_partitions_per_animal_{animal}.png", dpi=300, bbox_inches='tight')
+plt.savefig(
+    paths['f_mod'] / f"aligned_partitions_per_animal_{animal}.png",
+    dpi=300,
+    bbox_inches='tight',
+)
 plt.show()
 
 
 for animal in range(n_animals):
-    print(np.unique(community_agreement_labels[animal]), np.unique(dfc_communities_sorted[animal]))
+    print(np.unique(community_agreement_labels[animal]), np.unique(sorted_communities[animal]))
 #%%
 
 
@@ -344,7 +382,7 @@ cont_mat_n_pairs_animal = np.repeat(np.arange(n_windows), n_animals)  # Shape: (
 #TSNE on one animal of contingency matrix (contingency_matrices[0])
 # Standardize the data
 scaler = StandardScaler()
-dfc_communities_sorted_scaled = scaler.fit_transform(dfc_communities_sorted.reshape(-1, dfc_communities_sorted.shape[-1]))
+sorted_communities_scaled = scaler.fit_transform(sorted_communities.reshape(-1, sorted_communities.shape[-1]))
 
 # Perform t-SNE
 tsne = TSNE(n_components=2, random_state=42, perplexity=30)
@@ -366,7 +404,7 @@ plt.ylabel("t-SNE Component 2")
 plt.show()
 #%%
 # Plot the mean matrix
-dfc_communities_sorted_median = np.median(dfc_communities_sorted.T, axis=2) # Take the median across the time windows
+sorted_communities_median = np.median(sorted_communities.T, axis=2) # Take the median across the time windows
 
 #%%
 plt.figure(figsize=(10, 8))
@@ -374,9 +412,9 @@ plt.subplot(1, 1, 1)
 plt.clf()
 plt.title("Community label - Animal 0, Window 0")
 # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-# aux_argsort = np.argsort(dfc_communities_sorted)
+# aux_argsort = np.argsort(sorted_communities)
 
-plt.imshow(dfc_communities_sorted_median, aspect='auto', interpolation='none', cmap='viridis')
+plt.imshow(sorted_communities_median, aspect='auto', interpolation='none', cmap='viridis')
 # plt.clim(0, 1)
 plt.colorbar()
 plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
@@ -389,11 +427,11 @@ plt.show()
 plt.figure(figsize=(10, 8))
 plt.clf()
 # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-aux_argsort = np.argsort(dfc_communities_sorted)    
-dfc_groups = np.array([np.median(dfc_communities_sorted[mask_groups[2][xx]], axis=0) for xx in range(len(mask_groups[2]))])
+aux_argsort = np.argsort(sorted_communities)    
+community_groups = np.array([np.median(sorted_communities[mask_groups[2][xx]], axis=0) for xx in range(len(mask_groups[2]))])
 
 # plt.subplots(2, 2, ii + 1)
-for ii, mat in enumerate(dfc_groups):
+for ii, mat in enumerate(community_groups):
     aux_labels = label_variables[2]
     plt.subplot(2, 2, ii + 1)
     plt.title(f"Community label - Group {aux_labels[ii]}, Window {ii+1}")
@@ -427,7 +465,7 @@ plt.subplot(1, 1, 1)
 plt.clf()
 plt.title("Allegiance Matrix - Animal 0, Window 0")
 plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-# plt.imshow(dfc_communities_sorted , aspect='auto', interpolation='none', cmap='Greys')
+# plt.imshow(sorted_communities , aspect='auto', interpolation='none', cmap='Greys')
 # plt.clim(0, 1)
 plt.colorbar()
 plt.xlabel("DFT Frequency")
@@ -493,12 +531,13 @@ for i in range(9):
     plt.ylabel("DFT Frequency")
 # %%
 def _build_agreement_matrix(communities):
-    """
-    Compute the agreement matrix for a list of community labels.
+    """Compute the agreement matrix for a list of community labels.
+
     Parameters
     ----------
     communities : list of 1D arrays
         List of community labels for each run. Each array should have the same length.
+
     Returns
     -------
     agreement : 2D array
@@ -522,7 +561,7 @@ allegiance_avg = allegiance_matrices.mean(axis=0)
 
 # "consensus" community structure over the whole period with Louvain method
 # contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=allegiance_avg, gamma_range=10, gmin=0.1, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
-contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=dfc_communities_sorted.T, gamma_range=10, gmin=0.5, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
+contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=sorted_communities.T, gamma_range=10, gmin=0.5, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 #%%
 consensus_community =contingency_matrix
 
@@ -538,7 +577,7 @@ plt.show()
 # Plot the mean matrix
 # %%
 
-agreement = build_agreement_matrix_vectorized(dfc_communities_sorted.T)
+agreement = build_agreement_matrix_vectorized(sorted_communities.T)
 
 plt.figure(figsize=(10, 8))
 plt.subplot(1, 1, 1)
@@ -598,8 +637,8 @@ with open(paths['sorted'] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
     mask_groups_per_sex, label_variables_per_sex = pickle.load(f)#%%
 
 # Load the merged allegiance data of all animals
-dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance(paths, window_size=9, lag=1)
-dfc_communities_sorted = dfc_communities[:, :, sort_allegiances[0, 0].astype(int)] # REaorder the labelling of the communities (deprecated soon)
+communities, sort_allegiances, contingency_matrices = load_merged_allegiance(paths, window_size=9, lag=1)
+sorted_communities = communities[:, :, sort_allegiances[0, 0].astype(int)] # REaorder the labelling of the communities (deprecated soon)
 
 #%%
 triu = np.triu_indices(n_regions, k=1)  # Get upper triangle indices for n_regions x n_regions matrix
@@ -625,7 +664,7 @@ from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 # Standardize the data
 scaler = StandardScaler()
-dfc_communities_sorted_scaled = scaler.fit_transform(dfc_communities_sorted.reshape(-1, dfc_communities_sorted.shape[-1]))
+sorted_communities_scaled = scaler.fit_transform(sorted_communities.reshape(-1, sorted_communities.shape[-1]))
 
 # Perform t-SNE
 tsne = TSNE(n_components=2, random_state=42, perplexity=30)
@@ -647,7 +686,7 @@ plt.ylabel("t-SNE Component 2")
 plt.show()
 #%%
 # Plot the mean matrix
-dfc_communities_sorted_median = np.median(dfc_communities_sorted.T, axis=2) # Take the median across the time windows
+sorted_communities_median = np.median(sorted_communities.T, axis=2) # Take the median across the time windows
 
 #%%
 plt.figure(figsize=(10, 8))
@@ -655,9 +694,9 @@ plt.subplot(1, 1, 1)
 plt.clf()
 plt.title("Community label - Animal 0, Window 0")
 # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-# aux_argsort = np.argsort(dfc_communities_sorted)
+# aux_argsort = np.argsort(sorted_communities)
 
-plt.imshow(dfc_communities_sorted_median, aspect='auto', interpolation='none', cmap='viridis')
+plt.imshow(sorted_communities_median, aspect='auto', interpolation='none', cmap='viridis')
 # plt.clim(0, 1)
 plt.colorbar()
 plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
@@ -670,11 +709,11 @@ plt.show()
 plt.figure(figsize=(10, 8))
 plt.clf()
 # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-aux_argsort = np.argsort(dfc_communities_sorted)    
-dfc_groups = np.array([np.median(dfc_communities_sorted[mask_groups[2][xx]], axis=0) for xx in range(len(mask_groups[2]))])
+aux_argsort = np.argsort(sorted_communities)    
+community_groups = np.array([np.median(sorted_communities[mask_groups[2][xx]], axis=0) for xx in range(len(mask_groups[2]))])
 
 # plt.subplots(2, 2, ii + 1)
-for ii, mat in enumerate(dfc_groups):
+for ii, mat in enumerate(community_groups):
     aux_labels = label_variables[2]
     plt.subplot(2, 2, ii + 1)
     plt.title(f"Community label - Group {aux_labels[ii]}, Window {ii+1}")
@@ -708,7 +747,7 @@ plt.subplot(1, 1, 1)
 plt.clf()
 plt.title("Allegiance Matrix - Animal 0, Window 0")
 plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-# plt.imshow(dfc_communities_sorted , aspect='auto', interpolation='none', cmap='Greys')
+# plt.imshow(sorted_communities , aspect='auto', interpolation='none', cmap='Greys')
 # plt.clim(0, 1)
 plt.colorbar()
 plt.xlabel("DFT Frequency")
@@ -774,12 +813,13 @@ for i in range(9):
     plt.ylabel("DFT Frequency")
 # %%
 def _build_agreement_matrix(communities):
-    """
-    Compute the agreement matrix for a list of community labels.
+    """Compute the agreement matrix for a list of community labels.
+
     Parameters
     ----------
     communities : list of 1D arrays
         List of community labels for each run. Each array should have the same length.
+
     Returns
     -------
     agreement : 2D array
@@ -796,12 +836,19 @@ def _build_agreement_matrix(communities):
     return agreement.astype(np.float32)
 
 def build_agreement_matrix_vectorized(communities):
+    """Compute an agreement matrix using vectorized comparisons.
+
+    Parameters
+    ----------
+    communities : ndarray
+        Community labels with shape ``(n_runs, n_nodes)``.
+
+    Returns
+    -------
+    ndarray
+        Agreement matrix of shape ``(n_nodes, n_nodes)``.
     """
-    Compute the agreement matrix for a 2D numpy array of community labels using vectorization.
-    communities: array of shape (n_runs, n_nodes)
-    Returns:
-        agreement: 2D array (n_nodes, n_nodes)
-    """
+
     # communities shape: (n_runs, n_nodes)
     # compare all node pairs for each run, shape becomes (n_runs, n_nodes, n_nodes)
     equal_matrix = (communities[:, :, None] == communities[:, None, :])
@@ -809,9 +856,9 @@ def build_agreement_matrix_vectorized(communities):
     agreement = np.sum(equal_matrix, axis=0)
     return agreement.astype(np.float32)
 
-agreement = build_agreement_matrix_vectorized(dfc_communities_sorted[0])
+agreement = build_agreement_matrix_vectorized(sorted_communities[0])
 
-community_agreement = [build_agreement_matrix_vectorized(dfc_communities[indv]) for indv in range(n_animals)]
+community_agreement = [build_agreement_matrix_vectorized(communities[indv]) for indv in range(n_animals)]
 #%%
 
 #plot the agreement matrix for different groups of animals
@@ -842,7 +889,7 @@ allegiance_avg = allegiance_matrices.mean(axis=0)
 
 # "consensus" community structure over the whole period with Louvain method
 # contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=allegiance_avg, gamma_range=10, gmin=0.1, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
-contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun(1000, mc_data=dfc_communities_sorted.T, gamma_range=10, gmin=0.5, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
+contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun(1000, mc_data=sorted_communities.T, gamma_range=10, gmin=0.5, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 #%%
 consensus_community =contingency_matrix
 
@@ -858,7 +905,7 @@ plt.show()
 # Plot the mean matrix
 # %%
 
-agreement = build_agreement_matrix_vectorized(dfc_communities_sorted.T)
+agreement = build_agreement_matrix_vectorized(sorted_communities.T)
 
 plt.figure(figsize=(10, 8))
 plt.subplot(1, 1, 1)
