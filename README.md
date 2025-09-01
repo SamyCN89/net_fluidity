@@ -1,5 +1,9 @@
 # net_fluidity
 
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg) ![Conda env: funcog](https://img.shields.io/badge/conda-funcog-brightgreen)
+
+Quick links: [Environment Setup](docs/ENVIRONMENTS.md) · [Inventory](docs/INVENTORY.md) · [requirements.txt](requirements.txt) · [environment.yml](environment.yml)
+
 Tools for dynamic functional connectivity (DFC), meta‑connectivity, and related analyses. This repo consolidates utilities to compute sliding‑window FC streams, dFC speed, pooling/oversampling summaries, and helper functions for data handling and plotting.
 
 ## Overview
@@ -35,6 +39,19 @@ DATASET_NAME=ines_abdullah
 ```
 
 If you use `fun_paths.get_paths`, it will read `PROJECT_ROOT_<ENV>` (default `LOCAL`) and build a standard folder layout under `dataset/`, `results/`, and `fig/` within that root.
+
+## Environment Setup
+
+For detailed setup with Conda (`funcog`) or pure pip/venv, see `docs/ENVIRONMENTS.md`.
+
+### Quick Install
+
+- Conda
+  - `conda env create -f environment.yml && conda activate funcog`
+  - `pip install -e shared_code`
+- Pip/venv
+  - `python3.11 -m venv .venv && source .venv/bin/activate`
+  - `pip install -r requirements.txt && pip install -e shared_code`
 
 ## Quick Start
 
@@ -82,4 +99,3 @@ These scripts generate synthetic data and compare implementations. They do not r
 ## Citation
 
 Dynamic Functional Connectivity as a complex random walk: Definitions and the dFCwalk toolbox. Lucas Arbabyazd, Diego Lombardo, Olivier Blin, Mira Didic, Demian Battaglia, Viktor Jirsa. MethodsX (2020) doi: 10.1016/j.mex.2020.101168.
-

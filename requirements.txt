@@ -1,0 +1,10 @@
+numpy
+scipy
+numba
+numexpr
+joblib
+tqdm
+pandas
+matplotlib
+python-dotenv
+brainconn

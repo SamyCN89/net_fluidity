@@ -6,12 +6,101 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
+import brainconn as bct  # or bctpy equivalent
+import time
 
 from shared_code.fun_metaconnectivity import (
     contingency_matrix_fun,
     load_merged_allegiance,
+    build_agreement_matrix_vectorized,
 )
 from shared_code.fun_paths import get_paths
+
+# -----------------------------------------------------------------------------
+# Utility functions
+# -----------------------------------------------------------------------------
+
+
+def load_metadata(paths, window_size, lag):
+    """Load metadata and determine dataset dimensions."""
+    data_ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz', allow_pickle=True)
+    ts = data_ts['ts']
+    n_animals = len(ts)
+    n_regions = ts[0].shape[1]
+    anat_labels = data_ts['anat_labels']
+
+    filename_dfc = (
+        f'window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}'
+    )
+    dfc_data = np.load(paths['dfc'] / f'dfc_{filename_dfc}.npz')
+    n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
+    return ts, n_animals, n_regions, anat_labels, n_windows
+
+
+def plot_communities(
+    data,
+    paths,
+    anat_labels,
+    sort_allegiances,
+    cmap,
+    title_prefix,
+    filename_prefix,
+    animal_indices=None,
+):
+    """Plot community matrices for selected animals."""
+    n_animals = data.shape[0]
+    n_regions = data.shape[2]
+    if animal_indices is None:
+        animal_indices = range(n_animals)
+    for animal in animal_indices:
+        plt.figure(figsize=(10, 8))
+        plt.subplot(1, 1, 1)
+        plt.clf()
+        plt.imshow(data[animal].T, aspect='auto', interpolation='none', cmap=cmap)
+        plt.colorbar()
+        plt.yticks(
+            np.arange(n_regions),
+            labels=anat_labels[sort_allegiances[0, 0].astype(int)],
+        )
+        plt.ylabel("Regions")
+        plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
+        plt.title(f"{title_prefix} - Animal {animal}")
+        plt.savefig(
+            paths['f_mod'] / f"{filename_prefix}_{animal}.png",
+            dpi=300,
+            bbox_inches='tight',
+        )
+        plt.show()
+
+
+def compute_temporal_agreement(
+    contingency_matrices,
+    n_windows,
+    n_animals,
+    n_regions,
+    runs=100,
+    n_jobs=6,
+):
+    """Compute consensus clustering via temporal agreement matrices."""
+    temporal_aggregation_mat = np.sum(contingency_matrices, axis=1) / n_windows
+    temporal_agreement_matrix = np.zeros((n_animals, n_regions, n_regions))
+    start_time = time.time()
+    for animal in tqdm(range(n_animals), desc="Animals"):
+        results = Parallel(n_jobs=n_jobs)(
+            delayed(bct.modularity.modularity_louvain_und_sign)(
+                temporal_aggregation_mat[animal], gamma=1
+            )
+            for _ in range(runs)
+        )
+        partitions = [partition for partition, _ in results]
+        temporal_agreement_matrix[animal] = (
+            build_agreement_matrix_vectorized(np.array(partitions)) / runs
+        )
+    stop_time = time.time()
+    print(
+        f"Time taken for consensus clustering: {stop_time - start_time} seconds /n {n_animals} animals"
+    )
+    return temporal_agreement_matrix, temporal_aggregation_mat
 
 # Set consistent config to match previous run
 window_size = 9
@@ -21,15 +110,9 @@ paths = get_paths(timecourse_folder=timecourse_folder)
 
 #%%
 # Load meta info to determine shape
-data_ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz', allow_pickle=True)
-ts = data_ts['ts']
-n_animals = len(ts)
-n_regions = ts[0].shape[1]
-anat_labels = data_ts['anat_labels']
-
-filename_dfc = f'window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}'
-dfc_data = np.load(paths['dfc'] / f'dfc_{filename_dfc}.npz')
-n_windows = np.transpose(dfc_data['dfc_stream'], (0, 3, 2, 1)).shape[-1]
+ts, n_animals, n_regions, anat_labels, n_windows = load_metadata(
+    paths, window_size, lag
+)
 
 
 #%%
@@ -54,10 +137,10 @@ dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance
 
 dfc_communities_sorted = np.zeros_like(dfc_communities)
 
-for ani in tqdm(range(n_animals), desc="Animals"):
-    for ws in range(n_windows):
-        dfc_communities_sorted[ani, ws] = dfc_communities[ani, ws, sort_allegiances[ani, ws].astype(int)]
-
+# Reorder community labels using vectorized indexing instead of nested loops
+dfc_communities_sorted = np.take_along_axis(
+    dfc_communities, sort_allegiances.astype(int), axis=2
+)
 
 #%%
 from matplotlib.colors import ListedColormap
@@ -78,93 +161,42 @@ tol_bright = ["#BBBBBB",
 n_categories = int(dfc_communities_sorted.max() + 1)
 cmap = ListedColormap(tol_bright[:n_categories])
 #%%
-# for animal in range(n_animals):
-for animal in range(2):
-    #plot one dfc_communities_sorted matrix
-    plt.figure(figsize=(10, 8))
-    plt.subplot(1, 1, 1)
-    plt.clf()
-    # plt.title("Community label - Animal 0, Window 0")
-    # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-    # aux_argsort = np.argsort(dfc_communities_sorted)
-    plt.imshow(dfc_communities_sorted[animal].T, aspect='auto', interpolation='none', cmap=cmap)
-    # plt.imshow(contingency_0[sorting_0][:, sorting_0], aspect='auto', interpolation='none', cmap='viridis')
-    # plt.clim(0, 1)
-    plt.colorbar()
-    plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
-    plt.ylabel("Regions")
-    plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
-    plt.title(f"Community labels - Animal {animal}")
-    plt.savefig(paths['f_mod'] / f"dfc_communities_per_animal_{animal}.png", dpi=300, bbox_inches='tight')
-    plt.show()
-# ]
-
-#%%
+plot_communities(
+    dfc_communities_sorted,
+    paths,
+    anat_labels,
+    sort_allegiances,
+    cmap,
+    title_prefix="Community labels",
+    filename_prefix="dfc_communities_per_animal",
+    animal_indices=range(2),
+)
 
 # ----------------- Consensus Clustering -----------------
-#Compute the consensus clustering from the temporal aggregation of the contingency matrices
-from shared_code.fun_metaconnectivity import build_agreement_matrix_vectorized
+temporal_agreement_matrix, temporal_aggregation_mat = compute_temporal_agreement(
+    contingency_matrices, n_windows, n_animals, n_regions
+)
 
-temporal_aggregation_mat = np.sum(contingency_matrices, axis=1) /n_windows   # Average across animals and windows
-
-#Plot the allegiance matrix
+# Plot the temporal aggregation matrix
 plt.figure(figsize=(10, 8))
 plt.imshow(temporal_aggregation_mat[0], aspect='auto', interpolation='none', cmap='Set1')
 plt.colorbar()
 plt.title("Temporal Aggregation Matrix")
 plt.ylabel("Regions")
 plt.xlabel("Regions")
-# plt.clim(0,0.5)
 plt.show()
 
-#%%
-import brainconn as bct  # or bctpy equivalent
-import time
+plot_communities(
+    temporal_agreement_matrix,
+    paths,
+    anat_labels,
+    sort_allegiances,
+    cmap,
+    title_prefix="Temporal agreement matrix",
+    filename_prefix="dfc_temp_agreement_per_animal",
+    animal_indices=range(2),
+)
 
-_runs=100
-temporal_agreement_matrix = np.zeros((n_animals, n_regions, n_regions))  # Initialize agreement matrix
-start_time = time.time()
-for animal in tqdm(range(n_animals), desc="Animals"):
-    partitions = []
-    q_values = []
-    # agreement_matrix: n_nodes x n_nodes, values in [0,1]
-    results = Parallel(n_jobs=6)(  
-        delayed(bct.modularity.modularity_louvain_und_sign)(temporal_aggregation_mat[animal], gamma=1)
-        for _ in range(_runs)
-        )
-    
-    for partition, q in results:
-        partitions.append(partition)
-        q_values.append(q)
-    # print(f"Average modularity (Q): {np.mean(q_values)}")
-    # ...and then cluster *that* matrix to get final consensus.
-
-    # Build consensus agreement matrix from these partitions...
-    temporal_agreement_matrix[animal] = build_agreement_matrix_vectorized(np.array(partitions))/ _runs
-# temporal_agreement_matrix = temporal_agreement_matrix / _runs  # Normalize the agreement matrix by the number of runs
-stop_time = time.time()
-print(f"Time taken for consensus clustering: {stop_time - start_time} seconds /n {n_animals} animals")
-#%%
-# for animal in range(n_animals):
-for animal in range(2):
-    #plot one dfc_communities_sorted matrix
-    plt.figure(figsize=(10, 8))
-    plt.subplot(1, 1, 1)
-    plt.clf()
-    plt.title(f"Temporal agreement matrix - Animal {animal}")
-    # plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-    # aux_argsort = np.argsort(dfc_communities_sorted)
-    plt.imshow(temporal_agreement_matrix[animal].T, aspect='auto', interpolation='none', cmap=cmap)
-    # plt.imshow(contingency_0[sorting_0][:, sorting_0], aspect='auto', interpolation='none', cmap='viridis')
-    # plt.clim(0, 1)
-    plt.colorbar()
-    plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
-    plt.ylabel("Regions")
-    plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
-    # plt.title(f"Consensus Clustering - Animal {animal}")
-    plt.savefig(paths['f_mod'] / f"dfc_temp_agreement_per_animal_{animal}.png", dpi=300, bbox_inches='tight')
-    plt.show()
-#%%
 # # Compute Pearson correlation between the agreement matrix and the temporal aggregation matrix
 # pearson_val =pearsonr(temporal_agreement_matrix.flatten(), temporal_aggregation_mat[animal].flatten())
 #   # Compute Pearson correlation between the agreement matrix and the temporal aggregation matrix

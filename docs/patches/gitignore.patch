@@ -1,0 +1,35 @@
+diff --git a/.gitignore b/.gitignore
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,2 +1,29 @@
+-*.pyc
+-*.env
++*.pyc
++*.env
++
++# Large data and results
++data/
++dataset/
++datasets/
++results/
++fig/
++outputs/
++
++# Binary data files
++*.npz
++*.mat
++
++# Caches
++__pycache__/
++.pytest_cache/
++.cache/
++
++# Jupyter checkpoints
++.ipynb_checkpoints/
++
++# OS artifacts
++.DS_Store
++
++# Virtual environments (optional)
++.venv/
++venv/
