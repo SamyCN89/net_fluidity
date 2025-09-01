@@ -187,7 +187,7 @@ def contingency_matrix_fun(
             )
         )
 
-        communities, modularities = zip(*results)
+        communities, modularities = zip(*results, strict=False)
         communities = np.array([np.array(c) for c in communities])
         gamma_qmod_val[idx] = modularities
 

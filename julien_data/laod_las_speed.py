@@ -1,10 +1,10 @@
 # %%
-import pickle
 from pathlib import Path
-from networkx import density
-import numpy as np
+import pickle
+
 from class_dataanalysis_julien import DFCAnalysis
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
 data = DFCAnalysis()
@@ -114,8 +114,6 @@ for community in range(n_communities):
 
 # %%
 
-import seaborn as sns
-import matplotlib.pyplot as plt
 import pandas as pd
 
 community = 2  # or 1, 2, ...
@@ -211,8 +209,8 @@ def make_plot_df(window_idx_list, label):
     return pd.DataFrame(plot_data)
 
 
-import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Prepare data
 df_all = make_plot_df(window_idx_all, "All windows")
@@ -323,7 +321,7 @@ palette = sns.color_palette("tab10", n_colors=len(data.groups))
 
 plt.figure(figsize=(10, 6))
 
-for (group_name, animal_indices), color in zip(data.groups.items(), palette):
+for (group_name, animal_indices), color in zip(data.groups.items(), palette, strict=False):
     pooled = []
     for win_list in all_speed:  # Each window size
         for animal_idx in animal_indices:
@@ -364,8 +362,8 @@ plt.show()
 # %%
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
 plt.figure(figsize=(10, 6))
@@ -430,8 +428,8 @@ sns.despine(trim=True)
 plt.show()
 # %%
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
 window_sizes = time_window_range  # Your array/list of window sizes
@@ -491,8 +489,8 @@ plt.show()
 # %%
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 quantile_levels = np.linspace(0, 1, 20)
 n_windows = len(window_sizes)
@@ -581,8 +579,8 @@ plt.show()
 
 # %%
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 quantile_levels = np.linspace(0, 1, 100)
 n_windows = len(window_sizes)
@@ -671,9 +669,8 @@ plt.show()
 
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 # Calculate pairwise differences (assumes 4 groups: A, B, C, D)
 diff_AB = speed_matrices[0] - speed_matrices[1]
@@ -833,10 +830,11 @@ plt.show()
 
 
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
 import itertools
 import math
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Assume speed_matrices, group_names, window_sizes, quantile_levels are defined
 N = len(speed_matrices)
@@ -975,10 +973,10 @@ plt.show()
 
 # %%
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-from scipy.stats import theilslopes, spearmanr
+from scipy.stats import spearmanr, theilslopes
 import seaborn as sns
 
 cog_data_filtered = (
@@ -1006,7 +1004,7 @@ per_animal_speeds = np.array(per_animal_speeds)
 # Cognitive scores and group labels
 cog_df = cog_data_filtered.reset_index(drop=True)
 cog_scores = cog_df["index_NOR"].values
-group_labels = list(zip(cog_df["genotype"], cog_df["treatment"]))
+group_labels = list(zip(cog_df["genotype"], cog_df["treatment"], strict=False))
 
 # Assign color/marker per group
 groups = sorted(set(group_labels))
@@ -1064,8 +1062,8 @@ plt.show()
 
 # %%
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.stats import spearmanr
 import seaborn as sns
 
@@ -1195,7 +1193,7 @@ long_idx = np.arange(n_windows // 2, n_windows)
 all_speeds_short = []
 all_speeds_long = []
 
-for idxs, pool in zip([short_idx, long_idx], ["short", "long"]):
+for idxs, pool in zip([short_idx, long_idx], ["short", "long"], strict=False):
     pool_speeds = []
     for win_idx in idxs:
         win_arr = all_speed[win_idx]  # (n_animals, n_tau, n_timepoints)
@@ -1250,8 +1248,8 @@ plt.show()
 # %%
 # %%
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
+import seaborn as sns
 
 # Assume: groups = df_summary.groupby(['genotype', 'treatment']).groups
 #         window_sizes, all_speed, etc. already defined
@@ -1316,10 +1314,11 @@ plt.show()
 
 # %%
 
-import numpy as np
-import matplotlib.pyplot as plt
 from itertools import combinations
 import string
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Suppose you have: all_speed, window_sizes, groups from previous code
 
@@ -1367,7 +1366,7 @@ fig, axes = plt.subplots(
 legend_handles = []
 
 for panel_idx, (ax, (g1, g2)) in enumerate(
-    zip(axes.flat, combinations(groups_list, 2))
+    zip(axes.flat, combinations(groups_list, 2), strict=False)
 ):
     arr1 = group_speeds_dict[g1]
     arr2 = group_speeds_dict[g2]
@@ -1490,10 +1489,11 @@ for group, animal_idxs in data.groups.items():
         group_speeds_dict_long[group] = np.array([])
 
 # Now re-use the Q–Q grid code (with supertitle tweak)
-import numpy as np
-import matplotlib.pyplot as plt
 from itertools import combinations
 import string
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def group_to_str(group):
@@ -1519,7 +1519,7 @@ fig, axes = plt.subplots(
 legend_handles = []
 
 for panel_idx, (ax, (g1, g2)) in enumerate(
-    zip(axes.flat, combinations(groups_list, 2))
+    zip(axes.flat, combinations(groups_list, 2), strict=False)
 ):
     arr1 = group_speeds_dict_long[g1]
     arr2 = group_speeds_dict_long[g2]
@@ -1617,8 +1617,8 @@ plt.show()
 # %%
 # %%
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
+import seaborn as sns
 
 # Assume: groups = df_summary.groupby(['genotype', 'treatment']).groups
 #         window_sizes, all_speed, etc. already defined
@@ -1693,8 +1693,9 @@ print(f"Kruskal–Wallis H = {stat:.3f}, p = {pval:.3g}")
 
 
 # %%
-from scipy.stats import mannwhitneyu
 from itertools import combinations
+
+from scipy.stats import mannwhitneyu
 
 # Bonferroni correction for multiple comparisons
 n_comps = len(group_speeds_dict) * (len(group_speeds_dict) - 1) // 2

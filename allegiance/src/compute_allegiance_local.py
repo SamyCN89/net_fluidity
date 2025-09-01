@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
@@ -7,16 +6,16 @@ Created on Mon Sep 23 13:26:30 2024
 """
 
 # %%
-import os
 import logging
-from calendar import c
-from matplotlib import pyplot as plt
-import numpy as np
-import time
+import os
 
 # from functions_analysis import *
 from pathlib import Path
 import sys
+import time
+
+from matplotlib import pyplot as plt
+import numpy as np
 
 sys.path.append("../../shared_code")
 
@@ -26,10 +25,11 @@ def setup_logging():
     cfg_path = os.getenv("NET_FLUIDITY_LOGGING", "config/logging.yaml")
     try:
         if os.path.exists(cfg_path):
-            import yaml
             from logging.config import dictConfig
 
-            with open(cfg_path, "r") as f:
+            import yaml
+
+            with open(cfg_path) as f:
                 dictConfig(yaml.safe_load(f))
             return
     except Exception:
@@ -46,27 +46,19 @@ logger = logging.getLogger(__name__)
 
 # from sphinx import ret
 
-from shared_code.fun_loaddata import *
 from shared_code.fun_dfcspeed import *
-
+from shared_code.fun_loaddata import *
 from shared_code.fun_metaconnectivity import (
-    compute_metaconnectivity,
-    intramodule_indices_mask,
-    get_fc_mc_indices,
-    get_mc_region_identities,
     fun_allegiance_communities,
-    compute_trimers_identity,
-    build_trimer_mask,
-)
-
-from shared_code.fun_utils import (
-    set_figure_params,
-    #    get_paths,
-    load_cognitive_data,
-    load_timeseries_data,
-    load_grouping_data,
 )
 from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import (
+    #    get_paths,
+    load_cognitive_data,
+    load_grouping_data,
+    load_timeseries_data,
+    set_figure_params,
+)
 
 # =============================================================================
 # This code compute

@@ -4,23 +4,21 @@ This script is part of the fluidity analysis for the Julien Caillette dataset.
 It loads raw timeseries data, cognitive data, and region labels,
 and processes the data to compute DFC streams and speeds.
 """
-from importlib import metadata
-from math import e
 from pathlib import Path
-import numpy as np
-import pandas as pd
-import scipy as sp
 import pickle
 
-from shared_code.fun_paths import get_paths
+import numpy as np
+import pandas as pd
+
 from shared_code.fun_loaddata import (
-    load_mat_timeseries,
     extract_mouse_ids,
-    load_npz_dict,
-    make_file_path,
-    load_pickle,
     load_fc2_npz,
+    load_mat_timeseries,
+    load_npz_dict,
+    load_pickle,
+    make_file_path,
 )
+from shared_code.fun_paths import get_paths
 from shared_code.shared_code.fun_loaddata import load_pickle
 
 

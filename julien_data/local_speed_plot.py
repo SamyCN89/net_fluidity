@@ -1,21 +1,19 @@
 # %%
+from dataclasses import dataclass
+from itertools import combinations
 import pickle
-from pathlib import Path
+import string
+
+from class_dataanalysis_julien import DFCAnalysis
+import matplotlib.pyplot as plt
 
 # from matplotlib import scale
 # from networkx import density
 import numpy as np
-from class_dataanalysis_julien import DFCAnalysis
-import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
-from scipy.stats import theilslopes, spearmanr, kruskal
-from itertools import combinations
-import string
-from scipy.stats import mannwhitneyu
+from scipy.stats import kruskal, mannwhitneyu, spearmanr, theilslopes
+import seaborn as sns
 import statsmodels.api as sm
-
-from dataclasses import dataclass
 
 data = DFCAnalysis()
 data.load_preprocessed_data()
@@ -242,7 +240,7 @@ def get_valid_array(arr):
     return arr
 
 
-for (group_name, animal_indices), color in zip(data.groups.items(), palette):
+for (group_name, animal_indices), color in zip(data.groups.items(), palette, strict=False):
     print(f"Processing group {group_name} with n animals {len(animal_indices)}")
     pooled = []
     for win_idx, win_list in enumerate(all_speed):  # Each window size
@@ -352,7 +350,7 @@ pooled = get_pooled_speed_arrays(
 def plot_flatten_speed_array(data, scale="linear", save_fig=False):
     """Flatten speed array for a given animal index across all taus."""
 
-    for (group_name, animal_indices), color in zip(data.groups.items(), palette):
+    for (group_name, animal_indices), color in zip(data.groups.items(), palette, strict=False):
         pooled = []
         for win_list in all_speed:  # Each window size
             for animal_idx in animal_indices:
@@ -576,7 +574,7 @@ def plot_dfc_speed_vs_cog_scores_per_group(data, save_fig=False):
     # Cognitive scores and group labels
     cog_df = cog_data_filtered.reset_index(drop=True)
     cog_scores = cog_df["index_NOR"].values
-    group_labels = list(zip(cog_df["genotype"], cog_df["treatment"]))
+    group_labels = list(zip(cog_df["genotype"], cog_df["treatment"], strict=False))
 
     # Assign color/marker per group
     groups = sorted(set(group_labels))
@@ -843,7 +841,7 @@ def plot_qq_plot(data, scale="linear", save_fig=False):
     legend_handles = []
 
     for panel_idx, (ax, (g1, g2)) in enumerate(
-        zip(axes.flat, combinations(groups_list, 2))
+        zip(axes.flat, combinations(groups_list, 2), strict=False)
     ):
         arr1 = group_speeds_dict[g1]
         arr2 = group_speeds_dict[g2]
@@ -1003,7 +1001,7 @@ def plot_qq_plot_long(data, save_fig=False):
     legend_handles = []
 
     for panel_idx, (ax, (g1, g2)) in enumerate(
-        zip(axes.flat, combinations(groups_list, 2))
+        zip(axes.flat, combinations(groups_list, 2), strict=False)
     ):
         arr1 = group_speeds_dict_long[g1]
         arr2 = group_speeds_dict_long[g2]

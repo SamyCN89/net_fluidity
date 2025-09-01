@@ -1,10 +1,11 @@
-import os
 import logging
+import os
+
 import numpy as np
-from pathlib import Path
-from shared_code.fun_paths import get_paths
-from shared_code.fun_metaconnectivity import load_merged_allegiance
 from tqdm import tqdm
+
+from shared_code.fun_metaconnectivity import load_merged_allegiance
+from shared_code.fun_paths import get_paths
 
 
 def setup_logging():
@@ -12,10 +13,11 @@ def setup_logging():
     cfg_path = os.getenv("NET_FLUIDITY_LOGGING", "config/logging.yaml")
     try:
         if os.path.exists(cfg_path):
-            import yaml
             from logging.config import dictConfig
 
-            with open(cfg_path, "r") as f:
+            import yaml
+
+            with open(cfg_path) as f:
                 dictConfig(yaml.safe_load(f))
             return
     except Exception:

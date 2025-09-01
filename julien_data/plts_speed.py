@@ -1,16 +1,16 @@
 # %%
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
-import time
 
-from shared_code.fun_paths import get_paths
 from shared_code.fun_loaddata import (
-    load_mat_timeseries,
     extract_mouse_ids,
+    load_mat_timeseries,
     load_npz_dict,
     make_file_path,
 )
+from shared_code.fun_paths import get_paths
 
 # %%
 # ------------------------ Path's Configuration ------------------------

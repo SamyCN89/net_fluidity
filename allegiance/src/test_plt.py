@@ -1,17 +1,17 @@
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
-from tqdm import tqdm
-from sklearn.manifold import TSNE
-from sklearn.preprocessing import StandardScaler
 import pickle
 
-from shared_code.fun_paths import get_paths
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
+
 from shared_code.fun_metaconnectivity import (
-    load_merged_allegiance,
     contingency_matrix_fun,
+    load_merged_allegiance,
 )
+from shared_code.fun_paths import get_paths
 
 # --- CONFIG ---
 window_size = 9

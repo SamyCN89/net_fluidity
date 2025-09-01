@@ -1,39 +1,25 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Oct  2 14:42:38 2023
 
 @author: samy
 """
 # %% Import libraries
-from cProfile import label
 from pathlib import Path
-from tkinter import W
-from tqdm import tqdm
-import numpy as np
+
 import matplotlib.pyplot as plt
-import brainconn as bct
-import os
-import time
+import numpy as np
 import pandas as pd
 
 # import sys
 # sys.path.append('../shared_code')
 # from functions_analysis import *
-from scipy.io import loadmat, savemat
-from scipy.special import erfc
-from scipy.stats import pearsonr, spearmanr
-
-from shared_code.fun_loaddata import *
-from shared_code.fun_dfcspeed import pool_vel_windows, get_population_wpooling
-
 # from fun_utils import set_figure_params
 from shared_code.fun_bootstrap import handler_bootstrap_permutation
-from shared_code.fun_utils import set_figure_params
+from shared_code.fun_dfcspeed import get_population_wpooling, pool_vel_windows
+from shared_code.fun_loaddata import *
 from shared_code.fun_paths import get_paths
-
-from joblib import Parallel, delayed
-
+from shared_code.fun_utils import set_figure_params
 
 # %% Figure parameters
 # =============================================================================
@@ -291,7 +277,7 @@ def plot_wpool(*wp_vars, labels=None, name_data="all"):
 
         # Linear scale plot
         plt.subplot(3, 2, 2 * i + 1)
-        for counts, label in zip(norm_counts_list, labels):
+        for counts, label in zip(norm_counts_list, labels, strict=False):
             plt.plot(bin_centers, counts, label=label, alpha=0.9)
         plt.title(f"{vel_label[i]} {name_data}" if i == 0 else vel_label[i])
         if i == 0:
@@ -300,7 +286,7 @@ def plot_wpool(*wp_vars, labels=None, name_data="all"):
 
         # Log scale plot
         plt.subplot(3, 2, 2 * i + 2)
-        for counts, label in zip(norm_counts_list, labels):
+        for counts, label in zip(norm_counts_list, labels, strict=False):
             plt.plot(bin_centers, counts, label=label, alpha=0.9)
         plt.title(f"{vel_label[i]} {name_data}" if i == 0 else vel_label[i])
         plt.xlim(0, 1.2)
@@ -394,7 +380,7 @@ def cdf_plot(*wp_vars, labels=None):
     for i in range(3):  # short, mid, long
         plt.subplot(3, 1, i + 1)
         plt.title(f"Cumulative Distribution Function ({vel_label[i]})")
-        for cdf, label in zip(wp_vars, labels):
+        for cdf, label in zip(wp_vars, labels, strict=False):
             plt.plot(cdf[i][0], cdf[i][1], label=label)
         # plt.yscale('log')
     plt.ylabel("Cumulative probability")

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Oct  2 14:42:38 2023
 
@@ -8,20 +7,15 @@ Created on Mon Oct  2 14:42:38 2023
 
 
 # %%
-from os import path
 from pathlib import Path
-import comm
-import numpy as np
-import pandas as pd
-from shared_code.fun_loaddata import *
-from shared_code.fun_dfcspeed import get_tenet4window_range
-from shared_code.fun_paths import get_paths
-from tqdm import tqdm
 import pickle
 
 # %% Define paths
-
 from class_dataanalysis_julien import DFCAnalysis
+import numpy as np
+
+from shared_code.fun_dfcspeed import get_tenet4window_range
+from shared_code.fun_loaddata import *
 
 data = DFCAnalysis()
 
@@ -75,7 +69,7 @@ for ts in data.ts:
     all_animals_3d[idx, :n_tp, :] = ts
     idx += 1
 
-print(f"\nData shapes after conversion:")
+print("\nData shapes after conversion:")
 print(f"All animals (padded): {all_animals_3d.shape}")
 print(f"500-timepoint animals: {ts_500_3d.shape}")
 print(f"400-timepoint animals: {ts_400_3d.shape}")

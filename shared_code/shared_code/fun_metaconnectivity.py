@@ -1,32 +1,26 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Wed Mar 26 00:16:53 2025
 
 @author: samy
 """
 
-import joblib
-import numpy as np
-import matplotlib.pyplot as plt
-import brainconn as bct
-import os
-import pandas as pd
-from pathlib import Path
-import copy
-import pickle
-from tqdm import tqdm
-
 from itertools import combinations_with_replacement
+import logging
+from pathlib import Path
+import pickle
+
+import brainconn as bct
+import joblib
 from joblib import Parallel, delayed, parallel_backend
+import numpy as np
+from tqdm import tqdm
 
 from .fun_dfcspeed import ts2dfc_stream
 from .fun_loaddata import *
 from .fun_optimization import (
     fast_corrcoef,
 )  # , fast_corrcoef_numba, fast_corrcoef_numba_parallel
-
-import logging
 
 # import time
 # from functions_analysis import *
@@ -305,7 +299,7 @@ def contingency_matrix_fun(
 
     # Reshape into [gamma_index][runs]
     results_by_gamma = [[] for _ in range(gamma_range)]
-    for (gamma, _), result in zip(job_list, all_results):
+    for (gamma, _), result in zip(job_list, all_results, strict=False):
         gamma_idx = np.argmin(np.abs(gamma_mod - gamma))  # match gamma to index
         results_by_gamma[gamma_idx].append(result)
 
@@ -318,7 +312,7 @@ def contingency_matrix_fun(
     # Process per gamma
     for idx, gamma in enumerate(tqdm(gamma_mod, desc="Processing gammas")):
         results = results_by_gamma[idx]
-        communities, modularities = zip(*results)
+        communities, modularities = zip(*results, strict=False)
         communities = np.array(communities, dtype=np.int32)
         communities_mat[idx] = communities
         gamma_qmod_val[idx] = modularities
@@ -501,7 +495,7 @@ def fun_allegiance_communities2(
     if mc_data.ndim == 3:
         # Process multiple MC matrices
         communities_list, sort_idx_list, contingency_list = zip(
-            *(process_single(mc_data[i]) for i in range(mc_data.shape[0]))
+            *(process_single(mc_data[i]) for i in range(mc_data.shape[0])), strict=False
         )
         communities = np.mean(communities_list, axis=0)
         sort_idx = np.argsort(communities)

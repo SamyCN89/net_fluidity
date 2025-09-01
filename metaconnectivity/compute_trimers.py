@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
@@ -7,36 +6,24 @@ Created on Mon Sep 23 13:26:30 2024
 """
 
 # %%
-import numpy as np
-import time
-
 # from functions_analysis import *
 from pathlib import Path
 
-from fun_loaddata import *
 from fun_dfcspeed import *
-
+from fun_loaddata import *
 from fun_metaconnectivity import (
     compute_mc_nplets_mask_and_index,
-    compute_metaconnectivity,
-    intramodule_indices_mask,
-    get_fc_mc_indices,
-    get_mc_region_identities,
-    fun_allegiance_communities,
-    compute_trimers_identity,
-    build_trimer_mask,
     trimers_leaves_fc,
     trimers_root_fc,
-    compute_mc_nplets_mask_and_index,
 )
-
 from fun_utils import (
-    set_figure_params,
     get_paths,
     load_cognitive_data,
-    load_timeseries_data,
     load_grouping_data,
+    load_timeseries_data,
+    set_figure_params,
 )
+import numpy as np
 
 # =============================================================================
 # This code compute

@@ -11,5 +11,5 @@ from .fun_loaddata import *
 from .fun_metaconnectivity import *
 from .fun_network import *
 from .fun_optimization import *
-from .fun_utils import *
 from .fun_paths import *
+from .fun_utils import *

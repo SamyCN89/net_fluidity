@@ -1,33 +1,20 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
 @author: samy
 """
 # %%
-from pathlib import Path
-import numpy as np
-import time
-import pandas as pd
 import pickle
-from scipy.io import loadmat
-from collections import defaultdict
+
+import numpy as np
+import pandas as pd
 
 from shared_code.fun_loaddata import (
-    extract_hash_numbers,
-    load_mat_timeseries,
     extract_mouse_ids,
-)
-from shared_code.fun_utils import (
-    filename_sort_mat,
-    load_matdata,
-    classify_phenotypes,
-    make_combination_masks,
-    make_masks,
+    load_mat_timeseries,
 )
 from shared_code.fun_paths import get_paths
-import matplotlib.pyplot as plt
 
 # %%
 
@@ -71,7 +58,7 @@ def main(filter_mode="exclude_shortest"):
         print("Warning: Not all loaded files have the same shape. \n" "They are:")
         # Print only the filename and shape of the smallest time series
         min_shape = min(ts_shapes)
-        for idx, (file, shape) in enumerate(zip(loaded_files, ts_shapes)):
+        for idx, (file, shape) in enumerate(zip(loaded_files, ts_shapes, strict=False)):
             if shape == min_shape:
                 print(f"{file}: {shape}")
                 # the index of the smallest time series
@@ -83,7 +70,7 @@ def main(filter_mode="exclude_shortest"):
     if filter_mode == "exclude_shortest":
         filtered = [
             (ts, id_)
-            for ts, id_ in zip(ts_list, ts_ids)
+            for ts, id_ in zip(ts_list, ts_ids, strict=False)
             if ts.shape[0] > min_timepoints
         ]
         ts_list = [ts for ts, id_ in filtered]
@@ -117,7 +104,7 @@ def main(filter_mode="exclude_shortest"):
     cog_data_filtered = cog_data.set_index("mouse").loc[matched_ids].reset_index()
 
     # List of time series that match the mouse IDs in the cognitive data, preserving the order
-    ts_filtered = [ts for ts, id_ in zip(ts_list, ts_ids) if id_ in matched_ids]
+    ts_filtered = [ts for ts, id_ in zip(ts_list, ts_ids, strict=False) if id_ in matched_ids]
     ts_ids_filtered = [id_ for id_ in ts_ids if id_ in matched_ids]
 
     # Print excluded mice

@@ -3,11 +3,12 @@
 Simple DFC Speed Results Analysis
 """
 
-import os
 import logging
-import numpy as np
-import matplotlib.pyplot as plt
+import os
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def setup_logging():
@@ -15,10 +16,11 @@ def setup_logging():
     cfg_path = os.getenv("NET_FLUIDITY_LOGGING", "config/logging.yaml")
     try:
         if os.path.exists(cfg_path):
-            import yaml
             from logging.config import dictConfig
 
-            with open(cfg_path, "r") as f:
+            import yaml
+
+            with open(cfg_path) as f:
                 dictConfig(yaml.safe_load(f))
             return
     except Exception:

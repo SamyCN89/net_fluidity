@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Oct  2 14:42:38 2023
 
@@ -8,28 +7,14 @@ Created on Mon Oct  2 14:42:38 2023
 
 # %%
 from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as plt
-import brainconn as bct
-import os
-import time
 
-from joblib import Parallel, delayed, parallel_backend
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 # from functions_analysis import *
-from scipy.io import loadmat, savemat
-from scipy.special import erfc
-from scipy.stats import pearsonr, spearmanr
-
 from shared_code.fun_loaddata import *  # Import only needed functions
-from shared_code.fun_dfcspeed import parallel_dfc_speed_oversampled_series
-from shared_code.fun_utils import set_figure_params
 from shared_code.fun_paths import get_paths
-from tqdm import tqdm
-
-from shared_code.shared_code.fun_dfcspeed import get_tenet4window_range
-
 
 # %% Define paths, folders and hash
 # ------------------------ Configuration ------------------------
@@ -79,7 +64,7 @@ time_window_range = np.arange(
 )
 
 # %%
-from shared_code.fun_loaddata import make_file_path, load_from_cache
+from shared_code.fun_loaddata import load_from_cache, make_file_path
 
 # Plot FCD of the first animal
 

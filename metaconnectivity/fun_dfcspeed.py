@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Fri Mar  8 15:45:43 2024
 
@@ -15,16 +14,17 @@ Created on Fri Mar  8 15:45:43 2024
 #  Mostly of the functions are the python version of the dfc speed toolbox
 # Dynamic Functional Connectivity as a complex random walk: Definitions and the dFCwalk toolbox
 # Lucas Arbabyazd, Diego Lombardo, Olivier Blin, Mira Didic, Demian Battaglia, Viktor Jirsa
-# doi:  10.1016/j.mex.2020.101168 
+# doi:  10.1016/j.mex.2020.101168
 # https://github.com/FunDyn/dFCwalk
 # =============================================================================
 
-import numpy as np
 import brainconn as bct
-from tqdm import tqdm
-import numexpr as ne
+from fun_optimization import fast_corrcoef
 from joblib import Parallel, delayed
-from fun_optimization import fast_corrcoef, fast_corrcoef_numba
+import numexpr as ne
+import numpy as np
+from tqdm import tqdm
+
 # =============================================================================
 # # fc and fcd functions
 # =============================================================================
@@ -43,25 +43,25 @@ def compute_plv_matrix_vectorized(data):
         A 2D array of shape (channels, channels) representing PLV between each pair of channels.
     """
     num_channels = data.shape[0]
-    
+
     # Compute the phase for each channel
     phase_data = np.angle(np.exp(1j * np.angle(data)))
-    
+
     # Compute pairwise phase differences for all channels at once using broadcasting
     # The result is an array of shape (channels, channels, timepoints)
     phase_diff = phase_data[:, np.newaxis, :] - phase_data[np.newaxis, :, :]
-    
+
     # Compute the complex exponential of the phase differences for all pairs
     # Shape remains (channels, channels, timepoints)
     complex_phase_diff = ne.evaluate("exp(1j * phase_diff)")
-    
+
     # Compute the mean across timepoints (axis=-1) for all pairs of channels
     # and take the absolute value to get the PLV matrix
     plv_matrix = np.abs(np.mean(complex_phase_diff, axis=-1))
-    
+
     # Ensure the diagonal is exactly 1 (because PLV between a channel and itself is 1)
     np.fill_diagonal(plv_matrix, 1.0)
-    
+
     return plv_matrix
 
 def ts2fc(timeseries, format_data = '2D', method='pearson'):
@@ -155,12 +155,12 @@ def ts2dfc_stream_old(ts, windows_size, lag=None, format_data='2D', method='pear
     # Calculate the number of frames/windows
     frames = (t_total - windows_size)//lag + 1
     n_pairs               = n * (n-1)//2 #number of pairwise correlations
-    
+
     if format_data=='2D':
         dfc_stream = np.empty((n_pairs, frames))
     elif format_data=='3D':
         dfc_stream = np.empty((n, n, frames))
-        
+
 
     for k in range(frames):
         wstart = k * lag
@@ -187,7 +187,7 @@ def dfc_stream2fcd(dfc_stream):
     if dfc_stream.ndim < 2 or dfc_stream.ndim > 3:
         raise ValueError("Provide a valid size dfc_stream (2D or 3D)!")
     # Convert 3D dfc_stream to 2D if necessary
-  
+
     if dfc_stream.ndim == 3:
         dfc_stream_2D = matrix2vec(dfc_stream)
     else:
@@ -196,7 +196,7 @@ def dfc_stream2fcd(dfc_stream):
     # Compute dFC
     dfc_stream_2D = dfc_stream_2D.T
     dfc = np.corrcoef(dfc_stream_2D)
-    
+
     return dfc
 
 #%%
@@ -224,7 +224,7 @@ def dfc_speed(dfc_stream, vstep=1):
         FCstr = dfc_stream
     else:
         raise ValueError("Provide a valid size dFCstream (2D or 3D)!")
-    
+
     nslices = FCstr.shape[1]
     speeds = np.empty(nslices - vstep)
     # speeds = []
@@ -282,32 +282,32 @@ def dfc_speed_oversampled_series(ts, window_parameter, lag=1, tau=3, min_tau_zer
         
     Samy Castro 2024
     """
-    
+
     if min_tau_zero==True:
         min_tau=0
     else:
         min_tau=-tau
-    
+
     time_windows_min, time_windows_max, time_window_step = window_parameter
     time_windows_range = np.arange(time_windows_min,time_windows_max+1,time_window_step)
-    tau_array       = np.append(np.arange(min_tau, tau), tau ) 
-    
+    tau_array       = np.append(np.arange(min_tau, tau), tau )
+
     speed_windows_tau = np.zeros((len(time_windows_range), len(tau_array)))
     speed_dist    = []
-    
+
     for idx_tt, tt in tqdm(enumerate(time_windows_range)):
-    
+
         windows_size    = tt
-    
+
         dfc_streamaux   = ts2dfc_stream(ts, windows_size, lag, format_data='2D')
         height_stripe      = dfc_streamaux.shape[1]-windows_size-tau
-    
+
         speed_oversampl    = np.array([dfc_speed(dfc_streamaux, vstep=windows_size + sp)[1][:height_stripe] for sp in tau_array])
         speed_windows_tau[idx_tt] = np.median(speed_oversampl,axis=1)
 
         if get_speed_dist==True:        # speed_dist = np.mean(speed_oversampl,axis=1)
             speed_dist.append(speed_oversampl.flatten())
-        
+
     if get_speed_dist==True:        # speed_dist = np.mean(speed_oversampl,axis=1)
         return speed_windows_tau, speed_dist
     else:
@@ -370,7 +370,7 @@ def parallel_dfc_speed_oversampled_series(ts, window_parameter, lag=1, tau=3,min
         return np.median(speed_oversampl, axis=1), speed_oversampl if get_speed_dist else None
 
     results = Parallel(n_jobs=-1)(delayed(compute_speed_for_window_size)(tt) for tt in tqdm(time_windows_range))
-    speed_windows_tau, speed_dist = zip(*results) if get_speed_dist else (zip(*results), None)
+    speed_windows_tau, speed_dist = zip(*results, strict=False) if get_speed_dist else (zip(*results, strict=False), None)
 
     if get_speed_dist:
         # Flatten the speed_dist list of lists to a single list
@@ -384,26 +384,26 @@ def window_pooling_speed(filter_listed, vel_list):
     short_vel_list = []
     mid_vel_list = []
     long_vel_list = []
-    
+
     filter_list = np.where(filter_listed==True)[0]
-    
-    # for tt in range(29): 
-    for tt in filter_list: 
+
+    # for tt in range(29):
+    for tt in filter_list:
         for yy in range(10):
-            short_vel_list.append(vel_list[tt][yy])  
+            short_vel_list.append(vel_list[tt][yy])
         for yy in range(10,31):
-            mid_vel_list.append(vel_list[tt][yy])  
+            mid_vel_list.append(vel_list[tt][yy])
         for yy in range(31,61):
-            long_vel_list.append(vel_list[tt][yy])  
-    
+            long_vel_list.append(vel_list[tt][yy])
+
     short_vel = np.concatenate(short_vel_list) if short_vel_list else np.array([])
     mid_vel = np.concatenate(mid_vel_list) if mid_vel_list else np.array([])
     long_vel = np.concatenate(long_vel_list) if long_vel_list else np.array([])
-    
+
     return short_vel , mid_vel, long_vel
 
 # =============================================================================
-# Network analysis functions    
+# Network analysis functions
 # =============================================================================
 
 def sort_modularity(fc):
@@ -413,12 +413,12 @@ def sort_modularity(fc):
     # modules, louvain = bct.modularity.modularity_louvain_dir(fc)
     modules, louvain = bct.modularity.modularity_louvain_und_sign(fc, gamma=1.1)
     # print(np.unique(modules),louvain)
-    
+
     #sort accord the modularity
     sort_modules = np.argsort(modules)
     # print(sort_modules)
     fc_mod = fc[:,sort_modules][sort_modules,:] #fc sorted by modularity
-    
+
     return fc_mod
 
 # =============================================================================

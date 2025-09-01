@@ -1,10 +1,9 @@
 # %%
 # import pickle
-from pathlib import Path
-from networkx import density
-import numpy as np
-from class_dataanalysis_julien import DFCAnalysis
 import pickle
+
+from class_dataanalysis_julien import DFCAnalysis
+import numpy as np
 
 data = DFCAnalysis()
 # %%
@@ -127,9 +126,9 @@ def dfc_speed(
     MethodsX 2020, doi: 10.1016/j.mex.2020.101168
     """
     from shared_code.fun_dfcspeed import (
+        cosine_speed_vectorized,
         pearson_speed_vectorized,
         spearman_speed,
-        cosine_speed_vectorized,
     )
 
     # Input validation
@@ -238,8 +237,6 @@ plt.legend()
 
 # %%
 import logging
-from joblib import Parallel, delayed
-from tqdm import tqdm
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
@@ -292,9 +289,9 @@ def dfc_speed_split(
     MethodsX 2020, doi: 10.1016/j.mex.2020.101168
     """
     from shared_code.fun_optimization import (
+        cosine_speed_vectorized,
         pearson_speed_vectorized,
         spearman_speed,
-        cosine_speed_vectorized,
     )
 
     # Input validation

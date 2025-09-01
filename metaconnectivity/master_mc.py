@@ -1,27 +1,20 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Tue Apr  8 23:13:49 2025
 
 @author: samy
 """
 # %%
-import numpy as np
-import os
-import pandas as pd
-import pickle
 from pathlib import Path
+import pickle
+
+import numpy as np
+import pandas as pd
+
 from shared_code.fun_utils import (
-    filename_sort_mat,
-    split_groups_by_age,
-    load_matdata,
-    classify_phenotypes,
-    set_figure_params,
-    #    load_cogdata_sorted,
     get_paths,
+    set_figure_params,
 )
-import matplotlib.pyplot as plt
-import time
 
 # %% Figure parameters
 # ========================== Figure parameters ================================

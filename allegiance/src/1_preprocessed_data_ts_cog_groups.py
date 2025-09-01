@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
 @author: samy
 """
 # %%
-from pathlib import Path
-import numpy as np
 import os
-import pandas as pd
 import pickle
 
+import numpy as np
+import pandas as pd
+
 from shared_code.fun_loaddata import extract_hash_numbers
+from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
+    classify_phenotypes,
     filename_sort_mat,
     load_matdata,
-    classify_phenotypes,
     make_combination_masks,
     make_masks,
 )
-from shared_code.fun_paths import get_paths
-import matplotlib.pyplot as plt
-import time
 
 # =============================================================================
 # This code computes

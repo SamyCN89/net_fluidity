@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
@@ -7,24 +6,21 @@ Created on Mon Sep 23 13:26:30 2024
 """
 
 # %%
-import numpy as np
+# from functions_analysis import *
 import time
 
-# from functions_analysis import *
-from pathlib import Path
+import numpy as np
 
-from shared_code.fun_loaddata import *
 from shared_code.fun_dfcspeed import *
-
+from shared_code.fun_loaddata import *
 from shared_code.fun_metaconnectivity import *
-
-from shared_code.fun_utils import (
-    set_figure_params,
-    load_cognitive_data,
-    load_timeseries_data,
-    load_grouping_data,
-)
 from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import (
+    load_cognitive_data,
+    load_grouping_data,
+    load_timeseries_data,
+    set_figure_params,
+)
 
 # ===============================================================================
 # This code compute metaconnectivity and modularity

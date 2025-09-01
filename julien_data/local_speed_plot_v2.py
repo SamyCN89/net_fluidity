@@ -1,23 +1,20 @@
 # %%
+from dataclasses import dataclass
+from itertools import combinations
 import pickle
+import string
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Union
-
-from scipy.stats import theilslopes, spearmanr, kruskal, mannwhitneyu
 from scipy import stats
+from scipy.stats import kruskal, mannwhitneyu, spearmanr, theilslopes
+import seaborn as sns
 import statsmodels.api as sm
 
 # from matplotlib import scale
 # from networkx import density
 from julien_data.class_dataanalysis_julien import DFCAnalysis
-from itertools import combinations
-import string
-
 
 data = DFCAnalysis()
 data.load_preprocessed_data()  # %%
@@ -82,12 +79,12 @@ def build_speed_context(data, ind_reg, prefix="speed") -> SpeedContext:
 
 
 def pool_speeds(
-    all_speed: List[np.ndarray],
-    animals: List[int],
-    windows: Optional[Union[List[int], np.ndarray]] = None,
-    taus: Optional[Union[List[int], np.ndarray]] = None,
+    all_speed: list[np.ndarray],
+    animals: list[int],
+    windows: list[int] | np.ndarray | None = None,
+    taus: list[int] | np.ndarray | None = None,
     weighting: str = "sample",  # "sample" (current behavior) or "animal"
-) -> Union[np.ndarray, List[np.ndarray]]:
+) -> np.ndarray | list[np.ndarray]:
     """
     Gather speed values for given animals, window indices, and tau indices.
     - weighting="sample": returns a single 1D array concatenating all samples (current behavior).
@@ -434,7 +431,7 @@ def plot_dfc_speed_vs_cog_scores_per_group(
 
     fig, ax = plt.subplots(figsize=(7, 5))
 
-    for (grp_name, animal_indices), color in zip(group_items, palette):
+    for (grp_name, animal_indices), color in zip(group_items, palette, strict=False):
         idx = np.array(animal_indices)
         mask = ~np.isnan(per_animal_vals[idx]) & ~np.isnan(cog_scores[idx])
         if not np.any(mask):
@@ -574,7 +571,7 @@ def plot_corr_vs_window(
         # keep group order consistent with ctx.groups
         order = ["-".join(g) for g in ctx.groups.keys()]
         palette = sns.color_palette("tab10", n_colors=len(order))
-        for color, lab in zip(palette, order):
+        for color, lab in zip(palette, order, strict=False):
             sub = df[df["group"] == lab].sort_values("window_size")
             if sub.empty:
                 continue
@@ -943,7 +940,6 @@ def build_groups_for_tests(
         raise ValueError("approach must be 'per-animal' or 'per-sample'")
 
 
-from scipy import stats
 
 
 def kruskal_speed_groups(group_arrays: dict) -> dict:
@@ -954,12 +950,12 @@ def kruskal_speed_groups(group_arrays: dict) -> dict:
     labels = list(group_arrays.keys())
     arrays = [np.asarray(group_arrays[g], float) for g in labels]
     arrays = [a[~np.isnan(a)] for a in arrays]
-    nonempty = [(g, a) for g, a in zip(labels, arrays) if a.size > 0]
+    nonempty = [(g, a) for g, a in zip(labels, arrays, strict=False) if a.size > 0]
 
     if len(nonempty) < 2:
         return {"ok": False, "reason": "Need at least two groups with data."}
 
-    labs, arrs = zip(*nonempty)
+    labs, arrs = zip(*nonempty, strict=False)
     H, p = stats.kruskal(*arrs)
     Ns = {g: int(a.size) for g, a in nonempty}
     return {
@@ -975,7 +971,6 @@ def kruskal_speed_groups(group_arrays: dict) -> dict:
 
 import numpy as np
 import pandas as pd
-from itertools import combinations
 
 
 def _rank_biserial_from_u(U, n1, n2, med1, med2):
@@ -1092,8 +1087,6 @@ def build_group_values(
     return out
 
 
-from itertools import combinations
-import string
 
 
 def plot_qq_groups(
@@ -1145,7 +1138,7 @@ def plot_qq_groups(
     q = np.linspace(0, 1, n_points)
 
     handles = None
-    for idx, ((g1, g2), ax) in enumerate(zip(pairs, axes.flat)):
+    for idx, ((g1, g2), ax) in enumerate(zip(pairs, axes.flat, strict=False)):
         a1, a2 = gvals[g1], gvals[g2]
         if a1.size == 0 or a2.size == 0:
             ax.axis("off")
@@ -1333,7 +1326,6 @@ plot_qq_groups(
 # %%
 import numpy as np
 import pandas as pd
-from itertools import combinations
 
 
 def _rank_biserial_from_u(U, n1, n2, med1, med2):
@@ -1529,7 +1521,7 @@ def get_valid_array(arr):
     return arr
 
 
-for (group_name, animal_indices), color in zip(data.groups.items(), palette):
+for (group_name, animal_indices), color in zip(data.groups.items(), palette, strict=False):
     print(f"Processing group {group_name} with n animals {len(animal_indices)}")
     pooled = []
     for win_idx, win_list in enumerate(all_speed):  # Each window size
@@ -1639,7 +1631,7 @@ pooled = get_pooled_speed_arrays(
 def plot_flatten_speed_array(data, scale="linear", save_fig=False):
     """Flatten speed array for a given animal index across all taus."""
 
-    for (group_name, animal_indices), color in zip(data.groups.items(), palette):
+    for (group_name, animal_indices), color in zip(data.groups.items(), palette, strict=False):
         pooled = []
         for win_list in all_speed:  # Each window size
             for animal_idx in animal_indices:
@@ -1863,7 +1855,7 @@ def plot_dfc_speed_vs_cog_scores_per_group(data, save_fig=False):
     # Cognitive scores and group labels
     cog_df = cog_data_filtered.reset_index(drop=True)
     cog_scores = cog_df["index_NOR"].values
-    group_labels = list(zip(cog_df["genotype"], cog_df["treatment"]))
+    group_labels = list(zip(cog_df["genotype"], cog_df["treatment"], strict=False))
 
     # Assign color/marker per group
     groups = sorted(set(group_labels))
@@ -2130,7 +2122,7 @@ def plot_qq_plot(data, scale="linear", save_fig=False):
     legend_handles = []
 
     for panel_idx, (ax, (g1, g2)) in enumerate(
-        zip(axes.flat, combinations(groups_list, 2))
+        zip(axes.flat, combinations(groups_list, 2), strict=False)
     ):
         arr1 = group_speeds_dict[g1]
         arr2 = group_speeds_dict[g2]
@@ -2290,7 +2282,7 @@ def plot_qq_plot_long(data, save_fig=False):
     legend_handles = []
 
     for panel_idx, (ax, (g1, g2)) in enumerate(
-        zip(axes.flat, combinations(groups_list, 2))
+        zip(axes.flat, combinations(groups_list, 2), strict=False)
     ):
         arr1 = group_speeds_dict_long[g1]
         arr2 = group_speeds_dict_long[g2]

@@ -1,21 +1,15 @@
 # %%
 #
 from pathlib import Path
-import numpy as np
 import pickle
-import logging
-from tqdm import tqdm
-import gc
-
-from joblib import Parallel, delayed
-from typing import Dict, List, Tuple, Optional, Union
-
-from webcolors import name_to_rgb_percent
 
 from class_dataanalysis_julien import DFCAnalysis
+from joblib import Parallel, delayed
+import numpy as np
+from tqdm import tqdm
+
+from shared_code.fun_dfcspeed import ts2dfc_stream, ts2fc
 from shared_code.fun_loaddata import save_pickle
-from shared_code.fun_utils import set_figure_params
-from shared_code.fun_dfcspeed import ts2fc, ts2dfc_stream
 from shared_code.fun_metaconnectivity import contingency_matrix_fun
 
 processors = -1  # Use all available processors
@@ -73,10 +67,10 @@ for i, fc_mat in enumerate(tqdm(fc_wt_veh)):
 
 gamma = np.linspace(gmin, gmax, gamma_n)
 # %%
+from itertools import combinations
+
 import numpy as np
 from sklearn.metrics import normalized_mutual_info_score
-from itertools import combinations
-from joblib import Parallel, delayed
 from tqdm import tqdm
 
 
@@ -169,7 +163,7 @@ plt.legend()
 
 # %%
 # Spearman Correlation between allegiance matrices
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import spearmanr
 
 
 def compute_correlation(allegiance_matrices: np.ndarray) -> np.ndarray:
@@ -215,7 +209,6 @@ plt.colorbar()
 
 
 import brainconn as bct
-
 
 communities, _ = bct.modularity.modularity_louvain_und_sign(
     agreement_matrices, gamma=1.0, seed=42

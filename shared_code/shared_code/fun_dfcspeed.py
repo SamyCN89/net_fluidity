@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Fri Mar  8 15:45:43 2024
 
@@ -19,28 +18,22 @@ Created on Fri Mar  8 15:45:43 2024
 # https://github.com/FunDyn/dFCwalk
 # =============================================================================
 
-from pathlib import Path
-from sys import prefix
-import numpy as np
-import brainconn as bct
-import time
-
-from tqdm import tqdm
-import numexpr as ne
-from joblib import Parallel, delayed, parallel_backend, cpu_count
 from collections import Counter
 import logging
-from scipy.stats import rankdata
+import time
 
+from joblib import Parallel, cpu_count, delayed
+import numexpr as ne
+import numpy as np
+from tqdm import tqdm
+
+from .fun_loaddata import *
 from .fun_optimization import (
-    fast_corrcoef,
-    fast_corrcoef_numba,
-    fast_corrcoef_numba_parallel,
-    pearson_speed_vectorized,
     cosine_speed_vectorized,
+    fast_corrcoef,
+    pearson_speed_vectorized,
     spearman_speed,
 )
-from .fun_loaddata import *
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +253,7 @@ def _handle_dfc_speed_analysis(
         for i in tqdm(range(n_animals), desc=f"Computing {prefix}")
     ]
 
-    median_speeds, speed_arrays, fc2_arrays = zip(*results)
+    median_speeds, speed_arrays, fc2_arrays = zip(*results, strict=False)
     median_speeds = np.array(median_speeds)  # This works, because all are scalar
 
     # Save results if path provided (following test version approach with fixes)
@@ -437,7 +430,7 @@ def get_tenet4window_range(
             delayed(compute4window)(
                 ws, ts, prefix, lag, save_path, load_cache, **kwargs
             )
-            for ws in tqdm(time_window_range, desc=f"Window sizes")
+            for ws in tqdm(time_window_range, desc="Window sizes")
         )
         logging.info(f"{prefix} computation time {time.time()-start:.2f} seconds")
 
@@ -784,7 +777,7 @@ def parallel_dfc_speed_oversampled_series(
     )
 
     if get_speed_dist:
-        speed_medians, speed_dists = zip(*results)
+        speed_medians, speed_dists = zip(*results, strict=False)
         # Flatten the speed_dist list of lists to a single list
         speed_dists = [
             item for sublist in speed_dists for item in sublist if sublist is not None

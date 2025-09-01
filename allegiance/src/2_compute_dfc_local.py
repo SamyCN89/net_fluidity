@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
@@ -7,26 +6,17 @@ Created on Mon Sep 23 13:26:30 2024
 """
 
 # %%
-from calendar import c
-from matplotlib import pyplot as pltcomputation
 import numpy as np
-import time
-from pathlib import Path
+
+from shared_code.fun_dfcspeed import *
 
 # from sphinx import ret
 from shared_code.fun_loaddata import *
-from shared_code.fun_dfcspeed import *
 from shared_code.fun_metaconnectivity import *
-
-
-from shared_code.fun_utils import (
-    set_figure_params,
-    #    get_paths,
-    load_cognitive_data,
-    load_timeseries_data,
-    load_grouping_data,
-)
 from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import (
+    load_timeseries_data,
+)
 
 # =============================================================================
 # This code compute

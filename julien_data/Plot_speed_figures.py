@@ -1,14 +1,14 @@
 # %%
-import pickle
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
-from scipy.stats import mannwhitneyu, kruskal
+import pickle
 
 # Load analysis class and preprocessed data
 from class_dataanalysis_julien import DFCAnalysis
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.stats import kruskal, mannwhitneyu
+import seaborn as sns
 
 data = DFCAnalysis()
 data.load_preprocessed_data()
@@ -147,12 +147,8 @@ for community in range(n_communities):
             print(f"    {group_labels[i]} vs {group_labels[j]}: U={u:.1f}, p={p:.4g}")
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
-
 import numpy as np
-import matplotlib.pyplot as plt
 import seaborn as sns
 
 

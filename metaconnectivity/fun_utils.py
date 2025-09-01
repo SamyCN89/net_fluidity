@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Sat Apr  5 00:18:49 2025
 
 @author: samy
 """
 
-import numpy as np
 import os
 from pathlib import Path
-from scipy.io import loadmat
-import pandas as pd
-import matplotlib.pyplot as plt
 import pickle
-import logging
-from typing import Any, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.io import loadmat
+
 # =============================================================================
 # Figure setup
 # =============================================================================
@@ -48,8 +47,8 @@ def get_root_path(external_disk=True, external_path=None, internal_path=None):
     return root_path
 
 def get_paths(
-    external_disk=True, 
-    external_path=None, 
+    external_disk=True,
+    external_path=None,
     internal_path=None,
     timecourse_folder="Timecourses_updated_03052024"
 ):
@@ -88,7 +87,7 @@ def get_paths(
         'trimers': root / 'results/trimers/',
         'figures': root / 'fig',
         'fmodularity': root / 'fig/modularity',
-        
+
     }
 
 
@@ -116,7 +115,7 @@ def load_timeseries_data(path_to_npz: Path) -> dict:
         'is_2month_old': data['is_2month_old']
     }
 
-# functions to load grouping data 
+# functions to load grouping data
 
 def load_grouping_data(path_to_pkl: Path):
     with open(path_to_pkl, "rb") as f:
@@ -152,14 +151,14 @@ def load_matdata(folder_data, specific_folder, files_name):
 
     for idx,file_name in enumerate(files_name):
         file_path       = os.path.join(hash_dir, file_name)
-        
+
         try:
             data = loadmat(file_path)['tc']
             ts_list.append(data)
         except Exception as e:
             print(f"Error loading data from {file_path}: {e}")
-    
-    
+
+
     # Check if the first dimension is consistent
     first_dim_size = ts_list[0].shape[0]
     if all(data.shape[0] == first_dim_size for data in ts_list):
@@ -193,8 +192,8 @@ def split_groups_by_age(group_masks, age_mask, group_labels=None, age_labels=('2
     masks = []
     labels = []
 
-    for g_mask, g_label in zip(group_masks, group_labels):
-        for is_2m, age_label in zip([True, False], age_labels):
+    for g_mask, g_label in zip(group_masks, group_labels, strict=False):
+        for is_2m, age_label in zip([True, False], age_labels, strict=False):
             cond_mask = np.logical_and(g_mask, age_mask == is_2m)
             masks.append(cond_mask)
             labels.append(f"{g_label} {age_label}")
@@ -224,9 +223,9 @@ def classify_phenotypes(df, metric_prefix='OiP', threshold=0.2):
 
     labels = np.select(
         [good, learners, impaired, bad],
-        [f'good', f'learners',
-         f'impaired', f'bad'],
-        default=f'undefined'
+        ['good', 'learners',
+         'impaired', 'bad'],
+        default='undefined'
     )
 
     phenotype_column = f'Phenotype_{metric_prefix}'
@@ -234,8 +233,8 @@ def classify_phenotypes(df, metric_prefix='OiP', threshold=0.2):
     df[phenotype_column] = pd.Categorical(
         labels,
         categories=[
-            f'good', f'learners',
-            f'impaired', f'bad'
+            'good', 'learners',
+            'impaired', 'bad'
         ],
         ordered=False
     )

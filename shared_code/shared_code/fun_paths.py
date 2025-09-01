@@ -10,10 +10,10 @@ Example:
     DATASET_NAME=ines_abdullah
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
-from typing import Dict, Optional
 
 # Load environment variables from ../../.env if present
 load_dotenv()
@@ -38,7 +38,7 @@ def get_root_path(env="LOCAL") -> Path:
     """
     root = os.getenv(f"PROJECT_ROOT_{env}")
     if not root:
-        raise EnvironmentError(f"Environment variable PROJECT_ROOT_{env} is not set.")
+        raise OSError(f"Environment variable PROJECT_ROOT_{env} is not set.")
     return Path(root)
 
 
@@ -49,7 +49,7 @@ def build_paths(
     timecourse_folder: str,
     cognitive_data_file: str,
     anat_labels_file: str,
-) -> Dict[str, Path]:
+) -> dict[str, Path]:
     """
     Build canonical dataset/results/figures subpaths under a given root.
 
@@ -87,7 +87,7 @@ def build_paths(
 
 
 # =============================================================================
-def create_directories(paths: Dict[str, Path]) -> None:
+def create_directories(paths: dict[str, Path]) -> None:
     """
     Create all directories in the mapping that are not files (no suffix).
     """
@@ -97,7 +97,7 @@ def create_directories(paths: Dict[str, Path]) -> None:
 
 
 # =============================================================================
-def check_write_permissions(paths: Dict[str, Path]) -> None:
+def check_write_permissions(paths: dict[str, Path]) -> None:
     """
     Check basic write permissions for directories in `paths`.
 
@@ -120,14 +120,14 @@ def check_write_permissions(paths: Dict[str, Path]) -> None:
 
 # =============================================================================
 def get_paths(
-    dataset_name: Optional[str] = None,
+    dataset_name: str | None = None,
     timecourse_folder: str = "Timecourses_updated_03052024",
     cognitive_data_file: str = "ROIs.xlsx",
     anat_labels_file: str = "all_ROI_coimagine.txt",
     create: bool = True,
     check_write: bool = False,
     env: str = "LOCAL",
-) -> Dict[str, Path]:
+) -> dict[str, Path]:
     """
     Generate a dictionary of canonical paths for data, results, and figures.
 

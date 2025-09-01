@@ -146,8 +146,9 @@ plt.xlabel("Regions")
 plt.show()
 
 # %%
-import brainconn as bct  # or bctpy equivalent
 import time
+
+import brainconn as bct  # or bctpy equivalent
 
 _runs = 100
 temporal_agreement_matrix = np.zeros(
@@ -226,7 +227,7 @@ results = Parallel(n_jobs=6)(
     for animal in range(n_animals)
 )
 
-community_agreement_labels, q_values = zip(*results)
+community_agreement_labels, q_values = zip(*results, strict=False)
 # for partition, q in results:
 #     partitions.append(partition)
 #     q_values.append(q)
@@ -320,7 +321,7 @@ def align_partition_to_reference(partition, reference):
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
     # Create new partition with remapped labels
     aligned = np.zeros_like(partition)
-    for i, j in zip(row_ind, col_ind):
+    for i, j in zip(row_ind, col_ind, strict=False):
         aligned[partition == i] = j
     return aligned
 

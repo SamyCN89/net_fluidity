@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Thu Apr  3 12:47:31 2025
 
 @author: samy
 """
 
-import numpy as np
-from scipy.stats import zscore, rankdata
 from numba import njit, prange
+import numpy as np
+from scipy.stats import rankdata
 
 # =============================================================================
 # =============================================================================

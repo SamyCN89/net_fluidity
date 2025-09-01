@@ -1,22 +1,12 @@
 # %%
-from os import path
-from pathlib import Path
-from tkinter import font
-from matplotlib.pylab import f
-import numpy as np
+from class_dataanalysis_julien import DFCAnalysis
 import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-
-from statannotations.Annotator import Annotator
-import seaborn as sns
+import numpy as np
 from scipy.stats import kruskal
+import seaborn as sns
+from statannotations.Annotator import Annotator
 
 from shared_code.fun_utils import set_figure_params
-from shared_code.fun_paths import get_paths
-
-
-from class_dataanalysis_julien import DFCAnalysis
 
 data = DFCAnalysis()
 
@@ -168,9 +158,10 @@ stat, p = kruskal(*group_values)
 print("Kruskal-Wallis H-test result:")
 print(f"Statistic: {stat:.4f}, p-value: {p:.4g}")
 
+import itertools
+
 from scipy.stats import mannwhitneyu
 from statsmodels.stats.multitest import multipletests
-import itertools
 
 pairs = list(itertools.combinations(groups, 2))
 pvals = []
@@ -184,7 +175,7 @@ for g1, g2 in pairs:
 # FDR-correct the p-values for multiple comparisons
 reject, pvals_corrected, _, _ = multipletests(pvals, method="fdr_bh")
 print("\nFDR-corrected p-values:")
-for (g1, g2), p_corr, sig in zip(pairs, pvals_corrected, reject):
+for (g1, g2), p_corr, sig in zip(pairs, pvals_corrected, reject, strict=False):
     print(f"{g1} vs {g2}: corrected p={p_corr:.4g}, {'significant' if sig else 'ns'}")
 
 
@@ -227,7 +218,7 @@ ax.legend(handles[:n], labels[:n], title="Treatment")
 
 # Prepare annotation labels for the plot
 star_labels = []
-for sig, p_corr in zip(reject, pvals_corrected):
+for sig, p_corr in zip(reject, pvals_corrected, strict=False):
     if p_corr < 0.001:
         star = "***"
     elif p_corr < 0.01:
@@ -248,7 +239,7 @@ annotator = Annotator(
     hue="treatment",
 )
 annotator.set_pvalues_and_annotate(pvals_corrected)
-plt.title("NOR values by Genotype and Treatment\n(Kruskal-Wallis: p={:.3g})".format(p))
+plt.title(f"NOR values by Genotype and Treatment\n(Kruskal-Wallis: p={p:.3g})")
 plt.tight_layout()
 (
     plt.savefig(
@@ -372,8 +363,8 @@ plt.show()
 # =========  Histogram per group, all animals, all windows
 
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500].reset_index(
     drop=True
@@ -499,8 +490,8 @@ plt.show()
 
 # %%
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
+import seaborn as sns
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500]
 groups = filtered_df.groupby(["genotype", "treatment"]).groups
@@ -550,8 +541,8 @@ plt.show()
 
 # %%
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
+import seaborn as sns
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500]
 groups = filtered_df.groupby(["genotype", "treatment"]).groups
@@ -599,8 +590,8 @@ plt.show()
 # %%
 # window size/ median speed
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500]
@@ -741,7 +732,7 @@ plt.clim(
 )  # Set color limits to avoid NaNs affecting the colormap
 plt.xlabel("Window Size")
 plt.ylabel("Quantile")
-plt.title("Speed quantile matrix\n(Group: {})".format(list(groups.keys())[0]))
+plt.title(f"Speed quantile matrix\n(Group: {list(groups.keys())[0]})")
 plt.tight_layout()
 plt.show()
 
@@ -766,17 +757,17 @@ im = plt.imshow(
 plt.colorbar(im, label="DFC Speed (log scale)")
 plt.xlabel("Window Size")
 plt.ylabel("Quantile")
-plt.title("Speed quantile matrix\n(Group: {})".format(list(groups.keys())[0]))
+plt.title(f"Speed quantile matrix\n(Group: {list(groups.keys())[0]})")
 plt.tight_layout()
 plt.show()
 
 
 # %%
 
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500]
 groups = filtered_df.groupby(["genotype", "treatment"]).groups
@@ -836,8 +827,8 @@ for group, animal_idxs in groups.items():
 
 # %%
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500]
 groups = filtered_df.groupby(["genotype", "treatment"]).groups
@@ -906,8 +897,8 @@ plt.tight_layout()
 plt.show()
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500]
 groups = filtered_df.groupby(["genotype", "treatment"]).groups
@@ -982,8 +973,8 @@ plt.show()
 
 # %%
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 filtered_df = cog_data_filtered[cog_data_filtered["n_timepoints"] >= 500]
 groups = filtered_df.groupby(["genotype", "treatment"]).groups
@@ -1060,8 +1051,8 @@ plt.show()
 
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 diff_AB = speed_matrices[0] - speed_matrices[1]  # A - B
 diff_AC = speed_matrices[0] - speed_matrices[2]  # A - C

@@ -13,12 +13,8 @@ Notes:
 from __future__ import annotations
 
 import ast
-import re
-import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
-
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,8 +32,8 @@ EXCLUDE_DIRS = {
 }
 
 
-def iter_py_files() -> List[Path]:
-    files: List[Path] = []
+def iter_py_files() -> list[Path]:
+    files: list[Path] = []
     for p in ROOT.rglob("*.py"):
         rel = p.relative_to(ROOT)
         parts = rel.as_posix()
@@ -52,16 +48,16 @@ def module_name_from_path(p: Path) -> str:
     return rel.as_posix().replace("/", ".")
 
 
-def collect_defs(files: List[Path]) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
-    func_defs: Dict[str, Set[str]] = {}
-    class_defs: Dict[str, Set[str]] = {}
+def collect_defs(files: list[Path]) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    func_defs: dict[str, set[str]] = {}
+    class_defs: dict[str, set[str]] = {}
     for p in files:
         try:
             tree = ast.parse(p.read_text(encoding="utf-8"), filename=str(p))
         except Exception:
             continue
-        fset: Set[str] = set()
-        cset: Set[str] = set()
+        fset: set[str] = set()
+        cset: set[str] = set()
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
                 fset.add(node.name)
@@ -74,8 +70,8 @@ def collect_defs(files: List[Path]) -> Tuple[Dict[str, Set[str]], Dict[str, Set[
     return func_defs, class_defs
 
 
-def collect_imports(files: List[Path]) -> Set[str]:
-    imports: Set[str] = set()
+def collect_imports(files: list[Path]) -> set[str]:
+    imports: set[str] = set()
     for p in files:
         try:
             tree = ast.parse(p.read_text(encoding="utf-8"), filename=str(p))
@@ -91,8 +87,8 @@ def collect_imports(files: List[Path]) -> Set[str]:
     return imports
 
 
-def collect_name_refs(files: List[Path]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def collect_name_refs(files: list[Path]) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for p in files:
         try:
             tree = ast.parse(p.read_text(encoding="utf-8"), filename=str(p))
@@ -113,7 +109,7 @@ def compute_dead_code():
     imports = collect_imports(files)
 
     # Potentially unused functions: never referenced by name (heuristic)
-    unused_funcs: List[Tuple[str, str]] = []
+    unused_funcs: list[tuple[str, str]] = []
     for path, names in func_defs.items():
         for name in sorted(names):
             # Skip dunder and main
@@ -123,7 +119,7 @@ def compute_dead_code():
                 unused_funcs.append((path, name))
 
     # Potentially unused modules: modules under metaconnectivity/ and shared_code/shared_code/ not imported
-    unused_modules: List[str] = []
+    unused_modules: list[str] = []
     for p in files:
         rel = p.relative_to(ROOT).as_posix()
         if rel.startswith("metaconnectivity/") or rel.startswith("shared_code/shared_code/"):
@@ -141,7 +137,7 @@ def compute_dead_code():
 def report_dead_code() -> str:
     unused_funcs, unused_modules = compute_dead_code()
 
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("# Potentially Unused Code (Heuristic)\n\n")
     lines.append("These results are static heuristics — please validate before removal or deprecation.\n\n")
     lines.append("## Functions with no detected references\n")
@@ -165,7 +161,7 @@ TAG_RX = re.compile(r"\b(TODO|FIXME|XXX|HACK|BUG)\b", re.IGNORECASE)
 
 
 def report_todos() -> str:
-    files: List[Path] = []
+    files: list[Path] = []
     for p in ROOT.rglob("*"):
         if p.is_dir():
             continue
@@ -176,7 +172,7 @@ def report_todos() -> str:
                 continue
             files.append(p)
 
-    items: List[Tuple[str, int, str]] = []
+    items: list[tuple[str, int, str]] = []
     for p in files:
         try:
             lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -186,7 +182,7 @@ def report_todos() -> str:
             if TAG_RX.search(line):
                 items.append((p.relative_to(ROOT).as_posix(), i, line.strip()))
 
-    out: List[str] = []
+    out: list[str] = []
     out.append("# TODO/FIXME/XXX Index\n\n")
     if not items:
         out.append("No TODO-like tags found.\n")

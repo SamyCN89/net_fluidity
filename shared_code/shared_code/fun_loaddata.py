@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Fri Mar  8 15:56:50 2024
 
@@ -11,15 +10,15 @@ Created on Fri Mar  8 15:56:50 2024
 # Samy Castro March 2024
 # =============================================================================
 
-from pathlib import Path
-import numpy as np
-import os
-from scipy.io import loadmat
-from joblib import Parallel, delayed, parallel_backend
-import re
 import logging
-from typing import Any, Union
+import os
+from pathlib import Path
 import pickle
+import re
+from typing import Any
+
+import numpy as np
+from scipy.io import loadmat
 
 # from .fun_dfcspeed import compute4window_new
 
@@ -88,7 +87,7 @@ def extract_mouse_ids(filenames: list) -> list:
 # =============================================================================
 # Save data functions
 # =============================================================================
-def save_pickle(obj: Any, path: Union[str, Path]) -> None:
+def save_pickle(obj: Any, path: str | Path) -> None:
     """Save a Python object to a file using pickle."""
     path = Path(path)  # always use Path object
     with open(path, "wb") as f:
@@ -103,10 +102,9 @@ def load_pickle(path):
         return pickle.load(f)
 
 
-import numpy as np
 
 
-def load_fc2_npz(path: Union[str, Path]) -> Any:
+def load_fc2_npz(path: str | Path) -> Any:
     """Load fc2 results from a .npz file."""
     path = Path(path)
     try:

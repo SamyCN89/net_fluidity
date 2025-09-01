@@ -10,25 +10,28 @@ Benchmarks kept tiny to avoid heavy runtime and external data.
 """
 from __future__ import annotations
 
-import time
-import math
 import csv
+from dataclasses import asdict, dataclass
+import math
 from pathlib import Path
-from dataclasses import dataclass, asdict
-import numpy as np
+import sys
+import time
 
+import numpy as np
 
 # Import modules
 from shared_code.shared_code import (
     fun_dfcspeed as S_dfc,
-    fun_optimization as S_opt,
     fun_metaconnectivity as S_mc,
+    fun_optimization as S_opt,
 )
-import sys
+
 sys.path.append("metaconnectivity")
-from metaconnectivity import fun_dfcspeed as M_dfc  # type: ignore
-from metaconnectivity import fun_optimization as M_opt  # type: ignore
-from metaconnectivity import fun_metaconnectivity as M_mc  # type: ignore
+from metaconnectivity import (
+    fun_dfcspeed as M_dfc,  # type: ignore
+    fun_metaconnectivity as M_mc,  # type: ignore
+    fun_optimization as M_opt,  # type: ignore
+)
 
 
 @dataclass

@@ -1,16 +1,13 @@
 # %%
-from joblib import Parallel
-import numpy as np
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-from shared_code.fun_paths import get_paths
-from shared_code.fun_metaconnectivity import load_merged_allegiance  # %%
-import numpy as np
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-from shared_code.fun_paths import get_paths
-from shared_code.fun_metaconnectivity import load_merged_allegiance
 import pickle
+
+from joblib import Parallel
+import matplotlib.pyplot as plt
+import numpy as np
+from tqdm import tqdm
+
+from shared_code.fun_metaconnectivity import load_merged_allegiance  # %%
+from shared_code.fun_paths import get_paths
 
 # Set consistent config to match previous run
 window_size = 9
@@ -201,7 +198,7 @@ for i in range(n_windows - 1):
 plt.figure(figsize=(25, 7))
 plt.plot(time_corr_agreement, "o-", markersize=5, alpha=0.7)
 # %%
-from scipy.stats import spearmanr, pearsonr
+from scipy.stats import pearsonr, spearmanr
 
 # adjusted rand index
 # Suppose agreement_matrices: shape (n_windows, n_regions, n_regions)
@@ -401,9 +398,10 @@ plt.xlabel("Regions")
 plt.show()
 
 # %%
-import brainconn as bct  # or bctpy equivalent
-from joblib import Parallel, delayed
 import time
+
+import brainconn as bct  # or bctpy equivalent
+from joblib import delayed
 from scipy.stats import pearsonr
 
 _runs = 100
@@ -483,7 +481,7 @@ results = Parallel(n_jobs=6)(
     for animal in range(n_animals)
 )
 
-community_agreement_labels, q_values = zip(*results)
+community_agreement_labels, q_values = zip(*results, strict=False)
 # for partition, q in results:
 #     partitions.append(partition)
 #     q_values.append(q)
@@ -564,7 +562,6 @@ plt.show()
 # %# Alognment of temporal partitions using a
 # Consensus clustering with temporal aggregation matrix as reference
 
-from scipy.optimize import linear_sum_assignment
 
 
 reference = community_agreement_labels[0]  # Use the first window as reference
@@ -582,7 +579,7 @@ def align_partition_to_reference(partition, reference):
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
     # Create new partition with remapped labels
     aligned = np.zeros_like(partition)
-    for i, j in zip(row_ind, col_ind):
+    for i, j in zip(row_ind, col_ind, strict=False):
         aligned[partition == i] = j
     return aligned
 

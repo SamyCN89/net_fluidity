@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
@@ -8,35 +7,20 @@ Created on Mon Sep 23 13:26:30 2024
 
 # %%
 # from click import group
-import numpy as np
-import time
-
 # from functions_analysis import *
-from pathlib import Path
 
-import scipy
+import numpy as np
 
-from shared_code.fun_loaddata import *
 from shared_code.fun_dfcspeed import *
-
-from shared_code.fun_metaconnectivity import (
-    compute_metaconnectivity,
-    intramodule_indices_mask,
-    get_fc_mc_indices,
-    get_mc_region_identities,
-    fun_allegiance_communities,
-    compute_trimers_identity,
-    build_trimer_mask,
-)
-
+from shared_code.fun_loaddata import *
+from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
-    set_figure_params,
     #    get_paths,
     load_cognitive_data,
-    load_timeseries_data,
     load_grouping_data,
+    load_timeseries_data,
+    set_figure_params,
 )
-from shared_code.fun_paths import get_paths
 
 # =============================================================================
 # This code compute
@@ -150,7 +134,6 @@ for xx, (f, d) in enumerate(results):
 # %%
 import matplotlib.pyplot as plt
 
-
 # Plotting the results
 plt.figure(figsize=(20, 5))
 plt.subplot(1, 2, 1)
@@ -194,7 +177,7 @@ fluidity_group = {}
 qq_dimension_group = {}
 qq_fluidity_group = {}
 
-for label, mask in zip(label_variables[0], mask_groups[0]):
+for label, mask in zip(label_variables[0], mask_groups[0], strict=False):
     dimension_group[label] = dimension[mask]
     fluidity_group[label] = fluidity[mask]
     qq_dimension_group[label] = np.nanpercentile(

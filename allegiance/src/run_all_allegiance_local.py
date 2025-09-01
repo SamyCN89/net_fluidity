@@ -1,13 +1,14 @@
-import numpy as np
-from pathlib import Path
-from joblib import Parallel, delayed
-from shared_code.fun_utils import load_timeseries_data
-from shared_code.fun_paths import get_paths
-from shared_code.fun_metaconnectivity import fun_allegiance_communities
-import os
-import logging
-
 import argparse
+import logging
+import os
+from pathlib import Path
+
+from joblib import Parallel, delayed
+import numpy as np
+
+from shared_code.fun_metaconnectivity import fun_allegiance_communities
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import load_timeseries_data
 
 # ===================== CLI ARGUMENTS ==========================
 parser = argparse.ArgumentParser()

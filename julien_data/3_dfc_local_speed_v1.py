@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Oct  2 14:42:38 2023
 
@@ -7,20 +6,16 @@ Created on Mon Oct  2 14:42:38 2023
 """
 
 # %%
-from pathlib import Path
-import re
-import numpy as np
-import pickle
 import logging
-from tqdm import tqdm
-import gc
-
-from joblib import Parallel, delayed
-from typing import Dict, List, Tuple, Optional, Union
+from pathlib import Path
+import pickle
 
 from class_dataanalysis_julien import DFCAnalysis
+from joblib import Parallel, delayed
+import numpy as np
+from tqdm import tqdm
+
 from shared_code.fun_loaddata import save_pickle
-from shared_code.fun_utils import set_figure_params
 
 # logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
@@ -75,9 +70,9 @@ def dfc_speed_split(
     MethodsX 2020, doi: 10.1016/j.mex.2020.101168
     """
     from shared_code.fun_optimization import (
+        cosine_speed_vectorized,
         pearson_speed_vectorized,
         spearman_speed,
-        cosine_speed_vectorized,
     )
 
     # Input validation
@@ -290,7 +285,7 @@ def run_dfc_speed_analysis(
     # Use Parallel to handle multiple windows in parallel
     Parallel(n_jobs=processors, verbose=1)(
         delayed(process_window)(ws, nodes)
-        for ws in tqdm(time_window_range, desc=f"Processing windows for ...")
+        for ws in tqdm(time_window_range, desc="Processing windows for ...")
     )
 
     logging.getLogger(__name__).info("All windows processed successfully.")
@@ -409,7 +404,7 @@ def run_local_dfc_speed_analysis(
     # Use Parallel to handle multiple windows in parallel
     Parallel(n_jobs=processors, verbose=1)(
         delayed(process_window)(ws, nodes)
-        for ws in tqdm(time_window_range, desc=f"Processing windows for ...")
+        for ws in tqdm(time_window_range, desc="Processing windows for ...")
     )
 
     logging.getLogger(__name__).info("All windows processed successfully.")

@@ -1,31 +1,26 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Wed Apr  2 02:59:41 2025
 
 @author: samy
 """
 # %%
-from os import path
 import time
-from pathlib import Path
 
+import brainconn as bct
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+from scipy.stats import zscore
 import seaborn as sns
-import brainconn as bct
-
-
-from scipy.stats import zscore, pearsonr
 
 # Compute k-means clustering on the z-scored time series
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-from shared_code.fun_utils import set_figure_params
-from shared_code.fun_paths import get_paths
 from shared_code.fun_dfcspeed import ts2fc
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import set_figure_params
 
 # ========================== Figure parameters ================================
 # Set figure parameters globally
@@ -339,7 +334,7 @@ def extract_link_activations(binary_fc_data):
 
             events = [
                 {"onset": int(o), "offset": int(f), "duration": int(d)}
-                for o, f, d in zip(onsets, offsets, durations)
+                for o, f, d in zip(onsets, offsets, durations, strict=False)
             ]
             animal_events.append(events)
         all_events.append(animal_events)

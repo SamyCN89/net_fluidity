@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Sat Apr  5 00:18:49 2025
 
@@ -7,13 +6,12 @@ Created on Sat Apr  5 00:18:49 2025
 """
 # %%
 from pathlib import Path
-import numpy as np
-import os
-from scipy.io import loadmat
-import pandas as pd
 import pickle
-from dotenv import load_dotenv
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.io import loadmat
 
 # # Load environment variables from ../../.env if present
 # load_dotenv()
@@ -358,8 +356,8 @@ def classify_phenotypes(df, metric_prefix="OiP", threshold=0.2):
     # Use numpy.select to assign phenotype labels; fallback is 'undefined'
     labels = np.select(
         [good, learners, impaired, bad],
-        [f"good", f"learners", f"impaired", f"bad"],
-        default=f"undefined",
+        ["good", "learners", "impaired", "bad"],
+        default="undefined",
     )
 
     # Create a new column for the phenotype labels
@@ -370,7 +368,7 @@ def classify_phenotypes(df, metric_prefix="OiP", threshold=0.2):
 
     # Store results in a new column
     df_out[phenotype_column] = pd.Categorical(
-        labels, categories=[f"good", f"learners", f"impaired", f"bad"], ordered=False
+        labels, categories=["good", "learners", "impaired", "bad"], ordered=False
     )
 
     return df_out
@@ -408,8 +406,8 @@ def split_groups_by_age(
     masks = []
     labels = []
 
-    for g_mask, g_label in zip(group_masks, group_labels):
-        for is_2m, age_label in zip([True, False], age_labels):
+    for g_mask, g_label in zip(group_masks, group_labels, strict=False):
+        for is_2m, age_label in zip([True, False], age_labels, strict=False):
             cond_mask = np.logical_and(g_mask, age_mask == is_2m)
             masks.append(cond_mask)
             labels.append(f"{g_label} {age_label}")
