@@ -28,3 +28,10 @@ repos:
         name: strip-notebook-outputs
         files: "\\.ipynb$"
         args: ["--force"]
+  - repo: local
+    hooks:
+      - id: forbid-meta-stable-imports
+        name: Forbid metaconnectivity stable imports (prefer shared_code)
+        entry: python tools/check_forbidden_imports.py
+        language: system
+        files: "\\.py$"
