@@ -7,6 +7,7 @@ shared_code/fun_loaddata.py
 shared_code/fun_metaconnectivity.py
 shared_code/fun_network.py
 shared_code/fun_optimization.py
+shared_code/fun_paths.py
 shared_code/fun_utils.py
 shared_code.egg-info/PKG-INFO
 shared_code.egg-info/SOURCES.txt

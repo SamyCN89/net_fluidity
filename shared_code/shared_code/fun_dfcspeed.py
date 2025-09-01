@@ -621,8 +621,8 @@ def dfc_speed(
             f"Unsupported method '{method}'. Use 'pearson', 'spearman', or 'cosine'"
         )
 
-    # Ensure speeds are within valid range [-1, 2] for numerical stability
-    speeds = np.clip(speeds, -1.0, 2.0)
+    # Ensure speeds are within valid range [0, 2] for numerical stability
+    speeds = np.clip(speeds, 0, 2)
 
     # Compute median speed
     speed_median = np.median(speeds)

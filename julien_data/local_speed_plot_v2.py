@@ -14,7 +14,7 @@ import statsmodels.api as sm
 
 # from matplotlib import scale
 # from networkx import density
-from class_dataanalysis_julien import DFCAnalysis
+from julien_data.class_dataanalysis_julien import DFCAnalysis
 from itertools import combinations
 import string
 

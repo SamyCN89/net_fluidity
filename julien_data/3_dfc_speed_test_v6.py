@@ -17,7 +17,7 @@ import gc
 from joblib import Parallel, delayed
 from typing import Dict, List, Tuple, Optional, Union
 
-from class_dataanalysis_julien import DFCAnalysis
+from julien_data.class_dataanalysis_julien import DFCAnalysis
 from shared_code.fun_loaddata import save_pickle
 from shared_code.fun_utils import set_figure_params
 
@@ -124,6 +124,7 @@ def dfc_speed_split(
 
     indices_max = n_frames - (vstep + np.max(tau) + time_offset)
     indices = np.arange(0, indices_max, 1)
+
     if np.size(tau_range) > 1:
         for tau_aux in tau_range:
             fc1_indices.append(indices[:-1])  # Indices for the first FC matrix
@@ -173,11 +174,12 @@ def dfc_speed_split(
         )
 
     # Ensure speeds are within valid range [-1, 2] for numerical stability
-    speeds = np.clip(speeds, -1.0, 2.0)
+    speeds = np.clip(speeds, 0, 2.0)
     speeds_mat = speeds.reshape(len(tau_range), -1)  # Reshape to (n_pairs, n_speeds)
 
     return speeds_mat
 
+dfc_speed_split(np.random.rand(100,100,100), vstep=int(time_window_range[0]) , tau_range=np.arange(0,3), method='pearson', return_fc2=False)
 
 # %%
 def run_dfc_speed_analysis(
@@ -356,7 +358,7 @@ run_dfc_speed_analysis(
     save_path,
     n_animals,
     nodes,
-    load_cache=True,
+    load_cache=False,
     processors=processors,
     **analysis_kwargs,
 )
@@ -374,7 +376,7 @@ for idx, window_size in enumerate(time_window_range):
     with np.load(window_file, allow_pickle=True) as arr:
         if "speeds" in arr:
             load_speed = arr["speeds"]
-            logger.info("Keys in file:", arr.files)
+            logger.info(f"Keys in file: {arr.files}")
         else:
             logger.warning(
                 f"Warning: 'speeds' not found in {window_file}, available: {arr.files}"
