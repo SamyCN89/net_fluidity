@@ -5,6 +5,7 @@
     "ms-toolsai.jupyter",
     "ms-python.black-formatter",
     "charliermarsh.ruff",
+    "visualstudioexptteam.vscodeintellicode",
     "github.copilot",
     "OpenAI.codex"
   ]
