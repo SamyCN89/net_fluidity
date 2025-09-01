@@ -1,12 +1,37 @@
 # %%
 import pickle
+import time
 
 from joblib import Parallel
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import numpy as np
 from tqdm import tqdm
 
-from shared_code.fun_metaconnectivity import load_merged_allegiance  # %%
+# Optional/extra dependencies
+try:
+    from mizani.palettes import brewer_pal
+except Exception:  # pragma: no cover
+    brewer_pal = None  # type: ignore
+
+try:
+    import brainconn as bct
+except Exception:  # pragma: no cover
+    bct = None  # type: ignore
+
+try:
+    from sklearn.manifold import TSNE
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import mutual_info_score
+except Exception:  # pragma: no cover
+    TSNE = None  # type: ignore
+    StandardScaler = None  # type: ignore
+    mutual_info_score = None  # type: ignore
+
+from shared_code.fun_metaconnectivity import (
+    load_merged_allegiance,  # %%
+    build_agreement_matrix_vectorized,
+)
 from shared_code.fun_paths import get_paths
 
 # Set consistent config to match previous run
@@ -299,7 +324,10 @@ plt.show()
 
 # %%
 # Mutual Information between columns of the dfc_communities_sorted matrix
-from sklearn.metrics import mutual_info_score
+if mutual_info_score is None:
+    raise RuntimeError(
+        "scikit-learn is required for mutual_info_score; install scikit-learn to run this section."
+    )
 
 mi_mat = np.zeros((n_windows, n_windows))
 for ii in tqdm(range(n_windows), desc="Computing mutual information"):
@@ -322,11 +350,10 @@ plt.show()
 
 # %%
 
-from matplotlib.colors import ListedColormap
-from mizani.palettes import brewer_pal
-
-# Choose a categorical palette: 'Set1', 'Set2', 'Pastel1', etc.
-palette_func = brewer_pal(type="qual", palette="Set1")
+# Choose a categorical palette: 'Set1', 'Set2', 'Pastel1', etc. (fallback if mizani missing)
+palette_func = (
+    brewer_pal(type="qual", palette="Set1") if brewer_pal else (lambda n: tol_bright[:n])
+)
 n_categories = int(dfc_communities_sorted.max() + 1)
 colors = palette_func(n_categories)
 
@@ -379,7 +406,6 @@ for animal in range(2):
 
 # ----------------- Consensus Clustering -----------------
 # Compute the consensus clustering from the temporal aggregation of the contingency matrices
-from shared_code.fun_metaconnectivity import build_agreement_matrix_vectorized
 
 temporal_aggregation_mat = (
     np.sum(contingency_matrices, axis=1) / n_windows
@@ -398,9 +424,10 @@ plt.xlabel("Regions")
 plt.show()
 
 # %%
-import time
-
-import brainconn as bct  # or bctpy equivalent
+if bct is None:
+    raise RuntimeError(
+        "brainconn is required for consensus clustering; install brainconn to run this section."
+    )
 from joblib import delayed
 from scipy.stats import pearsonr
 
@@ -650,8 +677,10 @@ cont_mat_n_pairs_animal = np.repeat(
 # cont_mat_n_pairs_animal = np.repeat(np.arange(np.sum(mask_groups_2[0])), np.sum(mask_groups_2[0]))  # Shape: (n_animals * n_windows,)
 # %%
 # TSNE on one animal of contingency matrix (contingency_matrices[0])
-from sklearn.manifold import TSNE
-from sklearn.preprocessing import StandardScaler
+if TSNE is None or StandardScaler is None:
+    raise RuntimeError(
+        "scikit-learn is required for TSNE/StandardScaler; install scikit-learn to run this section."
+    )
 
 # Standardize the data
 scaler = StandardScaler()
