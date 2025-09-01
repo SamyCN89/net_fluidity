@@ -30,8 +30,6 @@
 
   // ---- Jupyter ----
   "jupyter.notebookFileRoot": "${workspaceFolder}",
-  "jupyter.interactiveWindowMode": "perFile",
-  "jupyter.sendSelectionToInteractiveWindow": true,
 
   // ---- Explorer/search hygiene ----
   "files.exclude": {
@@ -53,5 +51,7 @@
 
   // ---- Misc team-safe ----
   "files.trimTrailingWhitespace": true,
-  "files.insertFinalNewline": true
+  "files.insertFinalNewline": true,
+  "jupyter.interactiveWindow.creationMode": "perFile",
+  "jupyter.interactiveWindow.textEditor.executeSelection": true
 }
