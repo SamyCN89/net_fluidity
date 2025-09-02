@@ -37,22 +37,23 @@ from shared_code.fun_paths import get_paths
 # Set consistent config to match previous run
 window_size = 9
 lag = 1
+tau = 3
 timecourse_folder = "Timecourses_updated_03052024"
 paths = get_paths(timecourse_folder=timecourse_folder)
 
 # %%
 # Load meta info to determine shape
-data_ts = np.load(paths["sorted"] / "ts_and_meta_2m4m.npz", allow_pickle=True)
+data_ts = np.load(paths["preprocessed"] / "ts_and_meta_2m4m.npz", allow_pickle=True)
 ts = data_ts["ts"]
 n_animals = len(ts)
 n_regions = ts[0].shape[1]
 anat_labels = data_ts["anat_labels"]
 
 filename_dfc = (
-    f"window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}"
+    f"window_size={window_size}_lag={lag}_tau={tau}_animals={n_animals}_regions={n_regions}"
 )
 dfc_data = np.load(paths["dfc"] / f"dfc_{filename_dfc}.npz")
-n_windows = np.transpose(dfc_data["dfc_stream"], (0, 3, 2, 1)).shape[-1]
+n_windows = np.transpose(dfc_data["dfc"], (0, 3, 2, 1)).shape[-1]
 
 
 # %%
@@ -83,6 +84,7 @@ dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance
 
 dfc_communities_sorted = np.zeros_like(dfc_communities)
 
+
 for ani in tqdm(range(n_animals), desc="Animals"):
     for ws in range(n_windows):
         dfc_communities_sorted[ani, ws] = dfc_communities[
@@ -91,12 +93,6 @@ for ani in tqdm(range(n_animals), desc="Animals"):
 
 
 # %%
-# Choose a categorical palette: 'Set1', 'Set2', 'Pastel1', etc. (fallback if mizani missing)
-palette_func = (
-    brewer_pal(type="qual", palette="Set1") if brewer_pal else (lambda n: tol_bright[:n])
-)
-n_categories = int(dfc_communities_sorted.max() + 1)
-colors = palette_func(n_categories)
 
 
 # Paul Tol's bright palette (7 colors)
@@ -110,6 +106,12 @@ tol_bright = [
     "#AA3377",
 ]
 
+palette_func = (
+    brewer_pal(type="qual", palette="Set1") if brewer_pal else (lambda n: tol_bright[:n])
+)
+# Choose a categorical palette: 'Set1', 'Set2', 'Pastel1', etc. (fallback if mizani missing)
+n_categories = int(dfc_communities_sorted.max() + 1)
+colors = palette_func(n_categories)
 
 n_categories = int(dfc_communities_sorted.max() + 1)
 cmap = ListedColormap(tol_bright[:n_categories])

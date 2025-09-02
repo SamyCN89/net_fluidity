@@ -1,149 +1,130 @@
 #!/usr/bin/env python3
 """
-Created on Mon Sep 23 13:26:30 2024
-
-@author: samy
+Compute DFC streams for all animals, similar to julien_data/2_compute_dfc_stream.py
+but without splitting by timepoint length. Saves one file per window size with tau
+embedded in the filename as requested.
 """
 
-# %%
+#%%
+from __future__ import annotations
+
+import argparse
+import time
+from pathlib import Path
+
 import numpy as np
+from tqdm import tqdm
 
-from shared_code.fun_dfcspeed import get_tenet4window_range
-
-# from sphinx import ret
+from shared_code.fun_dfcspeed import ts2dfc_stream
 from shared_code.fun_paths import get_paths
-from shared_code.fun_utils import (
-    load_timeseries_data,
-)
-
-# =============================================================================
-# This code compute
-# Load the data
-# Intersect the 2 and 4 months to have data that have the two datapoints
-
-# %%
-# =================== Paths and folders =======================================
-# Will prioritize PROJECT_DATA_ROOT if set
-paths = get_paths(
-    dataset_name="ines_abdullah",
-    timecourse_folder="Timecourses_updated_03052024",
-    cognitive_data_file="ROIs.xlsx",
-)
-
-# ========================== Load data =========================
-data_ts = load_timeseries_data(paths["preprocessed"] / "ts_and_meta_2m4m.npz")
-# ========================== Indices ==========================================
-ts = data_ts["ts"]
-n_animals = data_ts["n_animals"]
-regions = data_ts["regions"]
-anat_labels = data_ts["anat_labels"]
+from shared_code.fun_utils import load_timeseries_data
 
 
-# %% Compute the DFC stream
-# Parameters speed
+def main() -> None:
+    # Configuration (defaults; can be overridden by CLI)
+    WINDOW_PARAM = (5, 100, 1)
+    LAG = 1
+    TAU = 5  # not used in DFC computation, included in filename per request
+    FORMAT = "3D"  # '2D' or '3D'
+    CACHE_BEHAVIOR = "skip"  # 'skip'|'load'|'verify'|'overwrite'
 
-PROCESSORS = -1
+    # CLI arguments
+    parser = argparse.ArgumentParser(description="Compute DFC streams and save to disk.")
+    parser.add_argument("--format", "-f", choices=["2D", "3D"], default=FORMAT,
+                        help="Output format: '2D' vectorized lower triangle or '3D' full FC matrices.")
+    parser.add_argument("--cache", "-c", choices=["skip", "load", "verify", "overwrite"], default=CACHE_BEHAVIOR,
+                        help="Cache behavior for existing output files.")
+    parser.add_argument("--wmin", type=int, default=WINDOW_PARAM[0], help="Minimum window size.")
+    parser.add_argument("--wmax", type=int, default=WINDOW_PARAM[1], help="Maximum window size.")
+    parser.add_argument("--wstep", type=int, default=WINDOW_PARAM[2], help="Window step size.")
+    parser.add_argument("--lag", type=int, default=LAG, help="Lag between windows.")
+    parser.add_argument("--tau", type=int, default=TAU, help="Tau value to embed in output filenames.")
+    args = parser.parse_args()
 
-lag = 1
-tau = 5
-window_size = 9
-window_parameter = (5, 100, 1)
+    # Apply CLI overrides
+    WINDOW_PARAM = (args.wmin, args.wmax, args.wstep)
+    LAG = args.lag
+    TAU = args.tau
+    FORMAT = args.format
+    CACHE_BEHAVIOR = args.cache
 
-# Parameters allegiance analysis
-n_runs_allegiance = 1000
-gamma_pt_allegiance = 100
+    # Paths and data
+    paths = get_paths(
+        dataset_name="ines_abdullah",
+        timecourse_folder="Timecourses_updated_03052024",
+        cognitive_data_file="ROIs.xlsx",
+    )
+    data_ts = load_timeseries_data(paths["preprocessed"] / "ts_and_meta_2m4m.npz")
+    ts = data_ts["ts"]  # shape: (n_animals, T, N)
+    n_animals = int(data_ts["n_animals"]) if "n_animals" in data_ts else ts.shape[0]
+    n_regions = int(data_ts["regions"]) if "regions" in data_ts else ts.shape[2]
 
-tau_array = np.append(np.arange(0, tau), tau)
-lentau = len(tau_array)
+    win_min, win_max, win_step = WINDOW_PARAM
+    time_window_range = np.arange(win_min, win_max + 1, win_step)
 
-time_window_min, time_window_max, time_window_step = window_parameter
-time_window_range = np.arange(time_window_min, time_window_max + 1, time_window_step)
+    out_dir = paths["dfc"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    start_all = time.time()
+    # Convenience for expected shape verification
+    T = ts.shape[1]
+    n_pairs = n_regions * (n_regions - 1) // 2
+
+    for ws in time_window_range:
+        # Build filename with tau included
+        fname = (
+            f"dfc_window_size={ws}_lag={LAG}_tau={TAU}_animals={n_animals}_regions={n_regions}.npz"
+        )
+        fpath = out_dir / fname
+
+        def expected_shape() -> tuple[int, ...]:
+            frames = (T - ws) // LAG + 1
+            if FORMAT == "3D":
+                return (n_animals, n_regions, n_regions, frames)
+            return (n_animals, n_pairs, frames)
+
+        if fpath.exists():
+            if CACHE_BEHAVIOR == "skip":
+                print(f"[cache] Exists, skipping: {fpath}")
+                continue
+            if CACHE_BEHAVIOR == "load":
+                try:
+                    arr = np.load(fpath)["dfc"]
+                    print(f"[cache] Loaded {fpath} shape={arr.shape}")
+                    continue
+                except Exception as e:
+                    print(f"[cache] Failed to load {fpath} (reason: {e}). Recomputing...")
+            if CACHE_BEHAVIOR == "verify":
+                try:
+                    arr = np.load(fpath)["dfc"]
+                    if tuple(arr.shape) == expected_shape():
+                        print(f"[cache] Verified {fpath} shape={arr.shape}; skipping")
+                        continue
+                    else:
+                        print(
+                            f"[cache] Shape mismatch {arr.shape} != {expected_shape()} for {fpath}; recomputing..."
+                        )
+                except Exception as e:
+                    print(f"[cache] Failed to verify {fpath} (reason: {e}). Recomputing...")
+            # CACHE_BEHAVIOR == 'overwrite' will fall through to recompute
+
+        t0 = time.time()
+        # Compute DFC stream for each animal
+        dfc_list = [
+            ts2dfc_stream(ts[i], window_size=ws, lag=LAG, format_data=FORMAT)
+            for i in range(n_animals)
+        ]
+        dfc_arr = np.array(dfc_list, dtype=np.float32)
+
+        np.savez_compressed(fpath, dfc=dfc_arr)
+        print(
+            f"Saved DFC: {fpath}  shape={dfc_arr.shape}  time={time.time() - t0:.2f}s"
+        )
+
+    print(f"Done. Total time: {time.time() - start_all:.2f}s")
 
 
-# %%
-# %%compute dfc stream
-# Compute the DFC stream
-# Define the wrapper function
-# def compute4window(ws):
-#     print(f"Starting DFC computation for window_size={ws}")
-#     start = time.time()
-#     dfc_stream = compute_dfc_stream(
-#         ts,
-#         window_size=ws,
-#         lag=lag,
-#         n_jobs=1,  # Important: Set to 1 to avoid nested parallelism
-#         save_path=paths[prefix],
-#     )
-#     stop = time.time()
-#     print(f"Finished window_size={ws} in {stop - start:.2f} sec")
-#     # return ws, dfc_stream
+if __name__ == "__main__":
+    main()
 
-# #%%load_from_cache
-# # #test compute4window
-# # from shared_code.fun_dfcspeed import *
-# #Uncomment to test the function for a specific window size
-# # ws, dfc_stream = compute4window_new(101)
-# # ws2, dfc_stream2 = compute4window(101)
-
-# #%%
-# # Run parallel dfc stream over window sizes
-# start = time.time()
-# Parallel(n_jobs=min(PROCESSORS, len(time_window_range)))(
-#     delayed(compute4window)(ws) for ws in time_window_range
-# )
-
-# stop = time.time()
-# print(f'DFC stream computation time {stop-start}')
-
-# %%
-# Check for missing DFC stream files and compute if necessary function
-
-# return ws, dfc_stream
-
-prefix = "dfc"
-
-# def get_tenet4window_range(time_window_range, prefix='dfc'):
-#     """
-#     Get the range of window sizes for tenet files.
-#     Args:
-#         prefix (str): Prefix for the tenet files.
-#     Returns:
-#         list: List of window sizes.
-#     """
-#     def compute4window_new(ws,prefix='dfc'):
-#         print(f"Starting DFC computation for window_size={ws}")
-#         start = time.time()
-#         dfc_stream = handler_get_tenet(
-#             ts,
-#             prefix=prefix,
-#             window_size=ws,
-#             lag=lag,
-#             n_jobs=1,  # Important: Set to 1 to avoid nested parallelism
-#             save_path=paths[prefix],
-#         )
-#         stop = time.time()
-#         print(f"Finished window_size={ws} in {stop - start:.2f} sec")
-
-#     # Run the check and complete function
-#     missing_files = check_and_rerun_missing_files(
-#         paths[prefix], prefix, time_window_range, lag, n_animals, regions
-#     )
-
-#     if missing_files:
-#         time_window_range = np.array(missing_files)
-
-#     # Run parallel dfc stream over window sizes
-#     start = time.time()
-#     Parallel(n_jobs=min(PROCESSORS, len(time_window_range)))(
-#         delayed(compute4window_new)(ws, prefix) for ws in time_window_range
-#     )
-
-#     stop = time.time()
-#     print(f'{prefix} stream computation time {stop-start}')
-
-#     # Check for missing prefix files and compute if necessary function
-#     missing_files = check_and_rerun_missing_files(
-#         paths[prefix], prefix, time_window_range, lag, n_animals, regions
-#     )
-get_tenet4window_range(time_window_range, prefix="dfc")
 # %%

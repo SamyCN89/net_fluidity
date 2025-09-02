@@ -7,6 +7,9 @@ from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
+import logging
+import argparse
+import sys
 
 # Optional/extra dependencies
 try:
@@ -37,9 +40,94 @@ from shared_code.fun_metaconnectivity import (
 )
 from shared_code.fun_paths import get_paths
 
-# Set consistent config to match previous run
-window_size = 9
-lag = 1
+#%%
+# -----------------------------------------------------------------------------
+# Step 1: Centralized configuration
+# -----------------------------------------------------------------------------
+CONFIG = {
+    "window_size": 9,
+    "lag": 1,
+    "tau": 3,
+    "tsne": {"n_components": 2, "perplexity": 30, "random_state": 42},
+    "consensus": {"n_runs": 1000, "gamma_pt": 10, "gmin": 0.5, "gmax": 1.0},
+}
+
+# Step 2: Lightweight logging setup
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+
+# Step 3: Small helpers to reduce duplication
+def upper_triangle(mat: np.ndarray) -> np.ndarray:
+    n = mat.shape[-1]
+    tri = np.triu_indices(n, k=1)
+    return mat[..., tri[0], tri[1]]
+
+
+def build_agreement_matrix(communities_2d: np.ndarray) -> np.ndarray:
+    """Wrapper over vectorized agreement; communities_2d shape: (runs, nodes)."""
+    return build_agreement_matrix_vectorized(communities_2d)
+
+parser = argparse.ArgumentParser(description="Allegiance analysis (v2)")
+parser.add_argument("--window-size", type=int, default=CONFIG["window_size"], dest="window_size")
+parser.add_argument("--lag", type=int, default=CONFIG["lag"], dest="lag")
+parser.add_argument("--tau", type=int, default=CONFIG["tau"], dest="tau")
+parser.add_argument("--overwrite-cache", action="store_true", dest="overwrite_cache",
+                    help="Recompute cached intermediates (agreement, TSNE, etc.)")
+parser.add_argument("--tsne-perp", type=float, default=CONFIG["tsne"]["perplexity"], dest="tsne_perp",
+                    help="t-SNE perplexity")
+parser.add_argument("--tsne-seed", type=int, default=CONFIG["tsne"]["random_state"], dest="tsne_seed",
+                    help="t-SNE random seed")
+parser.add_argument("--tsne-dim", type=int, default=CONFIG["tsne"]["n_components"], dest="tsne_dim",
+                    help="t-SNE output dimensions")
+parser.add_argument("--consensus-runs", type=int, default=CONFIG["consensus"]["n_runs"], dest="cons_n_runs",
+                    help="Number of Louvain runs for consensus")
+parser.add_argument("--consensus-gamma-pt", type=int, default=CONFIG["consensus"]["gamma_pt"], dest="cons_gamma_pt",
+                    help="Number of gamma points")
+parser.add_argument("--consensus-gmin", type=float, default=CONFIG["consensus"]["gmin"], dest="cons_gmin",
+                    help="Minimum gamma value")
+parser.add_argument("--consensus-gmax", type=float, default=CONFIG["consensus"]["gmax"], dest="cons_gmax",
+                    help="Maximum gamma value")
+# ARGS = parser.parse_args([]) if globals().get("__name__") != "__main__" else parser.parse_args()
+ARGS, _ = parser.parse_known_args()
+
+def compute_agreement_cached(dfc_sorted, cache_dir, window_size, lag, tau, overwrite=False):
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    agree_cache = agree_cache
+    if agree_cache.exists() and not overwrite:
+        try:
+            arr = np.load(agree_cache)["agreement"]
+            logger.info("[cache] Loaded agreement: %s", agree_cache)
+            return arr
+        except Exception:
+            logger.warning("[cache] Failed to load %s; recomputing", agree_cache)
+    arr = build_agreement_matrix_vectorized(dfc_sorted.T)
+    np.savez_compressed(agree_cache, agreement=arr)
+    return arr
+
+
+def compute_tsne_cached(X, cache_dir, prefix, tsne_cfg, window_size, lag, tau, overwrite=False):
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fname = (cache_dir / (f"{prefix}_window={window_size}_lag={lag}_tau={tau}"
+                          f"_perp={tsne_cfg['perplexity']}_seed={tsne_cfg['random_state']}.npz"))
+    if fname.exists() and not overwrite:
+        try:
+            emb = np.load(fname)["embedding"]
+            logger.info("[cache] Loaded %s", fname)
+            return emb
+        except Exception:
+            logger.warning("[cache] Failed to load %s; recomputing", fname)
+    tsne = TSNE(n_components=tsne_cfg["n_components"], perplexity=tsne_cfg["perplexity"],
+                random_state=tsne_cfg["random_state"])
+    emb = tsne.fit_transform(X)
+    np.savez_compressed(fname, embedding=emb)
+    return emb
+
+
+# Set consistent config to match previous run / CLI
+window_size = ARGS.window_size
+lag = ARGS.lag
+tau = ARGS.tau
 timecourse_folder = "Timecourses_updated_03052024"
 paths = get_paths(timecourse_folder=timecourse_folder)
 
@@ -49,12 +137,15 @@ ts = data_ts["ts"]
 n_animals = len(ts)
 n_regions = ts[0].shape[1]
 anat_labels = data_ts["anat_labels"]
+logger.info("Loaded time series: n_animals=%d, n_regions=%d", n_animals, n_regions)
 
 filename_dfc = (
-    f"window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}"
+    # f"window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}"
+    f"window_size={window_size}_lag={lag}_tau={tau}_animals={n_animals}_regions={n_regions}"
 )
 dfc_data = np.load(paths["dfc"] / f"dfc_{filename_dfc}.npz")
-n_windows = np.transpose(dfc_data["dfc_stream"], (0, 3, 2, 1)).shape[-1]
+n_windows = dfc_data["dfc"].shape[-1]
+logger.info("Detected %d time windows from DFC cache", n_windows)
 # %%
 with open(paths["preprocessed"] / "grouping_data_oip.pkl", "rb") as f:
     mask_groups, label_variables = pickle.load(f)
@@ -80,6 +171,9 @@ mc_mod_dataset = paths[
 dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance(
     paths, window_size=9, lag=1
 )
+assert dfc_communities.shape[0] == n_animals, "dfc_communities: n_animals mismatch"
+assert dfc_communities.shape[1] == n_windows, "dfc_communities: n_windows mismatch"
+assert contingency_matrices.shape[0] == n_animals, "contingency_matrices: n_animals mismatch"
 # %%
 dfc_communities_sorted = np.zeros_like(dfc_communities)
 
@@ -683,15 +777,42 @@ if TSNE is None or StandardScaler is None:
         "scikit-learn is required for TSNE/StandardScaler; install scikit-learn to run this section."
     )
 
-# Standardize the data
+tsne_perp = CONFIG["tsne"]["perplexity"]
+tsne_seed = CONFIG["tsne"]["random_state"]
+
+# Standardize the data (kept for potential later usage)
 scaler = StandardScaler()
 dfc_communities_sorted_scaled = scaler.fit_transform(
     dfc_communities_sorted.reshape(-1, dfc_communities_sorted.shape[-1])
 )
 
-# Perform t-SNE
-tsne = TSNE(n_components=2, random_state=42, perplexity=30)
-cont_mat_n_pairs_tsne = tsne.fit_transform(cont_mat_n_pairs)
+# Perform t-SNE with caching
+tsne_cache_pairs = (
+    (paths["allegiance"] / "cache").expanduser()
+    / f"tsne_pairs_window={window_size}_lag={lag}_tau={tau}_perp={tsne_perp}_seed={tsne_seed}.npz"
+)
+tsne_cache_pairs.parent.mkdir(parents=True, exist_ok=True)
+if tsne_cache_pairs.exists() and not ARGS.overwrite_cache:
+    try:
+        cont_mat_n_pairs_tsne = np.load(tsne_cache_pairs)["embedding"]
+        logger.info("[cache] Loaded TSNE pairs embedding: %s", tsne_cache_pairs)
+    except Exception:
+        logger.warning("[cache] Failed to load %s; recomputing", tsne_cache_pairs)
+        tsne = TSNE(
+            n_components=CONFIG["tsne"]["n_components"],
+            random_state=tsne_seed,
+            perplexity=tsne_perp,
+        )
+        cont_mat_n_pairs_tsne = compute_tsne_cached(cont_mat_n_pairs, tsne_cache_pairs.parent, "tsne_pairs", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+        np.savez_compressed(tsne_cache_pairs, embedding=cont_mat_n_pairs_tsne)
+else:
+    tsne = TSNE(
+        n_components=CONFIG["tsne"]["n_components"],
+        random_state=tsne_seed,
+        perplexity=tsne_perp,
+    )
+    cont_mat_n_pairs_tsne = compute_tsne_cached(cont_mat_n_pairs, tsne_cache_pairs.parent, "tsne_pairs", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+    np.savez_compressed(tsne_cache_pairs, embedding=cont_mat_n_pairs_tsne)
 # %%
 # Plot the t-SNE results
 plt.figure(figsize=(10, 8))
@@ -711,7 +832,49 @@ plt.ylabel("t-SNE Component 2")
 # plt.grid(True)
 plt.show()
 # %%
+# Compute and plot TSNE on transposed pairs (cached)
+tsne_cache_pairs_T = (
+    (paths["allegiance"] / "cache").expanduser()
+    / f"tsne_pairsT_window={window_size}_lag={lag}_tau={tau}_perp={tsne_perp}_seed={tsne_seed}.npz"
+)
+if tsne_cache_pairs_T.exists() and not ARGS.overwrite_cache:
+    try:
+        cont_mat_n_pairs_tsne2 = np.load(tsne_cache_pairs_T)["embedding"]
+        logger.info("[cache] Loaded TSNE pairs^T embedding: %s", tsne_cache_pairs_T)
+    except Exception:
+        logger.warning("[cache] Failed to load %s; recomputing", tsne_cache_pairs_T)
+        tsne2 = TSNE(
+            n_components=CONFIG["tsne"]["n_components"],
+            random_state=tsne_seed,
+            perplexity=tsne_perp,
+        )
+        cont_mat_n_pairs_tsne2 = compute_tsne_cached(cont_mat_n_pairs.T, tsne_cache_pairs_T.parent, "tsne_pairsT", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+        np.savez_compressed(tsne_cache_pairs_T, embedding=cont_mat_n_pairs_tsne2)
+else:
+    tsne2 = TSNE(
+        n_components=CONFIG["tsne"]["n_components"],
+        random_state=tsne_seed,
+        perplexity=tsne_perp,
+    )
+    cont_mat_n_pairs_tsne2 = compute_tsne_cached(cont_mat_n_pairs.T, tsne_cache_pairs_T.parent, "tsne_pairsT", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+    np.savez_compressed(tsne_cache_pairs_T, embedding=cont_mat_n_pairs_tsne2)
+
+plt.figure(figsize=(10, 8))
+plt.scatter(
+    cont_mat_n_pairs_tsne2[:, 0],
+    cont_mat_n_pairs_tsne2[:, 1],
+    s=50,
+    marker=".",
+    cmap="tab20",
+    alpha=0.5,
+)
+plt.title("t-SNE of Contingency Matrix Pairs (Transposed)")
+plt.xlabel("t-SNE Component 1")
+plt.ylabel("t-SNE Component 2")
+plt.show()
+# %%
 # Plot the mean matrix
+
 dfc_communities_sorted_median = np.median(
     dfc_communities_sorted.T, axis=2
 )  # Take the median across the time windows
@@ -909,7 +1072,20 @@ plt.show()
 # Plot the mean matrix
 # %%
 
-agreement = build_agreement_matrix_vectorized(dfc_communities_sorted.T)
+cache_dir = paths["allegiance"] / "cache"
+cache_dir.mkdir(parents=True, exist_ok=True)
+agree_cache = cache_dir / f"agreement_window={window_size}_lag={lag}_tau={tau}_animals={n_animals}_regions={n_regions}.npz"
+if False:
+    try:
+        agreement = np.load(agree_cache)["agreement"]
+        logger.info("[cache] Loaded agreement matrix: %s", agree_cache)
+    except Exception:
+        logger.warning("[cache] Failed to load %s; recomputing", agree_cache)
+        agreement = compute_agreement_cached(dfc_communities_sorted, cache_dir, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+        np.savez_compressed(agree_cache, agreement=agreement)
+else:
+    agreement = compute_agreement_cached(dfc_communities_sorted, cache_dir, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+    np.savez_compressed(agree_cache, agreement=agreement)
 
 plt.figure(figsize=(10, 8))
 plt.subplot(1, 1, 1)
@@ -993,9 +1169,36 @@ dfc_communities_sorted_scaled = scaler.fit_transform(
     dfc_communities_sorted.reshape(-1, dfc_communities_sorted.shape[-1])
 )
 
-# Perform t-SNE
-tsne = TSNE(n_components=2, random_state=42, perplexity=30)
-cont_mat_n_pairs_tsne = tsne.fit_transform(cont_mat_n_pairs)
+tsne_perp = CONFIG["tsne"]["perplexity"]
+tsne_seed = CONFIG["tsne"]["random_state"]
+
+# Perform t-SNE with caching
+tsne_cache_pairs = (
+    (paths["allegiance"] / "cache").expanduser()
+    / f"tsne_pairs_window={window_size}_lag={lag}_tau={tau}_perp={tsne_perp}_seed={tsne_seed}.npz"
+)
+tsne_cache_pairs.parent.mkdir(parents=True, exist_ok=True)
+if tsne_cache_pairs.exists() and not ARGS.overwrite_cache:
+    try:
+        cont_mat_n_pairs_tsne = np.load(tsne_cache_pairs)["embedding"]
+        logger.info("[cache] Loaded TSNE pairs embedding: %s", tsne_cache_pairs)
+    except Exception:
+        logger.warning("[cache] Failed to load %s; recomputing", tsne_cache_pairs)
+        tsne = TSNE(
+            n_components=CONFIG["tsne"]["n_components"],
+            random_state=tsne_seed,
+            perplexity=tsne_perp,
+        )
+        cont_mat_n_pairs_tsne = compute_tsne_cached(cont_mat_n_pairs, tsne_cache_pairs.parent, "tsne_pairs", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+        np.savez_compressed(tsne_cache_pairs, embedding=cont_mat_n_pairs_tsne)
+else:
+    tsne = TSNE(
+        n_components=CONFIG["tsne"]["n_components"],
+        random_state=tsne_seed,
+        perplexity=tsne_perp,
+    )
+    cont_mat_n_pairs_tsne = compute_tsne_cached(cont_mat_n_pairs, tsne_cache_pairs.parent, "tsne_pairs", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+    np.savez_compressed(tsne_cache_pairs, embedding=cont_mat_n_pairs_tsne)
 # %%
 # Plot the t-SNE results
 plt.figure(figsize=(10, 8))
@@ -1015,7 +1218,49 @@ plt.ylabel("t-SNE Component 2")
 # plt.grid(True)
 plt.show()
 # %%
+# Compute and plot TSNE on transposed pairs (cached)
+tsne_cache_pairs_T = (
+    (paths["allegiance"] / "cache").expanduser()
+    / f"tsne_pairsT_window={window_size}_lag={lag}_tau={tau}_perp={tsne_perp}_seed={tsne_seed}.npz"
+)
+if tsne_cache_pairs_T.exists() and not ARGS.overwrite_cache:
+    try:
+        cont_mat_n_pairs_tsne2 = np.load(tsne_cache_pairs_T)["embedding"]
+        logger.info("[cache] Loaded TSNE pairs^T embedding: %s", tsne_cache_pairs_T)
+    except Exception:
+        logger.warning("[cache] Failed to load %s; recomputing", tsne_cache_pairs_T)
+        tsne2 = TSNE(
+            n_components=CONFIG["tsne"]["n_components"],
+            random_state=tsne_seed,
+            perplexity=tsne_perp,
+        )
+        cont_mat_n_pairs_tsne2 = compute_tsne_cached(cont_mat_n_pairs.T, tsne_cache_pairs_T.parent, "tsne_pairsT", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+        np.savez_compressed(tsne_cache_pairs_T, embedding=cont_mat_n_pairs_tsne2)
+else:
+    tsne2 = TSNE(
+        n_components=CONFIG["tsne"]["n_components"],
+        random_state=tsne_seed,
+        perplexity=tsne_perp,
+    )
+    cont_mat_n_pairs_tsne2 = compute_tsne_cached(cont_mat_n_pairs.T, tsne_cache_pairs_T.parent, "tsne_pairsT", {"n_components": CONFIG["tsne"]["n_components"], "perplexity": tsne_perp, "random_state": tsne_seed}, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
+    np.savez_compressed(tsne_cache_pairs_T, embedding=cont_mat_n_pairs_tsne2)
+
+plt.figure(figsize=(10, 8))
+plt.scatter(
+    cont_mat_n_pairs_tsne2[:, 0],
+    cont_mat_n_pairs_tsne2[:, 1],
+    s=50,
+    marker=".",
+    cmap="tab20",
+    alpha=0.5,
+)
+plt.title("t-SNE of Contingency Matrix Pairs (Transposed)")
+plt.xlabel("t-SNE Component 1")
+plt.ylabel("t-SNE Component 2")
+plt.show()
+# %%
 # Plot the mean matrix
+
 dfc_communities_sorted_median = np.median(
     dfc_communities_sorted.T, axis=2
 )  # Take the median across the time windows
@@ -1261,7 +1506,7 @@ plt.show()
 # Plot the mean matrix
 # %%
 
-agreement = build_agreement_matrix_vectorized(dfc_communities_sorted.T)
+agreement = compute_agreement_cached(dfc_communities_sorted, cache_dir, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
 
 plt.figure(figsize=(10, 8))
 plt.subplot(1, 1, 1)
