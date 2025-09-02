@@ -11,9 +11,13 @@ import time
 
 import numpy as np
 
-from shared_code.fun_dfcspeed import *
-from shared_code.fun_loaddata import *
-from shared_code.fun_metaconnectivity import *
+from shared_code.fun_metaconnectivity import (
+    compute_metaconnectivity,
+    fun_allegiance_communities,
+    get_fc_mc_indices,
+    get_mc_region_identities,
+    intramodule_indices_mask,
+)
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
     load_cognitive_data,

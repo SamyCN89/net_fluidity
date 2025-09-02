@@ -8,11 +8,9 @@ Created on Mon Sep 23 13:26:30 2024
 # %%
 import numpy as np
 
-from shared_code.fun_dfcspeed import *
+from shared_code.fun_dfcspeed import get_tenet4window_range
 
 # from sphinx import ret
-from shared_code.fun_loaddata import *
-from shared_code.fun_metaconnectivity import *
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
     load_timeseries_data,

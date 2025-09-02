@@ -46,11 +46,8 @@ logger = logging.getLogger(__name__)
 
 # from sphinx import ret
 
-from shared_code.fun_dfcspeed import *
-from shared_code.fun_loaddata import *
-from shared_code.fun_metaconnectivity import (
-    fun_allegiance_communities,
-)
+from shared_code.fun_dfcspeed import ts2dfc_stream
+from shared_code.fun_metaconnectivity import fun_allegiance_communities
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
     #    get_paths,
