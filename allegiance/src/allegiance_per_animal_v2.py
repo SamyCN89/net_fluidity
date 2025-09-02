@@ -1,5 +1,5 @@
 # %%
-from pathlib import Path
+from pathlib import Path as _Path
 import pickle
 import time
 
@@ -7,6 +7,7 @@ from joblib import Parallel, delayed
 from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 import numpy as np
+
 from tqdm import tqdm
 import logging
 import argparse
