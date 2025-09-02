@@ -50,6 +50,13 @@ is_2month_old = data_ts["is_2month_old"]
 anat_labels = data_ts["anat_labels"]
 
 # %%
+# Helper for optional file saving
+def save_figure(path, flag):
+    try:
+        if flag:
+            plt.savefig(path, dpi=300, bbox_inches="tight")
+    except Exception:
+        pass
 # Plot the time series for each animal
 plt.figure(1, figsize=(12, 8))
 offset = 0.07  # vertical offset between time series
@@ -342,25 +349,24 @@ def extract_link_activations(binary_fc_data):
     return all_events
 
 
-link_events = extract_link_activations(binary_fc_cluster)
+if 'binary_fc_cluster' in globals():
+    link_events = extract_link_activations(binary_fc_cluster)
 
-# Example: print first 5 events for link 10 in animal 0
-for event in link_events[0][10][:5]:
-    print(event)
-# link_events[animal][link] = list of {'onset', 'offset', 'duration'}
-n_animals = len(link_events)
-n_links = len(link_events[0])
+    # Example: print first 5 events for link 10 in animal 0
+    for event in link_events[0][10][:5]:
+        print(event)
+    # link_events[animal][link] = list of {'onset', 'offset', 'duration'}
+    n_animals = len(link_events)
+    n_links = len(link_events[0])
 
-burst_counts = np.zeros((n_animals, n_links), dtype=int)
-durations_by_link = [[] for _ in range(n_links)]
+    burst_counts = np.zeros((n_animals, n_links), dtype=int)
+    durations_by_link = [[] for _ in range(n_links)]
 
-# Collect durations for each link across all animals
-for animal in range(n_animals):
-    for link in range(n_links):
-        for ee in link_events[animal][link]:
-            durations_by_link[link].append(ee["duration"])
-
-        # burst_counts[animal, link] = len(link_events[animal][link])
+    # Collect durations for each link across all animals
+    for animal in range(n_animals):
+        for link in range(n_links):
+            for ee in link_events[animal][link]:
+                durations_by_link[link].append(ee["duration"])
 
 
 # %%
@@ -372,18 +378,15 @@ for link, dur_list in enumerate(durations_by_link):
     link_ids.extend([link] * len(dur_list))
     durations.extend(dur_list)
 
-df_durations = pd.DataFrame({"link": link_ids, "duration": durations})
+    df_durations = pd.DataFrame({"link": link_ids, "duration": durations})
+    df_durations.groupby("link")["duration"].describe()
 
-
-df_durations.groupby("link")["duration"].describe()
-
-
-plt.figure(figsize=(12, 5))
-sns.violinplot(data=df_durations, x="link", y="duration", cut=0)
-plt.xticks([], [])  # hide labels if too many links
-plt.title("Burst Duration Distributions per Link")
-plt.tight_layout()
-plt.show()
+    plt.figure(figsize=(12, 5))
+    sns.violinplot(data=df_durations, x="link", y="duration", cut=0)
+    plt.xticks([], [])  # hide labels if too many links
+    plt.title("Burst Duration Distributions per Link")
+    plt.tight_layout()
+    plt.show()
 # %%
 
 # New proposiiton
@@ -437,7 +440,11 @@ def analyze_link_dynamics(kmeans_labels, fc_clusters, meta, save_fig, fig_path):
     plt.show()
 
 
-analyze_link_dynamics(kmeans_labels, fc_clusters, meta, save_fig, fig_path)
+# Guarded run: requires fc_clusters computed elsewhere
+meta = {"n_animals": n_animals, "total_tr": total_tr, "regions": regions}
+# Guard run only if required inputs exist
+if globals().get('fc_clusters') is not None:
+    analyze_link_dynamics(kmeans_labels, globals()['fc_clusters'], meta, save_fig, paths["ts"])
 
 # aux_plot = []
 

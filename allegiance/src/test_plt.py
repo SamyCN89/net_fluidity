@@ -260,8 +260,8 @@ plt.figure(figsize=(10, 8))
 plt.title("Agreement Matrix")
 plt.clf()
 # for ii, aux_group in enumerate(mask_groups[2]):
-# plt.subplot(2, 2, 1+ii)
-np.shape(agreement[aux_group])
+#     plt.subplot(2, 2, 1+ii)
+#     np.shape(agreement[aux_group])
 aux_agreement = agreement[91]
 plt.imshow(aux_agreement, aspect="auto", interpolation="none", cmap="viridis")
 plt.colorbar()
