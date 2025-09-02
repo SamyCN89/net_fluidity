@@ -1,4 +1,5 @@
 # %%
+from pathlib import Path
 import pickle
 import time
 
@@ -80,7 +81,6 @@ def validate_shapes(ts: np.ndarray,
     assert contingency_matrices.shape[0] == n_animals, "contingency_matrices: n_animals mismatch"
 
 
-from pathlib import Path as _Path
 
 
 def plot_matrix(mat: np.ndarray, title: str, cmap: str = "viridis",
