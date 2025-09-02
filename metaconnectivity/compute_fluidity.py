@@ -11,8 +11,6 @@ Created on Mon Sep 23 13:26:30 2024
 
 import numpy as np
 
-from shared_code.fun_dfcspeed import *
-from shared_code.fun_loaddata import *
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
     #    get_paths,

@@ -27,7 +27,12 @@ import numexpr as ne
 import numpy as np
 from tqdm import tqdm
 
-from .fun_loaddata import *
+from .fun_loaddata import (
+    get_missing_files,
+    load_from_cache,
+    make_file_path,
+    save2disk,
+)
 from .fun_optimization import (
     cosine_speed_vectorized,
     fast_corrcoef,

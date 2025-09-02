@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 # from functions_analysis import *
-from shared_code.fun_loaddata import *  # Import only needed functions
+from shared_code.fun_loaddata import load_npz_dict  # Import only needed functions
 from shared_code.fun_paths import get_paths
 
 # %% Define paths, folders and hash

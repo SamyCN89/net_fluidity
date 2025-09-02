@@ -15,7 +15,6 @@ from class_dataanalysis_julien import DFCAnalysis
 import numpy as np
 
 from shared_code.fun_dfcspeed import get_tenet4window_range
-from shared_code.fun_loaddata import *
 
 data = DFCAnalysis()
 

@@ -3,8 +3,8 @@ import pickle
 import time
 
 from joblib import Parallel, delayed
-import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
@@ -28,9 +28,9 @@ except Exception:  # pragma: no cover - optional
     StandardScaler = None  # type: ignore
 
 from shared_code.fun_metaconnectivity import (
+    build_agreement_matrix_vectorized,
     contingency_matrix_fun,
     load_merged_allegiance,
-    build_agreement_matrix_vectorized,
 )
 from shared_code.fun_paths import get_paths
 

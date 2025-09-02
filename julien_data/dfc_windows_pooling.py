@@ -17,7 +17,6 @@ import pandas as pd
 # from fun_utils import set_figure_params
 from shared_code.fun_bootstrap import handler_bootstrap_permutation
 from shared_code.fun_dfcspeed import get_population_wpooling, pool_vel_windows
-from shared_code.fun_loaddata import *
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import set_figure_params
 

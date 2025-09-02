@@ -9,8 +9,7 @@ Created on Mon Sep 23 13:26:30 2024
 # from functions_analysis import *
 from pathlib import Path
 
-from fun_dfcspeed import *
-from fun_loaddata import *
+from fun_dfcspeed import ts2dfc_stream, ts2fc
 from fun_metaconnectivity import (
     compute_mc_nplets_mask_and_index,
     trimers_leaves_fc,

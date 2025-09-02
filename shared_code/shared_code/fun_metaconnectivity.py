@@ -17,7 +17,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .fun_dfcspeed import ts2dfc_stream
-from .fun_loaddata import *
+from .fun_loaddata import load_from_cache, make_file_path, save2disk
 from .fun_optimization import (
     fast_corrcoef,
 )  # , fast_corrcoef_numba, fast_corrcoef_numba_parallel

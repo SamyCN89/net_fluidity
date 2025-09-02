@@ -3,8 +3,8 @@ import pickle
 import time
 
 from joblib import Parallel
-import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
@@ -21,16 +21,16 @@ except Exception:  # pragma: no cover
 
 try:
     from sklearn.manifold import TSNE
-    from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import mutual_info_score
+    from sklearn.preprocessing import StandardScaler
 except Exception:  # pragma: no cover
     TSNE = None  # type: ignore
     StandardScaler = None  # type: ignore
     mutual_info_score = None  # type: ignore
 
 from shared_code.fun_metaconnectivity import (
-    load_merged_allegiance,  # %%
     build_agreement_matrix_vectorized,
+    load_merged_allegiance,  # %%
 )
 from shared_code.fun_paths import get_paths
 

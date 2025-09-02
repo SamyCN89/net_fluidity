@@ -11,7 +11,6 @@ import pickle
 
 import brainconn as bct
 from fun_dfcspeed import ts2dfc_stream
-from fun_loaddata import *
 from fun_optimization import (
     fast_corrcoef,  #, fast_corrcoef_numba, fast_corrcoef_numba_parallel
 )
