@@ -310,7 +310,7 @@ def contingency_matrix_fun(
     communities_mat = np.zeros((gamma_range, n_runs, n_nodes), dtype=np.float32)
 
     # Process per gamma
-    for idx, gamma in enumerate(tqdm(gamma_mod, desc="Processing gammas")):
+    for idx, _gamma in enumerate(tqdm(gamma_mod, desc="Processing gammas")):
         results = results_by_gamma[idx]
         communities, modularities = zip(*results, strict=False)
         communities = np.array(communities, dtype=np.int32)
@@ -891,7 +891,6 @@ def trimers_leaves_fc(arr):
     flat = arr.flatten()
     unique, counts = np.unique(flat, return_counts=True)
     non_repeated = unique[counts == 1]
-    repeated = unique[counts == 2]
     return non_repeated
 
 

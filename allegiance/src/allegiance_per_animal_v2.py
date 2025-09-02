@@ -1,8 +1,7 @@
 # %%
-import pickle
 import time
 
-from joblib import Parallel
+from joblib import Parallel, delayed
 from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,10 +26,13 @@ except Exception:  # pragma: no cover
     TSNE = None  # type: ignore
     StandardScaler = None  # type: ignore
     mutual_info_score = None  # type: ignore
+from scipy.optimize import linear_sum_assignment
+from scipy.stats import pearsonr, spearmanr
 
 from shared_code.fun_metaconnectivity import (
     build_agreement_matrix_vectorized,
     load_merged_allegiance,  # %%
+    contingency_matrix_fun,
 )
 from shared_code.fun_paths import get_paths
 
@@ -207,7 +209,6 @@ plt.xlabel("Regions")
 plt.show()
 # %%
 # the spearman correlation between time points in contingency_matrices_0_triu (time_points x n_pairs)
-from scipy.stats import spearmanr
 
 time_corr_agreement = np.zeros(n_windows - 1)  # Initialize the correlation matrix
 for i in range(n_windows - 1):
@@ -223,7 +224,7 @@ for i in range(n_windows - 1):
 plt.figure(figsize=(25, 7))
 plt.plot(time_corr_agreement, "o-", markersize=5, alpha=0.7)
 # %%
-from scipy.stats import pearsonr, spearmanr
+# already imported at top
 
 # adjusted rand index
 # Suppose agreement_matrices: shape (n_windows, n_regions, n_regions)
@@ -428,8 +429,7 @@ if bct is None:
     raise RuntimeError(
         "brainconn is required for consensus clustering; install brainconn to run this section."
     )
-from joblib import delayed
-from scipy.stats import pearsonr
+# already imported at top
 
 _runs = 100
 temporal_agreement_matrix = np.zeros(
@@ -527,7 +527,7 @@ community_agreement_labels, q_values = zip(*results, strict=False)
 # 3. Apply this mapping to ensure consistent labeling.
 
 
-from scipy.optimize import linear_sum_assignment
+# already imported at top
 
 
 def align_community_labels(communities):
@@ -881,7 +881,6 @@ allegiance_matrices = cm_0
 allegiance_avg = allegiance_matrices.mean(axis=0)
 
 # "consensus" community structure over the whole period with Louvain method
-from shared_code.fun_metaconnectivity import contingency_matrix_fun
 
 # contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=allegiance_avg, gamma_range=10, gmin=0.1, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun(
@@ -942,7 +941,7 @@ dfc_data = np.load(paths["dfc"] / f"dfc_{filename_dfc}.npz")
 n_windows = np.transpose(dfc_data["dfc_stream"], (0, 3, 2, 1)).shape[-1]
 
 # %%
-import pickle
+# already imported at top
 
 with open(paths["sorted"] / "grouping_data_oip.pkl", "rb") as f:
     mask_groups, label_variables = pickle.load(f)
@@ -985,8 +984,7 @@ cont_mat_n_pairs_animal = np.repeat(
 # cont_mat_n_pairs_animal = np.repeat(np.arange(np.sum(mask_groups_2[0])), np.sum(mask_groups_2[0]))  # Shape: (n_animals * n_windows,)
 # %%
 # TSNE on one animal of contingency matrix (contingency_matrices[0])
-from sklearn.manifold import TSNE
-from sklearn.preprocessing import StandardScaler
+# already imported at top
 
 # Standardize the data
 scaler = StandardScaler()
@@ -1234,7 +1232,7 @@ allegiance_matrices = cm_0
 allegiance_avg = allegiance_matrices.mean(axis=0)
 
 # "consensus" community structure over the whole period with Louvain method
-from shared_code.fun_metaconnectivity import contingency_matrix_fun
+# already imported at top
 
 # contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=allegiance_avg, gamma_range=10, gmin=0.1, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun(

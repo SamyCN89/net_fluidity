@@ -195,7 +195,7 @@ def _handle_dfc_speed_analysis(
 
     # Extract DFC speed specific parameters
     tau = kwargs.get("tau", 3)
-    min_tau_zero = kwargs.get("min_tau_zero", False)
+    # min_tau_zero is currently unused in this handler; kept in signature for compatibility
     method = kwargs.get("method", "pearson")
 
     # Define prefix for DFC speed (following test version convention)
@@ -321,7 +321,7 @@ def handler_get_tenet(
     # key = 'dfc_stream' if prefix == 'dfc' else prefix
     # label = "dfc-stream" if prefix == "dfc" else "meta-connectivity"
     if file_path is not None and file_path.exists():
-        if load_cache == True:
+        if load_cache:
             logger.info(f"Loading from cache: {file_path} and key: {key}")
             try:
                 return load_from_cache(file_path, key=key, label=label)
@@ -671,7 +671,7 @@ def dfc_speed_oversampled_series(
     Samy Castro 2024
     """
 
-    if min_tau_zero == True:
+    if min_tau_zero:
         min_tau = 0
     else:
         min_tau = -tau
@@ -702,10 +702,10 @@ def dfc_speed_oversampled_series(
         )
         speed_windows_tau[idx_tt] = np.median(speed_oversampl, axis=1)
 
-        if get_speed_dist == True:  # speed_dist = np.mean(speed_oversampl,axis=1)
+        if get_speed_dist:  # speed_dist = np.mean(speed_oversampl,axis=1)
             speed_dist.append(speed_oversampl.flatten())
 
-    if get_speed_dist == True:  # speed_dist = np.mean(speed_oversampl,axis=1)
+    if get_speed_dist:  # speed_dist = np.mean(speed_oversampl,axis=1)
         return speed_windows_tau, speed_dist
     else:
         return speed_windows_tau

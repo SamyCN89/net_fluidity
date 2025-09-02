@@ -10,6 +10,9 @@ Created on Mon Sep 23 13:26:30 2024
 # from functions_analysis import *
 
 import numpy as np
+import matplotlib.pyplot as plt
+from scipy.spatial.distance import cdist
+from scipy.stats import genpareto
 
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
@@ -77,8 +80,7 @@ def extremal_Sueveges(Y, p):
     return theta
 
 
-from scipy.spatial.distance import cdist
-from scipy.stats import genpareto
+# moved to top
 
 
 def MA_EEG_Man_Dim_Flui(TS, quanti=0.98, step=1):
@@ -130,7 +132,7 @@ for xx, (f, d) in enumerate(results):
     dimension[xx] = d
 
 # %%
-import matplotlib.pyplot as plt
+# already imported at top
 
 # Plotting the results
 plt.figure(figsize=(20, 5))

@@ -297,7 +297,7 @@ def load_matdata(folder_data, specific_folder, files_name):
     ts_list = []
     hash_dir = Path(folder_data) / specific_folder
 
-    for idx, file_name in enumerate(files_name):
+    for _idx, file_name in enumerate(files_name):
         file_path = hash_dir / file_name
 
         try:

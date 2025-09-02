@@ -9,13 +9,23 @@ Created on Mon Sep 23 13:26:30 2024
 import logging
 import os
 from pathlib import Path
-import sys
 import time
 
 from matplotlib import pyplot as plt
 import numpy as np
 
-sys.path.append("../../shared_code")
+# sys.path.append("../../shared_code")
+
+from shared_code.fun_dfcspeed import ts2dfc_stream
+from shared_code.fun_metaconnectivity import fun_allegiance_communities
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import (
+    load_cognitive_data,
+    load_grouping_data,
+    load_timeseries_data,
+    set_figure_params,
+)
+from joblib import Parallel, delayed, parallel_backend
 
 
 def setup_logging():
@@ -43,17 +53,6 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # from sphinx import ret
-
-from shared_code.fun_dfcspeed import ts2dfc_stream
-from shared_code.fun_metaconnectivity import fun_allegiance_communities
-from shared_code.fun_paths import get_paths
-from shared_code.fun_utils import (
-    #    get_paths,
-    load_cognitive_data,
-    load_grouping_data,
-    load_timeseries_data,
-    set_figure_params,
-)
 
 # =============================================================================
 # This code compute
@@ -131,7 +130,6 @@ plt.ylim(0, 1)
 plt.show()
 
 # %%Metaconnectivity
-from joblib import Parallel, delayed, parallel_backend
 
 
 def compute_dfc_stream(

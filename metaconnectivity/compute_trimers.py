@@ -10,6 +10,7 @@ Created on Mon Sep 23 13:26:30 2024
 from pathlib import Path
 
 from fun_dfcspeed import ts2dfc_stream, ts2fc
+from matplotlib import pyplot as plt
 from fun_metaconnectivity import (
     compute_mc_nplets_mask_and_index,
     trimers_leaves_fc,
@@ -230,7 +231,7 @@ np.savez_compressed(
 )
 
 # %%
-from matplotlib import pyplot as plt
+# moved to top
 
 label_fc_root_fc_leaves = r"$min(FC_{i,r}, FC_{j,r}) > FC_{i,j}$"
 label_mc_root_fc_leaves = r"$MC_{ir,jr} > FC_{i,j}$"
