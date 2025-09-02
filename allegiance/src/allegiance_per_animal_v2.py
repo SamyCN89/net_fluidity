@@ -68,6 +68,45 @@ def build_agreement_matrix(communities_2d: np.ndarray) -> np.ndarray:
     """Wrapper over vectorized agreement; communities_2d shape: (runs, nodes)."""
     return build_agreement_matrix_vectorized(communities_2d)
 
+
+def validate_shapes(ts: np.ndarray,
+                    dfc_communities: np.ndarray,
+                    contingency_matrices: np.ndarray,
+                    n_animals: int,
+                    n_windows: int) -> None:
+    """Centralized shape checks; raises AssertionError with clear messages."""
+    assert ts.shape[0] == n_animals, "ts: n_animals mismatch"
+    assert dfc_communities.shape[:2] == (n_animals, n_windows), "dfc_communities: shape mismatch"
+    assert contingency_matrices.shape[0] == n_animals, "contingency_matrices: n_animals mismatch"
+
+
+from pathlib import Path as _Path
+
+
+def plot_matrix(mat: np.ndarray, title: str, cmap: str = "viridis",
+                save: bool = False, out_path: _Path | None = None, figsize=(10, 8)) -> None:
+    fig, ax = plt.subplots(figsize=figsize)
+    im = ax.imshow(mat, aspect="auto", interpolation="none", cmap=cmap)
+    ax.set_title(title)
+    fig.colorbar(im, ax=ax)
+    if save and out_path is not None:
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+def plot_tsne(embedding: np.ndarray, colors: np.ndarray | None,
+              title: str, save: bool = False, out_path: _Path | None = None,
+              figsize=(10, 8), s: int = 15) -> None:
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=s, marker=".", cmap="tab20", alpha=0.5)
+    ax.set_title(title)
+    ax.set_xlabel("t-SNE Component 1")
+    ax.set_ylabel("t-SNE Component 2")
+    if save and out_path is not None:
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.show()
+
+
 parser = argparse.ArgumentParser(description="Allegiance analysis (v2)")
 parser.add_argument("--window-size", type=int, default=CONFIG["window_size"], dest="window_size")
 parser.add_argument("--lag", type=int, default=CONFIG["lag"], dest="lag")
@@ -88,12 +127,16 @@ parser.add_argument("--consensus-gmin", type=float, default=CONFIG["consensus"][
                     help="Minimum gamma value")
 parser.add_argument("--consensus-gmax", type=float, default=CONFIG["consensus"]["gmax"], dest="cons_gmax",
                     help="Maximum gamma value")
+parser.add_argument("--save-plots", action="store_true", dest="save_plots",
+                    help="Save figures to disk under allegiance/fig")
 # ARGS = parser.parse_args([]) if globals().get("__name__") != "__main__" else parser.parse_args()
 ARGS, _ = parser.parse_known_args()
 
 def compute_agreement_cached(dfc_sorted, cache_dir, window_size, lag, tau, overwrite=False):
     cache_dir.mkdir(parents=True, exist_ok=True)
-    agree_cache = agree_cache
+    agree_cache = cache_dir / f"agreement_w{window_size}_lag{lag}_tau{tau}.npz"
+
+    # agree_cache = agree_cache
     if agree_cache.exists() and not overwrite:
         try:
             arr = np.load(agree_cache)["agreement"]
@@ -130,6 +173,8 @@ lag = ARGS.lag
 tau = ARGS.tau
 timecourse_folder = "Timecourses_updated_03052024"
 paths = get_paths(timecourse_folder=timecourse_folder)
+plot_dir = (paths["allegiance"] / "fig").expanduser()
+plot_dir.mkdir(parents=True, exist_ok=True)
 
 # %% Load meta info to determine shape
 data_ts = np.load(paths["preprocessed"] / "ts_and_meta_2m4m.npz", allow_pickle=True)
@@ -171,9 +216,7 @@ mc_mod_dataset = paths[
 dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance(
     paths, window_size=9, lag=1
 )
-assert dfc_communities.shape[0] == n_animals, "dfc_communities: n_animals mismatch"
-assert dfc_communities.shape[1] == n_windows, "dfc_communities: n_windows mismatch"
-assert contingency_matrices.shape[0] == n_animals, "contingency_matrices: n_animals mismatch"
+validate_shapes(ts, dfc_communities, contingency_matrices, n_animals, n_windows)
 # %%
 dfc_communities_sorted = np.zeros_like(dfc_communities)
 
@@ -184,15 +227,7 @@ for ani in tqdm(range(n_animals), desc="Animals"):
         ]
 # %%
 # plot the dfc_communities_sorted matrix of 1st animal
-plt.figure(figsize=(10, 8))
-plt.imshow(
-    dfc_communities_sorted[0].T, aspect="auto", interpolation="none", cmap="viridis"
-)
-plt.colorbar()
-plt.title("DFC Communities - Animal 0")
-plt.ylabel("Regions")
-plt.xlabel("Time Windows")
-plt.show()
+plot_matrix(dfc_communities_sorted[0].T, "DFC Communities - Animal 0", cmap="viridis", save=ARGS.save_plots, out_path=plot_dir / f"dfc_communities_animal0_w{window_size}_l{lag}_t{tau}.png")
 
 module_num = np.zeros(n_windows)
 for i in range(n_windows):
@@ -446,14 +481,6 @@ plt.show()
 
 # %%
 
-# Choose a categorical palette: 'Set1', 'Set2', 'Pastel1', etc. (fallback if mizani missing)
-palette_func = (
-    brewer_pal(type="qual", palette="Set1") if brewer_pal else (lambda n: tol_bright[:n])
-)
-n_categories = int(dfc_communities_sorted.max() + 1)
-colors = palette_func(n_categories)
-
-
 # Paul Tol's bright palette (7 colors)
 tol_bright = [
     "#BBBBBB",
@@ -464,6 +491,14 @@ tol_bright = [
     "#66CCEE",
     "#AA3377",
 ]
+# Choose a categorical palette: 'Set1', 'Set2', 'Pastel1', etc. (fallback if mizani missing)
+palette_func = (
+    brewer_pal(type="qual", palette="Set1") if brewer_pal else (lambda n: tol_bright[:n])
+)
+n_categories = int(dfc_communities_sorted.max() + 1)
+colors = palette_func(n_categories)
+
+
 
 
 n_categories = int(dfc_communities_sorted.max() + 1)
@@ -508,24 +543,9 @@ temporal_aggregation_mat = (
 )  # Average across animals and windows
 
 # Plot the allegiance matrix
-plt.figure(figsize=(10, 8))
-plt.imshow(
-    temporal_aggregation_mat[0], aspect="auto", interpolation="none", cmap="Set1"
-)
-plt.colorbar()
-plt.title("Temporal Aggregation Matrix")
-plt.ylabel("Regions")
-plt.xlabel("Regions")
-# plt.clim(0,0.5)
-plt.show()
+plot_matrix(temporal_aggregation_mat[0], "Temporal Aggregation Matrix", cmap="viridis", save=ARGS.save_plots, out_path=plot_dir / f"temporal_agg_w{window_size}_l{lag}_t{tau}.png")
 
 # %%
-if bct is None:
-    raise RuntimeError(
-        "brainconn is required for consensus clustering; install brainconn to run this section."
-    )
-# already imported at top
-
 _runs = 100
 temporal_agreement_matrix = np.zeros(
     (n_animals, n_regions, n_regions)
@@ -620,10 +640,6 @@ community_agreement_labels, q_values = zip(*results, strict=False)
 # 1. Identify the regions that correspond to label “1” in each window.
 # 2. Create a mapping of these regions across all windows.
 # 3. Apply this mapping to ensure consistent labeling.
-
-
-# already imported at top
-
 
 def align_community_labels(communities):
     """
@@ -880,22 +896,7 @@ dfc_communities_sorted_median = np.median(
 )  # Take the median across the time windows
 
 # %%
-plt.figure(figsize=(10, 8))
-plt.subplot(1, 1, 1)
-plt.clf()
-plt.title("Community label - Animal 0, Window 0")
-# plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-# aux_argsort = np.argsort(dfc_communities_sorted)
-
-plt.imshow(
-    dfc_communities_sorted_median, aspect="auto", interpolation="none", cmap="viridis"
-)
-# plt.clim(0, 1)
-plt.colorbar()
-plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
-plt.ylabel("Regions")
-plt.xlabel("Time Windows")
-plt.show()
+plot_matrix(dfc_communities_sorted_median, "Community label - Animal 0, Window 0", cmap="viridis", save=ARGS.save_plots, out_path=plot_dir / f"community_median_w{window_size}_l{lag}_t{tau}.png")
 
 # %%
 # Plot median community labels for mask_groups
@@ -1039,20 +1040,27 @@ def _build_agreement_matrix(communities):
 
 # %%
 # Global Allegiance Matrix
-
 # Average modular structure over all windows and animals
-allegiance_matrices = cm_0
-allegiance_avg = allegiance_matrices.mean(axis=0)
+def _assert_square_symmetric(A, name="W"):
+    A = np.asarray(A)
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError(f"{name} must be square 2D: got shape {A.shape}")
+    # not strictly necessary, but nice to enforce
+    if not np.allclose(A, A.T, atol=1e-8, equal_nan=True):
+        logging.warning("%s is not perfectly symmetric; symmetrizing.", name)
+        return (A + A.T) / 2
+    return A
+
+# before calling Louvain
+W = _assert_square_symmetric(W, "mc_data")
 
 # "consensus" community structure over the whole period with Louvain method
-
-# contingency_matrix, gamma_qmod_val, gamma_agreement_mat =contingency_matrix_fun(1000, mc_data=allegiance_avg, gamma_range=10, gmin=0.1, gmax=1, cache_path=None, ref_name='', n_jobs=-1)
 contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun(
     1000,
-    mc_data=dfc_communities_sorted.T,
+    mc_data=W,
     gamma_range=10,
     gmin=0.5,
-    gmax=1,
+    gmax=1.0,
     cache_path=None,
     ref_name="",
     n_jobs=-1,
@@ -1061,14 +1069,7 @@ contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun
 consensus_community = contingency_matrix
 
 # Plot consensus community
-plt.figure(figsize=(10, 8))
-plt.subplot(1, 1, 1)
-plt.clf()
-plt.imshow(consensus_community, aspect="auto", interpolation="none", cmap="Greys")
-plt.colorbar()
-plt.xlabel("DFT Frequency")
-plt.ylabel("DFT Frequency")
-plt.show()
+plot_matrix(consensus_community, "Consensus Community (Contingency)", cmap="viridis", save=ARGS.save_plots, out_path=plot_dir / f"consensus_w{window_size}_l{lag}_t{tau}.png")
 # Plot the mean matrix
 # %%
 
@@ -1090,20 +1091,25 @@ else:
 plt.figure(figsize=(10, 8))
 plt.subplot(1, 1, 1)
 plt.clf()
-plt.imshow(agreement, aspect="auto", interpolation="none", cmap="viridis")
+plt.imshow(agreement[:,:,0], aspect="auto", interpolation="none", cmap="viridis")
+plt.colorbar()
+plt.xlabel("Regions")
+plt.ylabel("Regions")
+plt.title(f"Agreement Matrix - window={window_size}, lag={lag}, tau={tau}")
+plt.show()
+
 # %%
 
 
-# %%
+# # Set consistent config to match previous run
+# window_size = 9
+# lag = 1
+# timecourse_folder = "Timecourses_updated_03052024"
 
-
-# Set consistent config to match previous run
-window_size = 9
-lag = 1
-timecourse_folder = "Timecourses_updated_03052024"
-
-# Load meta info to determine shape
-paths = get_paths(timecourse_folder=timecourse_folder)
+# # Load meta info to determine shape
+# paths = get_paths(timecourse_folder=timecourse_folder)
+plot_dir = (paths["allegiance"] / "fig").expanduser()
+plot_dir.mkdir(parents=True, exist_ok=True)
 # %%
 data_ts = np.load(paths["sorted"] / "ts_and_meta_2m4m.npz", allow_pickle=True)
 ts = data_ts["ts"]
@@ -1266,22 +1272,7 @@ dfc_communities_sorted_median = np.median(
 )  # Take the median across the time windows
 
 # %%
-plt.figure(figsize=(10, 8))
-plt.subplot(1, 1, 1)
-plt.clf()
-plt.title("Community label - Animal 0, Window 0")
-# plt.imshow(cm_0_mean.T , aspect='auto', interpolation='none', cmap='Greys')
-# aux_argsort = np.argsort(dfc_communities_sorted)
-
-plt.imshow(
-    dfc_communities_sorted_median, aspect="auto", interpolation="none", cmap="viridis"
-)
-# plt.clim(0, 1)
-plt.colorbar()
-plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
-plt.ylabel("Regions")
-plt.xlabel("Time Windows")
-plt.show()
+plot_matrix(dfc_communities_sorted_median, "Community label - Animal 0, Window 0", cmap="viridis", save=ARGS.save_plots, out_path=plot_dir / f"community_median_w{window_size}_l{lag}_t{tau}.png")
 
 # %%
 # Plot median community labels for mask_groups
@@ -1495,23 +1486,14 @@ contingency_matrix, gamma_qmod_val, gamma_agreement_mat = contingency_matrix_fun
 consensus_community = contingency_matrix
 
 # Plot consensus community
-plt.figure(figsize=(10, 8))
-plt.subplot(1, 1, 1)
-plt.clf()
-plt.imshow(consensus_community, aspect="auto", interpolation="none", cmap="Greys")
-plt.colorbar()
-plt.xlabel("DFT Frequency")
-plt.ylabel("DFT Frequency")
-plt.show()
+plot_matrix(consensus_community, "Consensus Community (Contingency)", cmap="viridis", save=ARGS.save_plots, out_path=plot_dir / f"consensus_w{window_size}_l{lag}_t{tau}.png")
 # Plot the mean matrix
 # %%
 
 agreement = compute_agreement_cached(dfc_communities_sorted, cache_dir, window_size, lag, tau, overwrite=ARGS.overwrite_cache)
 
-plt.figure(figsize=(10, 8))
-plt.subplot(1, 1, 1)
-plt.clf()
-plt.imshow(agreement, aspect="auto", interpolation="none", cmap="viridis")
+plot_matrix(agreement, f"Agreement Matrix - window={window_size}, lag={lag}, tau={tau}", cmap="viridis", save=ARGS.save_plots, out_path=plot_dir / f"agreement_w{window_size}_l{lag}_t{tau}.png")
+# Placeholder to keep subsequent code aligned
 # %%
 
 
