@@ -1,7 +1,6 @@
 # %%
 import argparse
 import logging
-from operator import index
 from pathlib import Path as _Path
 import pickle
 
@@ -516,12 +515,12 @@ plot_matrix(
 # %%
 
 ############################################################################################
-#- Cohesion analysis
+# - Cohesion analysis
 #############################################################################################
 # for the first animal, compute the cohesion timeseries between region 1 and region 2
 
 
-#Default Mode Network regions
+# Default Mode Network regions
 dmn_labels_index = [0, 23, 13, 22, 2, 28, 34, 37, 39, 8, 35]
 
 
@@ -607,9 +606,9 @@ plt.show()
 # %%
 
 
-#plot cohesion_probability_mean_group
+# plot cohesion_probability_mean_group
 
-for xx, label in zip(mask_groups, label_variables):
+for xx, label in zip(mask_groups, label_variables, strict=False):
     print(label)
     for i, group in enumerate(xx):
         plt.figure(figsize=(10, 8))
@@ -637,7 +636,7 @@ for xx, label in zip(mask_groups, label_variables):
 plt.figure(figsize=(10, 8))
 
 for i, group in enumerate(mask_groups[0]):
-    plt.subplot(4, 2, 1+i)
+    plt.subplot(4, 2, 1 + i)
     cohesion_probability_mean_group = np.mean(cohesion_probability_all[group], axis=0)
 
     plt.imshow(
@@ -664,27 +663,27 @@ plt.tight_layout()
 plt.show()
 
 # %%
-#------------Cohesion time series-------------------------------
-
+# ------------Cohesion time series-------------------------------
 
 
 def cohesion_timeseries(communities, region_index=None):
 
-    if region_index==None:
+    if region_index == None:
         region_index = np.arange(communities.shape[1])
-    cohesion_timeseries = np.zeros((len(region_index), len(region_index), communities.shape[0]))
+    cohesion_timeseries = np.zeros(
+        (len(region_index), len(region_index), communities.shape[0])
+    )
     # cohesion_probability = np.zeros((n_regions, n_regions))
     for reg1 in range(len(region_index)):
         for reg2 in range(reg1 + 1, len(region_index)):
-            aux1 = communities[:,region_index[reg1]]
-            aux2 = communities[:,region_index[reg2]]
+            aux1 = communities[:, region_index[reg1]]
+            aux2 = communities[:, region_index[reg2]]
             cohesion_timeseries[reg1, reg2, :] = aux1 - aux2
             # count the number of time windows where the two regions are in the same module
     return cohesion_timeseries
 
-cohesion_timeseries_all = np.zeros(
-    (n_animals, n_regions, n_regions, n_windows)
-)
+
+cohesion_timeseries_all = np.zeros((n_animals, n_regions, n_regions, n_windows))
 
 cohesion_timeseries_dmn = np.zeros(
     (n_animals, len(dmn_labels_index), len(dmn_labels_index), n_windows)
@@ -695,22 +694,26 @@ for animal in range(n_animals):
         dfc_communities_sorted[animal], region_index=dmn_labels_index
     )
     cohesion_timeseries_all[animal] = cohesion_timeseries(
-        dfc_communities_sorted[animal]    )
+        dfc_communities_sorted[animal]
+    )
 
 
 plt.figure(figsize=(17, 8))
 index_timeseries = np.triu_indices(len(dmn_labels_index), k=1)
-plt.plot(cohesion_timeseries_all[0,0,2,:])
-plt.xlim(-1,50)
+plt.plot(cohesion_timeseries_all[0, 0, 2, :])
+plt.xlim(-1, 50)
 plt.figure(figsize=(10, 8))
 index_timeseries = np.triu_indices(len(dmn_labels_index), k=1)
-for idx, (ii, jj) in enumerate(zip(index_timeseries[0], index_timeseries[1], strict=False)):
+for idx, (ii, jj) in enumerate(
+    zip(index_timeseries[0], index_timeseries[1], strict=False)
+):
     plt.subplot(11, 10, idx + 1)
-    plt.plot(cohesion_timeseries_all[0,ii,jj,:])
-#%%
+    plt.plot(cohesion_timeseries_all[0, ii, jj, :])
+# %%
 
 
-#------------------------Burst of cohesion--------------------------
+# ------------------------Burst of cohesion--------------------------
+
 
 def extract_link_activations(binary_fc_data):
     """
@@ -746,11 +749,17 @@ def extract_link_activations(binary_fc_data):
         all_events.append(animal_events)
 
     return all_events
-#%%
+
+
+# %%
 index_timeseries = np.triu_indices(n_regions, k=1)
 index_timeseries_dmn = np.triu_indices(len(dmn_labels_index), k=1)
-cohesion_timeseries_all_triu = cohesion_timeseries_all[:, index_timeseries[0], index_timeseries[1], :]
-cohesion_timeseries_dmn_triu = cohesion_timeseries_dmn[:, index_timeseries_dmn[0], index_timeseries_dmn[1], :]
+cohesion_timeseries_all_triu = cohesion_timeseries_all[
+    :, index_timeseries[0], index_timeseries[1], :
+]
+cohesion_timeseries_dmn_triu = cohesion_timeseries_dmn[
+    :, index_timeseries_dmn[0], index_timeseries_dmn[1], :
+]
 cohesion_timeseries_all_binary = (cohesion_timeseries_all_triu == 0).astype(int)
 cohesion_timeseries_dmn_binary = (cohesion_timeseries_dmn_triu == 0).astype(int)
 
@@ -765,9 +774,12 @@ cohesion_timeseries_dmn_binary = np.transpose(cohesion_timeseries_dmn_binary, (0
 import numpy as np
 import pandas as pd
 
-def extract_link_activations_df(binary_fc_data: np.ndarray, min_duration: int = 1) -> pd.DataFrame:
 
-# def extract_link_activations_df(binary_fc_data: np.ndarray) -> pd.DataFrame:
+def extract_link_activations_df(
+    binary_fc_data: np.ndarray, min_duration: int = 1
+) -> pd.DataFrame:
+
+    # def extract_link_activations_df(binary_fc_data: np.ndarray) -> pd.DataFrame:
     """
     Vectorized extraction of onsets, offsets, and durations of active (1-valued) FC links.
 
@@ -792,21 +804,21 @@ def extract_link_activations_df(binary_fc_data: np.ndarray, min_duration: int = 
 
     # Find all onsets/offsets across the whole array
     # Each row in *_idx is [animal, time_index, link]
-    on_idx  = np.argwhere(d == 1)
+    on_idx = np.argwhere(d == 1)
     off_idx = np.argwhere(d == -1)
 
     # Build DataFrames; use a group key to pair onsets/offsets per (animal, link)
     on = pd.DataFrame(on_idx, columns=["animal", "time", "link"])
     off = pd.DataFrame(off_idx, columns=["animal", "time", "link"])
 
-    on["gid"]  = on["animal"] * L + on["link"]
+    on["gid"] = on["animal"] * L + on["link"]
     off["gid"] = off["animal"] * L + off["link"]
 
     # Order by group then time; assign a within-group index (0,1,2,...) to pair events
     on = on.sort_values(["gid", "time"]).reset_index(drop=True)
     off = off.sort_values(["gid", "time"]).reset_index(drop=True)
 
-    on["idx"]  = on.groupby("gid").cumcount()
+    on["idx"] = on.groupby("gid").cumcount()
     off["idx"] = off.groupby("gid").cumcount()
 
     # Merge on (gid, idx) to align each onset with its corresponding offset
@@ -814,12 +826,14 @@ def extract_link_activations_df(binary_fc_data: np.ndarray, min_duration: int = 
 
     # Sanity: animals/links must match after merge
     # (They do, but keep columns from the onset side)
-    events = events.rename(columns={
-        "animal_on": "animal",
-        "link_on": "link",
-        "time_on": "onset",
-        "time_off": "offset",
-    })[["animal", "link", "onset", "offset"]]
+    events = events.rename(
+        columns={
+            "animal_on": "animal",
+            "link_on": "link",
+            "time_on": "onset",
+            "time_off": "offset",
+        }
+    )[["animal", "link", "onset", "offset"]]
 
     # Duration in original (unpadded) time indexing
     events["duration"] = events["offset"] - events["onset"]
@@ -827,6 +841,7 @@ def extract_link_activations_df(binary_fc_data: np.ndarray, min_duration: int = 
     # Keep only long enough events
     events = events[events["duration"] >= min_duration]
     return events
+
 
 def events_df_to_nested(events: pd.DataFrame, n_animals: int, n_links: int):
     """
@@ -836,9 +851,14 @@ def events_df_to_nested(events: pd.DataFrame, n_animals: int, n_links: int):
     nested = [[[] for _ in range(n_links)] for _ in range(n_animals)]
     for row in events.itertuples(index=False):
         nested[row.animal][row.link].append(
-            {"onset": int(row.onset), "offset": int(row.offset), "duration": int(row.duration)}
+            {
+                "onset": int(row.onset),
+                "offset": int(row.offset),
+                "duration": int(row.duration),
+            }
         )
     return nested
+
 
 # Your binary array: (n_animals, time_points, n_links)
 # cohesion_timeseries_all_binary already has that shape if you computed the upper triangle per time.
@@ -846,82 +866,100 @@ def events_df_to_nested(events: pd.DataFrame, n_animals: int, n_links: int):
 events_df = extract_link_activations_df(cohesion_timeseries_dmn_binary, min_duration=2)
 
 # If you still want the old structure:
-all_events = events_df_to_nested(events_df,
-                                 n_animals=cohesion_timeseries_dmn_binary.shape[0],
-                                 n_links=cohesion_timeseries_dmn_binary.shape[2])
+all_events = events_df_to_nested(
+    events_df,
+    n_animals=cohesion_timeseries_dmn_binary.shape[0],
+    n_links=cohesion_timeseries_dmn_binary.shape[2],
+)
 
 # Equivalent to your old example of grabbing the first duration:
 duration = all_events[0][0][0]["duration"]
 
 # Or, directly from the DataFrame (e.g., first event of animal 0, link 0):
-duration_df = (events_df.query("animal == 0 and link == 1")
-                        .sort_values("onset")
-                        )
+duration_df = events_df.query("animal == 0 and link == 1").sort_values("onset")
+
 
 # %%
-def mean_duration_matrix(events_df: pd.DataFrame, n_animals: int, n_links: int, fill=0.0):
+def mean_duration_matrix(
+    events_df: pd.DataFrame, n_animals: int, n_links: int, fill=0.0
+):
     """
     Returns a (n_animals, n_links) array with the mean duration of bursts.
     Links with no bursts get `fill` (default 0.0).
     """
-    m = (events_df
-         .groupby(["animal", "link"])["duration"]
-         .mean()
-         .unstack("link"))
+    m = events_df.groupby(["animal", "link"])["duration"].mean().unstack("link")
     m = m.reindex(index=range(n_animals), columns=range(n_links))  # ensure full grid
     return m.fillna(fill).to_numpy()
 
-def std_duration_matrix(events_df: pd.DataFrame, n_animals: int, n_links: int, fill=0.0):
+
+def std_duration_matrix(
+    events_df: pd.DataFrame, n_animals: int, n_links: int, fill=0.0
+):
     """
     Returns a (n_animals, n_links) array with the standard deviation of burst durations.
     Links with no bursts get `fill` (default 0.0).
     """
-    m = (events_df
-         .groupby(["animal", "link"])["duration"]
-         .std()
-         .unstack("link"))
+    m = events_df.groupby(["animal", "link"])["duration"].std().unstack("link")
     m = m.reindex(index=range(n_animals), columns=range(n_links))  # ensure full grid
     return m.fillna(fill).to_numpy()
 
 
-mean_dur = mean_duration_matrix(events_df, n_animals=cohesion_timeseries_dmn_binary.shape[0], n_links=cohesion_timeseries_dmn_binary.shape[2])
-std_dur = std_duration_matrix(events_df, n_animals=cohesion_timeseries_dmn_binary.shape[0], n_links=cohesion_timeseries_dmn_binary.shape[2])
+mean_dur = mean_duration_matrix(
+    events_df,
+    n_animals=cohesion_timeseries_dmn_binary.shape[0],
+    n_links=cohesion_timeseries_dmn_binary.shape[2],
+)
+std_dur = std_duration_matrix(
+    events_df,
+    n_animals=cohesion_timeseries_dmn_binary.shape[0],
+    n_links=cohesion_timeseries_dmn_binary.shape[2],
+)
 
 
 # Burstiness coefficient
 burstiness = (std_dur - mean_dur) / (std_dur + mean_dur)
 burstiness[mean_dur == 0] = 0  # avoid division by zero
 
-#%%
+# %%
 import cmocean as cm
+
 plt.figure(figsize=(17, 8))
-plt.imshow(burstiness, interpolation='none', aspect='auto', cmap=cm.cm.balance,
-           vmin=-1, vmax=1)
+plt.imshow(
+    burstiness, interpolation="none", aspect="auto", cmap=cm.cm.balance, vmin=-1, vmax=1
+)
 plt.colorbar()
 
 
-#%%
-anat_labels_sorted  =anat_labels[sort_allegiances[0, 0].astype(int)]
+# %%
+anat_labels_sorted = anat_labels[sort_allegiances[0, 0].astype(int)]
 
-links_label =()
+links_label = ()
 for xx in index_timeseries_dmn[0]:
     for yy in index_timeseries_dmn[1]:
-        links_label.append(f'{anat_labels_sorted[dmn_labels_index[xx]]}-{anat_labels_sorted[dmn_labels_index[yy]]}' )
+        links_label.append(
+            f"{anat_labels_sorted[dmn_labels_index[xx]]}-{anat_labels_sorted[dmn_labels_index[yy]]}"
+        )
 
-mask=mask_groups[2][2]  # 4m XY
+mask = mask_groups[2][2]  # 4m XY
 label = label_variables[2][2]
 plt.figure(figsize=(17, 8))
-plt.imshow(burstiness[mask], interpolation='none', aspect='auto', cmap=cm.cm.balance,
-           vmin=-1, vmax=1)
-plt.ylabel('animals')
+plt.imshow(
+    burstiness[mask],
+    interpolation="none",
+    aspect="auto",
+    cmap=cm.cm.balance,
+    vmin=-1,
+    vmax=1,
+)
+plt.ylabel("animals")
 # plt.xticks(np.arange(burstiness.shape[1]), labels=links_label, rotation=90)
 plt.colorbar()
 # %%
-per_animal_mean = np.nanmean(np.where(burstiness==0, np.nan, burstiness), axis=1)
+per_animal_mean = np.nanmean(np.where(burstiness == 0, np.nan, burstiness), axis=1)
 
 
 for i in range(4):
-    for label, group in zip(label_variables[i], mask_groups[i]):
-        print(f'{label} burst mean duration {np.mean(per_animal_mean[group])}')
+    for label, group in zip(label_variables[i], mask_groups[i], strict=False):
+        print(f"{label} burst mean duration {np.mean(per_animal_mean[group])}")
 
 # %%
