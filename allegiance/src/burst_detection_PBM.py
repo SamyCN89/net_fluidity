@@ -22,10 +22,43 @@ from shared_code.fun_dfcspeed import ts2fc
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import set_figure_params
 
+# Pipeline
+#   Import modules
+#   Define paths and folders
+#   Load data
+#   Plot z-scored time series
+#   KMeans clustering
+#       Cluster analysis
+#       Elbow Method
+#       Silhouette score
+#       Plot cluster centers
+#       FC cluster analysis
+#   Network analysis - Global and Local efficiency
+#       Compute global and local efficiency
+#       Plot a barplot of the global efficiency and local efficiency
+#       Plot a scatter plot of the global efficiency and local efficiency
+#   T-Graphlet
+#       Reorganize the kmeans_labels to Reconstruct per-animal kmeans labels
+#       Assign a fc_cluster to each label in each animal
+#       Thresholding links based on a percentage of the maximum value of each link
+#       Plot one link of fc_cluster_per_animal
+
+
 # ========================== Figure parameters ================================
 # Set figure parameters globally
 save_fig = set_figure_params(True)
 
+
+# Helper for optional file saving
+def save_figure(path, flag):
+    try:
+        if flag:
+            plt.savefig(path, dpi=300, bbox_inches="tight")
+    except Exception:
+        pass
+
+
+# %%
 # =================== Paths and folders =======================================
 
 paths = get_paths(
@@ -37,6 +70,9 @@ folders = {"2mois": "TC_2months", "4mois": "TC_4months"}
 
 paths["ts"] = paths["figures"] / "ts"
 paths["ts"].mkdir(parents=True, exist_ok=True)
+
+paths["clustering"] = paths["figures"] / "clustering"
+paths["clustering"].mkdir(parents=True, exist_ok=True)
 
 # ========================== Load data =========================
 
@@ -50,13 +86,8 @@ is_2month_old = data_ts["is_2month_old"]
 anat_labels = data_ts["anat_labels"]
 
 # %%
-# Helper for optional file saving
-def save_figure(path, flag):
-    try:
-        if flag:
-            plt.savefig(path, dpi=300, bbox_inches="tight")
-    except Exception:
-        pass
+
+
 # Plot the time series for each animal
 plt.figure(1, figsize=(12, 8))
 offset = 0.07  # vertical offset between time series
@@ -65,10 +96,11 @@ for i, ts1 in enumerate(ts[0].T):
 # plt.ylim(-0.1,0.75)
 plt.title("Time Series")
 plt.xlabel("Time Points")
-plt.ylabel("Signal + Offset")
+# plt.ylabel("Signal + Offset")
 plt.yticks(np.arange(len(anat_labels)) * offset, anat_labels)
 plt.tight_layout()
-plt.savefig(paths["ts"] / "ts_extract.png")
+if save_fig == True:
+    plt.savefig(paths["ts"] / "ts_extract.png")
 plt.show()
 # %%
 # Z-score ts_df by columns and maintain as ts_df
@@ -100,7 +132,8 @@ plt.yticks(np.arange(len(anat_labels)) * offset * 10, anat_labels)
 plt.xlim(0, ts_zscore.shape[0])
 plt.xticks(np.arange(0, ts_zscore.shape[0], step=10000), rotation=45)
 plt.tight_layout()
-plt.savefig(paths["ts"] / "ts_zscore_concatenated_all_animals.png")
+if save_fig == True:
+    plt.savefig(paths["ts"] / "ts_zscore_concatenated_all_animals.png")
 plt.show()
 
 # %%
@@ -108,12 +141,11 @@ plt.show()
 
 # ================= Kmeans clustering ========================
 
-# methjod to determine the number of clusters: Elbow method and Silhouette method
+# method to determine the number of clusters: Elbow method and Silhouette method
 # Elbow method: plot the inertia (sum of squared distances to closest cluster center) as a function of the number of clusters
 # Silhouette method: plot the silhouette score as a function of the number of clusters
 # Define the range of clusters to test
 
-n_clusters_range = range(2, 10)
 
 start = time.time()
 # Define the number of clusters
@@ -131,23 +163,33 @@ print(
 stop = time.time()
 print(f"Time taken to create KMeans instance: {stop - start:.2f} seconds")
 # %%
+# -------------- Kmeans clustering - Elbow Method ------------------
+
 # Plot the inertia as a function of the number of clusters
 inertia = []
+n_clusters_range = range(2, 10)
 for n in n_clusters_range:
     kmeans = KMeans(n_clusters=n, random_state=42, max_iter=100, n_init=100)
     kmeans.fit(ts_zscore)
     inertia.append(kmeans.inertia_)
+
 plt.figure(figsize=(10, 6))
 plt.plot(n_clusters_range, inertia, marker="o")
 plt.title("Elbow Method: Inertia vs Number of Clusters")
 plt.xlabel("Number of Clusters")
 plt.ylabel("Inertia (Sum of Squared Distances)")
 plt.xticks(n_clusters_range)
-plt.grid()
+# plt.grid()
 plt.tight_layout()
-plt.savefig(paths["ts"] / "kmeans_elbow_method.png")
+if save_fig == True:
+    plt.savefig(paths["clustering"] / "kmeans_elbow_method.png")
 plt.show()
 # %%
+# ================= Kmeans clustering - Silhouette Method ========================
+kmeans = KMeans(n_clusters=n_clusters, random_state=42, max_iter=100, n_init=100)
+# Fit the KMeans model to the z-scored time series
+kmeans.fit(ts_zscore)
+
 # Compute the silhouette score
 silhouette_avg = silhouette_score(ts_zscore, kmeans.labels_)
 print(f"Silhouette Score: {silhouette_avg:.4f}")
@@ -163,7 +205,11 @@ plt.colorbar(label="Cluster Center Value")
 plt.xticks(np.arange(n_clusters), [f"Cluster {i+1}" for i in range(n_clusters)])
 plt.yticks(np.arange(len(anat_labels)), anat_labels)
 plt.clim(-1.5, 1.5)
-
+plt.tight_layout()
+if save_fig == True:
+    plt.savefig(
+        paths["clustering"] / f"kmeans_cluster_centers_{n_clusters}_clusters.png"
+    )
 
 # %%
 # ------------- FC cluster analysis per cluster -------------------
@@ -207,7 +253,8 @@ for i in range(n_clusters):
     plt.clim(-0.25, 0.25)
 
 plt.tight_layout()
-plt.savefig(paths["ts"] / f"cluster_{n_clusters}_fc_matrix.png")
+if save_fig == True:
+    plt.savefig(paths["clustering"] / f"cluster_{n_clusters}_fc_matrix.png")
 # plt.close()
 
 # %%
@@ -226,6 +273,7 @@ local_efficiency = np.array(
         for nn in range(n_clusters)
     ]
 )
+
 # %%
 # Plot a barplot of the global efficiency and local efficiency
 plt.figure(figsize=(12, 6))
@@ -253,6 +301,8 @@ plt.title("Local Efficiency of Clusters")
 plt.xticks(x, [f"State {i+1}" for i in range(n_clusters)])
 plt.legend()
 plt.tight_layout()
+if save_fig == True:
+    plt.savefig(paths["clustering"] / "boxplot_global_local_efficiency.png")
 plt.show()
 # %%
 # Plot a scatter plot of the global efficiency and local efficiency
@@ -274,7 +324,8 @@ for i in range(n_clusters):
 # plt.ylim(0, 0.12)
 # plt.grid()
 plt.tight_layout()
-plt.savefig(paths["ts"] / "global_vs_local_efficiency.png")
+if save_fig == True:
+    plt.savefig(paths["clustering"] / "scatter_global_vs_local_efficiency.png")
 plt.show()
 # %%
 # ================================= T-Graphlet =======================
@@ -285,13 +336,7 @@ kmeans_labels_per_animal = np.array(
     [kmeans_labels[i * total_tr : (i + 1) * total_tr] for i in range(n_animals)]
 )
 
-
 # Assign a fc_cluster to each label in each animal
-
-fc_cluster_per_animal = np.array(
-    [fc_cluster[kmeans_labels_per_animal[i]] for i in range(n_animals)]
-)
-
 fc_cluster_per_animal = np.array(
     [fc_cluster[kmeans_labels_per_animal[i]] for i in range(n_animals)]
 )
@@ -301,8 +346,10 @@ fc_cluster_per_animal = fc_cluster_per_animal[
     :, :, region_triu_index[0], region_triu_index[1]
 ]
 # %%
-thr_ = 0.01
-threshold_links = np.max(fc_cluster_per_animal, axis=1) * thr_
+thr = 0.01
+# thr = np.percentile(np.abs(fc_link_time), q=95)
+
+threshold_links = np.max(fc_cluster_per_animal, axis=1) * thr
 binary_fc_cluster = (fc_cluster_per_animal > threshold_links[:, None, :]).astype(int)
 # Plot one link of fc_cluster_per_animal--
 
@@ -349,7 +396,7 @@ def extract_link_activations(binary_fc_data):
     return all_events
 
 
-if 'binary_fc_cluster' in globals():
+if "binary_fc_cluster" in globals():
     link_events = extract_link_activations(binary_fc_cluster)
 
     # Example: print first 5 events for link 10 in animal 0
@@ -387,6 +434,22 @@ for link, dur_list in enumerate(durations_by_link):
     plt.title("Burst Duration Distributions per Link")
     plt.tight_layout()
     plt.show()
+#%%
+# ... after you compute durations_by_link
+link_ids, durations = [], []
+for link, dur_list in enumerate(durations_by_link):
+    link_ids.extend([link] * len(dur_list))
+    durations.extend(dur_list)
+
+df_durations = pd.DataFrame({"link": link_ids, "duration": durations})
+desc = df_durations.groupby("link")["duration"].describe()  # keep if useful
+plt.figure(figsize=(12, 5))
+sns.violinplot(data=df_durations, x="link", y="duration", cut=0)
+# plt.xticks([], [])
+plt.title("Burst Duration Distributions per Link")
+plt.tight_layout()
+plt.show()
+
 # %%
 
 # New proposiiton
@@ -443,24 +506,30 @@ def analyze_link_dynamics(kmeans_labels, fc_clusters, meta, save_fig, fig_path):
 # Guarded run: requires fc_clusters computed elsewhere
 meta = {"n_animals": n_animals, "total_tr": total_tr, "regions": regions}
 # Guard run only if required inputs exist
-if globals().get('fc_clusters') is not None:
-    analyze_link_dynamics(kmeans_labels, globals()['fc_clusters'], meta, save_fig, paths["ts"])
+if globals().get("fc_clusters") is not None:
+    analyze_link_dynamics(
+        kmeans_labels, globals()["fc_clusters"], meta, save_fig, paths["ts"]
+    )
 
-# aux_plot = []
+aux_plot = []
 
-# range_thr = np.linspace(0.01,0.9)
-# for thr_ in range_thr:
-#     threshold_links = np.max(fc_cluster_per_animal, axis=1)*thr_
-#     thr_num = np.sum(fc_cluster_per_animal>threshold_links[:,None,:])
-#     aux_plot.append(thr_num/n_animals)
-# #%%
-# plt.figure(10)
-# plt.plot(range_thr, np.array(aux_plot)/(450*820))
-# # plt.yscale('log')
+range_thr = np.linspace(0.01,0.9)
+for thr_ in range_thr:
+    threshold_links = np.max(fc_cluster_per_animal, axis=1)*thr_
+    thr_num = np.sum(fc_cluster_per_animal>threshold_links[:,None,:])
+    aux_plot.append(thr_num/n_animals)
+#%%
+plt.figure(10)
+plt.plot(range_thr, np.array(aux_plot)/(450*820))
+# plt.yscale('log')
 
 
 # %%
 
+#============================ Dwell Time ==========================
+
+
+# Compute dwell times (consecutive durations) for each cluster using NumPy only
 
 def compute_dwell_times_np(labels):
     """
