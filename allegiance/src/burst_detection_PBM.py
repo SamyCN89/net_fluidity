@@ -44,7 +44,7 @@ data_ts = np.load(paths["preprocessed"] / "ts_and_meta_2m4m.npz")
 # Parameters and indices of variables
 ts = data_ts["ts"]
 n_animals = int(data_ts["n_animals"])
-total_tr = data_ts["total_tp"]
+total_tr = data_ts["total_tr"]
 regions = data_ts["regions"]
 is_2month_old = data_ts["is_2month_old"]
 anat_labels = data_ts["anat_labels"]
