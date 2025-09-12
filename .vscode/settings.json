@@ -1,6 +1,6 @@
 {
   // ---- Python env & analysis ----
-  "python.defaultInterpreterPath": "/home/samy/anaconda3/envs/funcog/bin/python",
+  "python.defaultInterpreterPath": "/home/samy/anaconda3/envs/funsy/bin/python",
   "python.terminal.activateEnvironment": true,
   "python.analysis.typeCheckingMode": "basic",
   "python.analysis.extraPaths": [

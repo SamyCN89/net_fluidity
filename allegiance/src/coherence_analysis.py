@@ -1,11 +1,14 @@
 # %%
 import argparse
+from functools import cache
 import logging
 from pathlib import Path as _Path
 import pickle
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 # Optional/extra dependencies
 try:
@@ -23,12 +26,11 @@ try:
     from sklearn.metrics import mutual_info_score
     from sklearn.preprocessing import StandardScaler
 except Exception:  # pragma: no cover
-    TSNE = None  # type: ignoredmn_labels_index = (2,13,22,23,28,34,39,37)
+    TSNE = None  # type: ignore
     StandardScaler = None  # type: ignore
     mutual_info_score = None  # type: ignore
 
 from shared_code.fun_metaconnectivity import (
-    build_agreement_matrix_vectorized,
     load_merged_allegiance,  # %%
 )
 from shared_code.fun_paths import get_paths
@@ -56,11 +58,6 @@ def upper_triangle(mat: np.ndarray) -> np.ndarray:
     n = mat.shape[-1]
     tri = np.triu_indices(n, k=1)
     return mat[..., tri[0], tri[1]]
-
-
-def build_agreement_matrix(communities_2d: np.ndarray) -> np.ndarray:
-    """Wrapper over vectorized agreement; communities_2d shape: (runs, nodes)."""
-    return build_agreement_matrix_vectorized(communities_2d)
 
 
 def validate_shapes(
@@ -93,6 +90,11 @@ def plot_matrix(
     im = ax.imshow(mat, aspect="auto", interpolation="none", cmap=cmap)
     ax.set_title(title)
     fig.colorbar(im, ax=ax)
+    plt.yticks(
+        np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)]
+    )
+
+    plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
     if save and out_path is not None:
         fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.show()
@@ -196,49 +198,6 @@ parser.add_argument(
 ARGS, _ = parser.parse_known_args()
 
 
-def compute_agreement_cached(
-    dfc_sorted, cache_dir, window_size, lag, tau, overwrite=False
-):
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    agree_cache = cache_dir / f"agreement_w{window_size}_lag{lag}_tau{tau}.npz"
-
-    # agree_cache = agree_cache
-    if agree_cache.exists() and not overwrite:
-        try:
-            arr = np.load(agree_cache)["agreement"]
-            logger.info("[cache] Loaded agreement: %s", agree_cache)
-            return arr
-        except Exception:
-            logger.warning("[cache] Failed to load %s; recomputing", agree_cache)
-    arr = build_agreement_matrix_vectorized(dfc_sorted.T)
-    np.savez_compressed(agree_cache, agreement=arr)
-    return arr
-
-
-def compute_tsne_cached(
-    X, cache_dir, prefix, tsne_cfg, window_size, lag, tau, overwrite=False
-):
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    fname = cache_dir / (
-        f"{prefix}_window={window_size}_lag={lag}_tau={tau}"
-        f"_perp={tsne_cfg['perplexity']}_seed={tsne_cfg['random_state']}.npz"
-    )
-    if fname.exists() and not overwrite:
-        try:
-            emb = np.load(fname)["embedding"]
-            logger.info("[cache] Loaded %s", fname)
-            return emb
-        except Exception:
-            logger.warning("[cache] Failed to load %s; recomputing", fname)
-    tsne = TSNE(
-        n_components=tsne_cfg["n_components"],
-        perplexity=tsne_cfg["perplexity"],
-        random_state=tsne_cfg["random_state"],
-    )
-    emb = tsne.fit_transform(X)
-    np.savez_compressed(fname, embedding=emb)
-    return emb
-
 
 # Set consistent config to match previous run / CLI
 window_size = ARGS.window_size
@@ -298,25 +257,15 @@ dfc_communities_sorted = np.take_along_axis(
 
 
 # %%
-def plot_matrix(
-    mat: np.ndarray,
-    title: str,
-    cmap: str = "viridis",
-    save: bool = False,
-    out_path: _Path | None = None,
-    figsize=(10, 8),
-) -> None:
-    fig, ax = plt.subplots(figsize=figsize)
-    im = ax.imshow(mat, aspect="auto", interpolation="none", cmap=cmap)
-    ax.set_title(title)
-    fig.colorbar(im, ax=ax)
-    plt.yticks(
-        np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)]
-    )
-    plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
-    if save and out_path is not None:
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.show()
+
+# --------------- Compute the number of modules in each time window for all the animals
+module_num = np.zeros((n_animals, n_windows))
+for animal in range(n_animals):
+    for i in range(n_windows):
+        module_num[animal, i] = len(
+            np.unique(dfc_communities_sorted[animal, i])
+        )  # Check the unique values in the sorted communities for each animal
+
 
 
 # plot the dfc_communities_sorted matrix of 1st animal
@@ -328,14 +277,6 @@ plot_matrix(
     out_path=plot_dir / f"dfc_communities_animal0_w{window_size}_l{lag}_t{tau}.png",
 )
 
-# the module_num for all the animals
-module_num = np.zeros((n_animals, n_windows))
-for animal in range(n_animals):
-    for i in range(n_windows):
-        module_num[animal, i] = len(
-            np.unique(dfc_communities_sorted[animal, i])
-        )  # Check the unique values in the sorted communities for each animal
-
 # plot the number of modules per time window
 plt.figure(figsize=(20, 6))
 plt.plot(module_num[0], marker="o")
@@ -343,6 +284,8 @@ plt.title("Number of Modules per Time Window - Animal 0")
 plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
 plt.ylabel("Number of Modules")
 plt.show()
+
+# scatter plot of 2m vs 4m of number of modules per time window for groups
 
 # %%
 # Compute for each animal the min, max and mean number of modules across time windows
@@ -480,38 +423,66 @@ for ax, (labels_i, masks_i), fi in zip(
 plt.suptitle("2m vs 4m mean modules (group-level)", y=1.02)
 plt.tight_layout()
 plt.show()
+#%%
 
-# %%
+factors_labels = ("oip", "nor", "genotype", "sex")
 
-# ---------------------- Plot community matrix ----------------------------
-def plot_matrix(
-    mat: np.ndarray,
-    title: str,
-    cmap: str = "viridis",
-    save: bool = False,
-    out_path: _Path | None = None,
-    figsize=(10, 8),
-) -> None:
-    fig, ax = plt.subplots(figsize=figsize)
-    im = ax.imshow(mat, aspect="auto", interpolation="none", cmap=cmap)
-    ax.set_title(title)
-    fig.colorbar(im, ax=ax)
-    plt.yticks(
-        np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)]
-    )
-    plt.xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
-    if save and out_path is not None:
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+def split_base_age(label: str):
+    parts = str(label).split()
+    if len(parts) >= 2 and re.fullmatch(r"\d+m", parts[-1]):
+        return " ".join(parts[:-1]), parts[-1]
+    return label, None
+
+colors = plt.cm.tab10.colors  # categorical palette
+
+for f_idx, (factor_name, labels, masks) in enumerate(zip(factors_labels, label_variables, mask_groups, strict=False)):
+    groups = {}
+    for lbl, m in zip(labels, masks, strict=False):
+        base, age = split_base_age(lbl)
+        if age is None:
+            continue
+        groups.setdefault(base, {})[age] = m
+
+    plt.figure(figsize=(7, 6))
+
+    for k, (base, ages) in enumerate(groups.items()):
+        m2 = ages.get("2m")
+        m4 = ages.get("4m")
+        if m2 is None or m4 is None:
+            continue
+
+        x = mean_modules[m2].astype(float)
+        y = mean_modules[m4].astype(float)
+
+        plt.scatter(
+            x, y,
+            label=base,
+            color=colors[k % len(colors)],
+            alpha=0.7,
+            s=60
+        )
+        plt.axhline(np.mean(y), c=colors[k % len(colors)])
+        plt.axvline(np.mean(x), c=colors[k % len(colors)])
+
+    all_vals = mean_modules
+    lo = float(np.nanmin(all_vals)) - 0.25
+    hi = float(np.nanmax(all_vals)) + 0.25
+    plt.plot([lo, hi], [lo, hi], "--", color="gray", alpha=0.6)
+
+    plt.xlim(2.9, 3.4); plt.ylim(2.9, 3.4)
+
+
+    plt.gca().set_aspect("equal", adjustable="box")
+
+
+    plt.xlabel("Mean modules @ 2m")
+    plt.ylabel("Mean modules @ 4m")
+    plt.title(f"Per-animal averages (2m vs 4m) — {factor_name}")
+    plt.legend(title=factor_name, frameon=False, bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.tight_layout()
     plt.show()
 
 
-# plot the dfc_communities_sorted matrix of 1st animal
-plot_matrix(
-    dfc_communities_sorted[0].T,
-    "dFC Communities - Animal 0",
-    cmap="viridis",
-    save=False,
-)
 # %%
 
 ############################################################################################
@@ -523,6 +494,22 @@ plot_matrix(
 # Default Mode Network regions
 dmn_labels_index = [0, 23, 13, 22, 2, 28, 34, 37, 39, 8, 35]
 
+def cohesion_timeseries(communities, region_index=None):
+
+    if region_index == None:
+        region_index = np.arange(communities.shape[1])
+    cohesion_timeseries = np.zeros(
+        (len(region_index), len(region_index), communities.shape[0])
+    )
+    # cohesion_probability = np.zeros((n_regions, n_regions))
+    for reg1 in range(len(region_index)):
+        for reg2 in range(reg1 + 1, len(region_index)):
+            aux1 = communities[:, region_index[reg1]]
+            aux2 = communities[:, region_index[reg2]]
+            cohesion_timeseries[reg1, reg2, :] = aux1 - aux2
+            # count the number of time windows where the two regions are in the same module
+    return cohesion_timeseries
+
 
 def cohesion_probability(communities):
     cohesion_probability = np.zeros((len(dmn_labels_index), len(dmn_labels_index)))
@@ -531,8 +518,6 @@ def cohesion_probability(communities):
         for reg2 in range(reg1 + 1, len(dmn_labels_index)):
             aux1 = communities[:, dmn_labels_index[reg1]]
             aux2 = communities[:, dmn_labels_index[reg2]]
-            # aux1 = communities[dmn_labels_index[reg1]]
-            # aux2 = communities[dmn_labels_index[reg2]]
             # print(f'size aux1: {aux1.shape}, size aux2: {aux2.shape}')
             cohesion_timeseries = aux1 - aux2
             # count the number of time windows where the two regions are in the same module
@@ -553,6 +538,71 @@ for animal in range(n_animals):
         dfc_communities_sorted[animal]
     )
 
+cohesion_timeseries_all = np.zeros((n_animals, n_regions, n_regions, n_windows))
+for animal in range(n_animals):
+    cohesion_timeseries_all[animal] = cohesion_timeseries(
+        dfc_communities_sorted[animal]
+    )
+
+# %%
+# Suppose we already have:
+# - n_regions
+# - anat_labels (array of region names, length = n_regions)
+# - dmn_labels_index (list of indices for DMN regions)
+
+# All upper-triangle pairs in global space
+index_timeseries = np.triu_indices(n_regions, k=1)
+
+# Restrict to DMN pairs
+dmn_set = set(dmn_labels_index)
+pairs = list(zip(index_timeseries[0], index_timeseries[1], strict=False))
+mask = [(i in dmn_set) and (j in dmn_set) for i, j in pairs]
+dmn_pairs = (index_timeseries[0][mask], index_timeseries[1][mask])
+
+# Map to labels in dmn
+dmn_pairs_labels = [
+    (anat_labels_sorted[i], anat_labels_sorted[j])
+    for i, j in zip(dmn_pairs[0], dmn_pairs[1], strict=False)
+]
+
+#map to labels in anat_labels
+all_pairs_labels = [
+    (anat_labels_sorted[i], anat_labels_sorted[j])
+    for i, j in zip(index_timeseries[0], index_timeseries[1], strict=False)
+]
+
+# Example output
+# print("Numeric DMN pairs:", list(zip(dmn_pairs[0], dmn_pairs[1]))[:5])
+# print("Label DMN pairs:", dmn_pairs_labels[:5])
+
+# for i, val in enumerate(aux_dmn_x):
+cohesion_timeseries_all_triu = cohesion_timeseries_all[
+    :, index_timeseries[0], index_timeseries[1], :
+]
+cohesion_timeseries_all_binary = (cohesion_timeseries_all_triu == 0).astype(int)
+
+
+cohesion_timeseries_dmn_triu = cohesion_timeseries_all[
+    :, dmn_pairs[0], dmn_pairs[1], :
+]
+cohesion_timeseries_dmn_binary = (cohesion_timeseries_dmn_triu == 0).astype(int)
+
+# cohesion_timeseries_all[ind_x, ind_y, :]
+#%%
+plt.figure(figsize=(10, 8))
+for i in range(n_animals):
+    plt.subplot(12, 11, i + 1)
+    plt.imshow(
+        cohesion_timeseries_all_binary[i], aspect="auto", interpolation="none", cmap='gray_r', vmin=0, vmax=1
+    )
+    plt.xticks([])
+
+    plt.yticks([])
+    # plt.colorbar()
+    # plt.title(f"Cohesion Probability - Animal {i}")
+# plt.subplot(11, 5, 1)
+# plt.imshow(cohesion_timeseries_dmn_binary[5], aspect="auto", interpolation="none", cmap='gray_r', vmin=0, vmax=1)
+# plt.colorbar()
 # %%
 # plot imshow of cohesion_probability
 plt.figure(figsize=(10, 8))
@@ -603,6 +653,789 @@ for i in range(n_animals):
 # plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
 plt.show()
 
+
+
+#%%
+aux_time_ratio = np.sum(cohesion_timeseries_dmn_binary, axis=2)/cohesion_timeseries_dmn_binary.shape[2]
+plt.figure(figsize=(10, 8))
+plt.clf()
+# for i in range(n_animals):
+plt.imshow(
+        aux_time_ratio.T,
+        aspect="auto",
+        interpolation="none",
+        cmap="viridis",
+        vmin=0,
+        vmax=1,
+    )
+plt.xticks([])
+
+plt.yticks([])
+    # plt.colorbar()
+    # plt.title(f"Cohesion Probability - Animal {i}")
+# plt.xlabel("Region 2")
+# plt.ylabel("Region 1")
+# plt.yticks(np.arange(n_regions), labels=anat_labels[sort_allegiances[0, 0].astype(int)])
+plt.show()
+
+#%%
+for i in range(55):
+    plt.figure(figsize=(10, 8))
+    plt.violinplot((aux_time_ratio.T[i, mask_groups[3][0]],
+            aux_time_ratio.T[i, mask_groups[3][1]],
+            aux_time_ratio.T[i, mask_groups[3][2]],
+            aux_time_ratio.T[i, mask_groups[3][3]]))
+
+#%%
+
+
+
+
+
+#============================================================================
+#-------------------------------Wilcoxon code---------------------------------
+#============================================================================
+
+
+
+
+
+
+
+from scipy.stats import wilcoxon
+
+# p_values = []
+# for i in range(55):
+#     stat, p = wilcoxon(aux_time_ratio.T[i, mask_groups[2][2]],
+#                        aux_time_ratio.T[i, mask_groups[2][3]],
+#                        zero_method='zsplit',
+#                        alternative='two-sided',)
+#     p_values.append(p)
+#     print(p < 0.05, dmn_pairs_labels[i], stat, p)
+
+# -------------------- helpers --------------------
+
+def _split_base_age(lbl: str):
+    """'Female 2m' -> ('Female','2m'); 'Good 4m' -> ('Good','4m')"""
+    parts = str(lbl).split()
+    if len(parts) >= 2 and re.fullmatch(r"\d+m", parts[-1]):
+        return " ".join(parts[:-1]), parts[-1]
+    return lbl, None
+
+def _factor_base_masks(factor_idx, label_variables, mask_groups):
+    """
+    Returns: dict base -> {'2m': mask, '4m': mask}
+    Keeps only bases that have explicit 2m/4m masks.
+    """
+    bases = {}
+    for lbl, m in zip(label_variables[factor_idx], mask_groups[factor_idx], strict=False):
+        base, age = _split_base_age(lbl)
+        if age in {"2m", "4m"}:
+            bases.setdefault(base, {})[age] = m
+    return bases
+
+def wilcoxon_pvals_single_factor(
+    data_T: np.ndarray,            # (n_links, n_animals)
+    link_labels: list[str],        # len = n_links
+    label_variables, mask_groups,
+    factor_idx: int,               # 0=oip, 1=nor, 2=genotype, 3=sex
+    include_empty: bool = False,   # include NaN columns for bases w/o valid pairs
+):
+    """
+    Paired Wilcoxon 2m vs 4m within each base of a single factor.
+    Returns DataFrame of raw p-values: columns are bases (e.g., Female, Male).
+    """
+    F = _factor_base_masks(factor_idx, label_variables, mask_groups)
+    col_names, cols = [], []
+    for base, ages in F.items():
+        m2, m4 = ages.get("2m"), ages.get("4m")
+        if (m2 is None) or (m4 is None) or (m2.sum()==0) or (m4.sum()==0) or (m2.sum()!=m4.sum()):
+            if include_empty:
+                col_names.append(base)
+                cols.append([np.nan]*data_T.shape[0])
+            continue
+
+        pvals = []
+        for i in range(data_T.shape[0]):
+            x, y = data_T[i, m2], data_T[i, m4]
+            try:
+                _, p = wilcoxon(x, y, zero_method="zsplit", alternative="two-sided")
+            except ValueError:
+                p = 1.0
+            pvals.append(p)
+        col_names.append(base)
+        cols.append(pvals)
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+    mat = np.column_stack(cols)
+    return pd.DataFrame(mat, index=link_labels, columns=col_names)
+
+def wilcoxon_pvals_two_factors(
+    data_T: np.ndarray, link_labels: list[str],
+    label_variables, mask_groups,
+    factorA_idx: int, factorB_idx: int,
+    include_empty: bool = False,
+):
+    """
+    Paired Wilcoxon 2m vs 4m within each (FactorA × FactorB) stratum.
+    Returns DataFrame of raw p-values: columns are 'A·B' (e.g., Female·wt).
+    """
+    A = _factor_base_masks(factorA_idx, label_variables, mask_groups)
+    B = _factor_base_masks(factorB_idx, label_variables, mask_groups)
+
+    col_names, cols = [], []
+    for a in A.keys():
+        for b in B.keys():
+            m2 = A[a].get("2m") & B[b].get("2m") if ("2m" in A[a] and "2m" in B[b]) else None
+            m4 = A[a].get("4m") & B[b].get("4m") if ("4m" in A[a] and "4m" in B[b]) else None
+            if (m2 is None) or (m4 is None) or (m2.sum()==0) or (m4.sum()==0) or (m2.sum()!=m4.sum()):
+                if include_empty:
+                    col_names.append(f"{a}·{b}")
+                    cols.append([np.nan]*data_T.shape[0])
+                continue
+
+            pvals = []
+            for i in range(data_T.shape[0]):
+                x, y = data_T[i, m2], data_T[i, m4]
+                try:
+                    _, p = wilcoxon(x, y, zero_method="zsplit", alternative="two-sided")
+                except ValueError:
+                    p = 1.0
+                pvals.append(p)
+            col_names.append(f"{a}·{b}")
+            cols.append(pvals)
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+    mat = np.column_stack(cols)
+    return pd.DataFrame(mat, index=link_labels, columns=col_names)
+
+def combine_blocks(blocks: list[tuple[str, pd.DataFrame]]):
+    """
+    Concatenate multiple p-value DataFrames horizontally.
+    Returns combined df and a list of separator positions for plotting.
+    """
+    dfs, seps, total = [], [], 0
+    for title, df in blocks:
+        dfs.append(df)
+        total += df.shape[1]
+        seps.append((total, title))
+    combined = pd.concat(dfs, axis=1)
+    return combined, seps
+
+
+
+
+# def plot_pvals_sig_only(
+#     pvals_df: pd.DataFrame,
+#     alpha: float = 0.05,
+#     separators: list[tuple[int,str]] | None = None,
+#     title: str = "Wilcoxon (paired 2m vs 4m): all strata (sig only)"
+# ):
+#     """Only color cells with p ≤ alpha; others blank."""
+#     data = pvals_df.values.copy()
+#     data_masked = np.where(data <= alpha, data, np.nan)
+
+#     plt.figure(figsize=(max(12, 0.22*pvals_df.shape[1]), max(6, 0.16*pvals_df.shape[0])))
+#     im = plt.imshow(data_masked, aspect="auto", interpolation="none",
+#                     cmap="viridis_r", vmin=0, vmax=alpha)
+#     cbar = plt.colorbar(im); cbar.set_label("p-value")
+
+#     plt.yticks(np.arange(len(pvals_df.index)), pvals_df.index, fontsize=6)
+#     plt.xticks(np.arange(pvals_df.shape[1]), pvals_df.columns, rotation=90, fontsize=8)
+
+#     # vertical separators between blocks
+#     if separators:
+#         for x_end, _ in separators[:-1]:
+#             plt.axvline(x_end-0.5, color="k", lw=1, alpha=0.6)
+
+#     plt.title(title)
+#     plt.tight_layout()
+#     plt.show()
+#%%
+from scipy.stats import wilcoxon as _wilcoxon
+
+
+def _split_base_age(lbl: str):
+    parts = str(lbl).split()
+    if len(parts) >= 2 and re.fullmatch(r"\d+m", parts[-1]):
+        return " ".join(parts[:-1]), parts[-1]
+    return lbl, None
+
+@cache
+def _factor_base_indices(factor_idx: int):
+    """
+    Returns dict: base -> {'2m': idx2m (int array) or None, '4m': idx4m (int array) or None}
+    Uses global label_variables, mask_groups.
+    """
+    bases = {}
+    labels = label_variables[factor_idx]
+    masks  = mask_groups[factor_idx]
+    for lbl, m in zip(labels, masks, strict=False):
+        base, age = _split_base_age(lbl)
+        if age in {"2m", "4m"}:
+            idx = np.flatnonzero(m)   # int indices
+            ent = bases.setdefault(base, {"2m": None, "4m": None})
+            ent[age] = idx
+    return bases
+
+
+
+def _wilcoxon_rows(X, Y, zero_method="wilcox"):
+    """
+    Vectorized Wilcoxon along rows if SciPy supports axis; otherwise fallback loop.
+    X, Y: (n_links, n_pairs)
+    Returns p-values, shape (n_links,)
+    """
+    try:
+        # SciPy ≥ 1.10/1.11 supports axis for wilcoxon
+        res = _wilcoxon(X, Y, zero_method=zero_method, alternative="two-sided",
+                        axis=1, method="asymptotic")
+        return np.asarray(res.pvalue)
+    except TypeError:
+        # Fallback: minimal Python loop, still faster because we sliced once
+        pvals = np.empty(X.shape[0], dtype=float)
+        for i in range(X.shape[0]):
+            try:
+                _, p = _wilcoxon(X[i], Y[i], zero_method=zero_method,
+                                 alternative="two-sided", method="asymptotic")
+            except ValueError:
+                p = 1.0
+            pvals[i] = p
+        return pvals
+
+def wilcoxon_pvals_single_factor_fast(
+    data_T: np.ndarray,            # (n_links, n_animals)
+    link_labels: list[str],
+    factor_idx: int,               # 0=oip, 1=nor, 2=genotype, 3=sex
+    include_empty: bool = False,
+    zero_method: str = "wilcox",
+) -> pd.DataFrame:
+    F = _factor_base_indices(factor_idx)  # cached
+    cols = []
+    names = []
+    n_links = data_T.shape[0]
+
+    for base, ages in F.items():
+        idx2 = ages.get("2m"); idx4 = ages.get("4m")
+        if idx2 is None or idx4 is None or len(idx2)==0 or len(idx4)==0 or len(idx2)!=len(idx4):
+            if include_empty:
+                cols.append(np.full(n_links, np.nan))
+                names.append(base)
+            continue
+
+        # Slice once: (n_links, n_pairs)
+        X = data_T[:, idx2]
+        Y = data_T[:, idx4]
+        p = _wilcoxon_rows(X, Y, zero_method=zero_method)
+        cols.append(p); names.append(base)
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+
+    mat = np.column_stack(cols)  # (n_links, n_cols)
+    return pd.DataFrame(mat, index=link_labels, columns=names)
+
+def wilcoxon_pvals_two_factors_fast(
+    data_T: np.ndarray, link_labels: list[str],
+    factorA_idx: int, factorB_idx: int,
+    include_empty: bool = False,
+    zero_method: str = "wilcox",
+) -> pd.DataFrame:
+    A = _factor_base_indices(factorA_idx)  # cached
+    B = _factor_base_indices(factorB_idx)  # cached
+
+    cols = []
+    names = []
+    n_links = data_T.shape[0]
+
+    for a, agesA in A.items():
+        idx2A, idx4A = agesA.get("2m"), agesA.get("4m")
+        if idx2A is None or idx4A is None:
+            continue
+        for b, agesB in B.items():
+            idx2B, idx4B = agesB.get("2m"), agesB.get("4m")
+            if idx2B is None or idx4B is None:
+                continue
+
+            # intersect paired indices (assumes same ordering across masks)
+            idx2 = np.intersect1d(idx2A, idx2B, assume_unique=False)
+            idx4 = np.intersect1d(idx4A, idx4B, assume_unique=False)
+
+            if len(idx2)==0 or len(idx4)==0 or len(idx2)!=len(idx4):
+                if include_empty:
+                    cols.append(np.full(n_links, np.nan))
+                    names.append(f"{a}·{b}")
+                continue
+
+            X = data_T[:, idx2]
+            Y = data_T[:, idx4]
+            p = _wilcoxon_rows(X, Y, zero_method=zero_method)
+            cols.append(p); names.append(f"{a}·{b}")
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+
+    mat = np.column_stack(cols)
+    return pd.DataFrame(mat, index=link_labels, columns=names)
+
+#%%
+# -------------------- build everything --------------------
+
+
+
+
+def wilcoxon_combine_blocks(cohesion_timeseries_binary, pairs_labels):
+
+    aux_time_ratio = np.sum(cohesion_timeseries_binary, axis=2)/cohesion_timeseries_binary.shape[2]
+    link_labels = [f"{a}–{b}" for (a, b) in pairs_labels]  # or your abbreviated version
+
+    block_oip  = ("OiP",      wilcoxon_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=0))
+    block_nor  = ("NOR",      wilcoxon_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=1))
+    block_geno = ("Genotype", wilcoxon_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=2))
+    block_sex  = ("Sex",      wilcoxon_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=3))
+
+    block_sex_geno = ("Sex×Genotype", wilcoxon_pvals_two_factors_fast(aux_time_ratio.T, link_labels, 3, 2))
+    block_sex_oip  = ("Sex×OiP",      wilcoxon_pvals_two_factors_fast(aux_time_ratio.T, link_labels, 3, 0))
+    block_sex_nor  = ("Sex×NOR",      wilcoxon_pvals_two_factors_fast(aux_time_ratio.T, link_labels, 3, 1))
+
+
+    # Combine all blocks horizontally: singles + combos
+    combined_df, separators = combine_blocks([
+        block_sex, block_geno, block_oip, block_nor,   # single factors
+        block_sex_geno, block_sex_oip, block_sex_nor,  # combinations
+    ])
+
+    # Optional: prefix columns with block title for clarity
+    prefixed_cols = []
+    offset = 0
+    for title, df in [block_sex, block_geno, block_oip, block_nor,
+                    block_sex_geno, block_sex_oip, block_sex_nor]:
+        prefixed_cols += [f"{title}: {c}" for c in df.columns]
+    combined_df.columns = prefixed_cols
+    return combined_df, separators
+combined_df_wilcoxon, separators = wilcoxon_combine_blocks(cohesion_timeseries_dmn_binary, dmn_pairs_labels)
+
+def plot_pvals_sig_only(
+    pvals_df: pd.DataFrame,
+    alpha: float = 0.05,
+    separators: list[tuple[int, str]] | None = None,
+    title: str = "Wilcoxon (paired 2m vs 4m): all strata (sig only)",
+    *,
+    show_grid: bool = True,
+    grid_color: str = "k",
+    grid_lw: float = 0.3,
+    grid_alpha: float = 0.25,
+    sep_color: str = "k",
+    sep_lw: float = 1.0,
+    sep_alpha: float = 0.6,
+):
+    """Only color cells with p ≤ alpha; others blank. Adds a cell grid."""
+    data = pvals_df.values.copy()
+    data_masked = np.where(data <= alpha, data, np.nan)
+
+    n_rows, n_cols = data_masked.shape
+    fig_w = max(15, 0.22 * n_cols)
+    fig_h = max(0.01,  0.16 * n_rows)
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    im = ax.imshow(
+        data_masked, aspect="auto", interpolation="none",
+        cmap="viridis_r", vmin=0, vmax=alpha
+    )
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("p-value")
+
+    # Major ticks at cell centers (labels)
+    ax.set_yticks(np.arange(n_rows))
+    ax.set_yticklabels(pvals_df.index, fontsize=6)
+    ax.set_xticks(np.arange(n_cols))
+    ax.set_xticklabels(pvals_df.columns, rotation=90, fontsize=8)
+
+    # Minor ticks at cell borders + grid
+    if show_grid:
+        ax.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, n_rows, 1), minor=True)
+        ax.grid(which="minor", color=grid_color, linestyle="-", linewidth=grid_lw, alpha=grid_alpha)
+        # Keep major grid off (labels row/col lines)
+        ax.grid(which="major", visible=False)
+
+    # Block separators (use half-integer to draw between columns)
+    if separators:
+        for x_end, _title in separators[:-1]:  # skip final total
+            ax.axvline(x_end - 0.5, color=sep_color, lw=sep_lw, alpha=sep_alpha)
+
+    ax.set_title(title)
+    fig.tight_layout()
+    plt.show()
+
+# Plot: only significant (p ≤ 0.05) cells colored
+plot_pvals_sig_only(
+    combined_df, alpha=0.05, separators=separators,
+    title="Wilcoxon (paired 2m vs 4m) — single factors and combinations (sig only)"
+)
+
+
+#%%
+def single_factor_fast(
+    data_T: np.ndarray,            # (n_links, n_animals)
+    link_labels: list[str],
+    factor_idx: int,               # 0=oip, 1=nor, 2=genotype, 3=sex
+    include_empty: bool = False,
+    zero_method: str = "wilcox",
+) -> pd.DataFrame:
+    F = _factor_base_indices(factor_idx)  # cached
+    cols = []
+    names = []
+    n_links = data_T.shape[0]
+    print(F)
+
+    for base, ages in F.items():
+        idx2 = ages.get("2m"); idx4 = ages.get("4m")
+        if idx2 is None or idx4 is None or len(idx2)==0 or len(idx4)==0 or len(idx2)!=len(idx4):
+            if include_empty:
+                cols.append(np.full(n_links, np.nan))
+                names.append(base)
+            continue
+
+        # Slice once: (n_links, n_pairs)
+        X = data_T[:, idx2]
+        Y = data_T[:, idx4]
+    # return Y-X
+        cols.append(np.mean((Y-X)/(Y+X), axis=1)); names.append(base)
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+
+    mat = np.column_stack(cols)  # (n_links, n_cols)
+    return pd.DataFrame(mat, index=link_labels, columns=names)
+
+
+
+def two_factors_fast(
+    data_T: np.ndarray, link_labels: list[str],
+    factorA_idx: int, factorB_idx: int,
+    include_empty: bool = False,
+    zero_method: str = "wilcox",
+) -> pd.DataFrame:
+    A = _factor_base_indices(factorA_idx)  # cached
+    B = _factor_base_indices(factorB_idx)  # cached
+
+    cols = []
+    names = []
+    n_links = data_T.shape[0]
+
+    for a, agesA in A.items():
+        idx2A, idx4A = agesA.get("2m"), agesA.get("4m")
+        if idx2A is None or idx4A is None:
+            continue
+        for b, agesB in B.items():
+            idx2B, idx4B = agesB.get("2m"), agesB.get("4m")
+            if idx2B is None or idx4B is None:
+                continue
+
+            # intersect paired indices (assumes same ordering across masks)
+            idx2 = np.intersect1d(idx2A, idx2B, assume_unique=False)
+            idx4 = np.intersect1d(idx4A, idx4B, assume_unique=False)
+
+            if len(idx2)==0 or len(idx4)==0 or len(idx2)!=len(idx4):
+                if include_empty:
+                    cols.append(np.full(n_links, np.nan))
+                    names.append(f"{a}·{b}")
+                continue
+
+            X = data_T[:, idx2]
+            Y = data_T[:, idx4]
+    # return Y-X
+            cols.append(np.mean((Y-X)/(Y+X), axis=1)); names.append(f"{a}·{b}")
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+
+    mat = np.column_stack(cols)
+    return pd.DataFrame(mat, index=link_labels, columns=names)
+
+
+link_labels = [f"{a}–{b}" for (a, b) in dmn_pairs_labels]
+# If you want *all* pairs instead:
+# link_labels = [f"{a}–{b}" for (a, b) in all_pairs_labels]
+
+
+cohesion_diff_oip  = single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=0)
+cohesion_diff_nor  = single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=1)
+cohesion_diff_geno = single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=2)
+cohesion_diff_sex  = single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=3)
+
+cohesion_diff_sex_geno = two_factors_fast(aux_time_ratio.T, link_labels, factorA_idx=3, factorB_idx=2)
+cohesion_diff_sex_oip  = two_factors_fast(aux_time_ratio.T, link_labels, factorA_idx=3, factorB_idx=0)
+cohesion_diff_sex_nor  = two_factors_fast(aux_time_ratio.T, link_labels, factorA_idx=3, factorB_idx=1)
+
+combined_cohesion_diff_df, separators_cohesion_diff = combine_blocks([
+    ("Sex",            cohesion_diff_sex),
+    ("Genotype",       cohesion_diff_geno),
+    ("OiP",            cohesion_diff_oip),
+    ("NOR",            cohesion_diff_nor),
+    ("Sex×Genotype",   cohesion_diff_sex_geno),
+    ("Sex×OiP",        cohesion_diff_sex_oip),
+    ("Sex×NOR",        cohesion_diff_sex_nor),
+])
+
+prefixed_cols = []
+for title, df in [
+    ("Sex", cohesion_diff_sex),
+    ("Genotype", cohesion_diff_geno),
+    ("OiP", cohesion_diff_oip),
+    ("NOR", cohesion_diff_nor),
+    ("Sex×Genotype", cohesion_diff_sex_geno),
+    ("Sex×OiP", cohesion_diff_sex_oip),
+    ("Sex×NOR", cohesion_diff_sex_nor),
+]:
+    prefixed_cols.extend([f"{title}: {c}" for c in df.columns])
+
+combined_cohesion_diff_df.columns = prefixed_cols
+
+# # Optional: prefix columns with block title for clarity
+# prefixed_cols = []
+# offset = 0
+# for title, df in [cohesion_diff_sex, cohesion_diff_geno, cohesion_diff_oip, cohesion_diff_nor,
+#                 cohesion_diff_sex_geno, cohesion_diff_sex_oip, cohesion_diff_sex_nor]:
+#     prefixed_cols += [f"{title}: {c}" for c in df.columns]
+# combined_cohesion_diff_df.columns = prefixed_cols
+
+
+
+
+# (Optional) Save raw p-values table
+# combined_cohesion_diff_df.to_csv("pvals_wilcoxon_all_strata_raw.csv", index=True)
+#%%
+
+def plot_pvals_x_cohesion_sig_only(
+    pvals_df: pd.DataFrame,
+    cohesion_diff_df: pd.DataFrame,
+    alpha: float = 0.05,
+    separators: list[tuple[int, str]] | None = None,
+    title: str = "Wilcoxon (paired 2m vs 4m): all strata (sig only)",
+    *,
+    show_grid: bool = True,
+    grid_color: str = "k",
+    grid_lw: float = 0.3,
+    grid_alpha: float = 0.25,
+    sep_color: str = "k",
+    sep_lw: float = 1.0,
+    sep_alpha: float = 0.6,
+):
+    """Only color cells with p ≤ alpha; others blank. Adds a cell grid."""
+    data = pvals_df.values.copy()
+    data = 1 - data  # Invert for cohesion difference
+    data_masked = np.where(data >= (1-alpha), data, np.nan)
+    # data_masked = np.where(data <= alpha, data, np.nan)
+    # data_masked = 1 - data_masked  # Invert for cohesion difference
+    print(np.nanmax(data_masked*cohesion_diff_df), np.nanmin(data_masked))
+
+    n_rows, n_cols = data_masked.shape
+    fig_w = max(15, 0.22 * n_cols)
+    fig_h = max(0.01,  0.16 * n_rows)
+
+    data_masked = data_masked  # Invert for cohesion difference
+    print(data_masked)
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    im = ax.imshow(
+        data_masked*cohesion_diff_df, aspect="auto", interpolation="none",
+        cmap="RdBu", vmin=-0.1, vmax=0.1
+    )
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("p-value")
+
+    # Major ticks at cell centers (labels)
+    ax.set_yticks(np.arange(n_rows))
+    ax.set_yticklabels(pvals_df.index, fontsize=6)
+    ax.set_xticks(np.arange(n_cols))
+    ax.set_xticklabels(pvals_df.columns, rotation=90, fontsize=8)
+
+    # Minor ticks at cell borders + grid
+    if show_grid:
+        ax.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, n_rows, 1), minor=True)
+        ax.grid(which="minor", color=grid_color, linestyle="-", linewidth=grid_lw, alpha=grid_alpha)
+        # Keep major grid off (labels row/col lines)
+        ax.grid(which="major", visible=False)
+
+    # Block separators (use half-integer to draw between columns)
+    if separators:
+        for x_end, _title in separators[:-1]:  # skip final total
+            ax.axvline(x_end - 0.5, color=sep_color, lw=sep_lw, alpha=sep_alpha)
+
+    ax.set_title(title)
+    fig.tight_layout()
+    plt.show()
+
+# Plot: only significant (p ≤ 0.05) cells colored
+plot_pvals_x_cohesion_sig_only(
+    combined_df_wilcoxon, combined_cohesion_diff_df, alpha=0.05, separators=separators,
+    title="Wilcoxon (paired 2m vs 4m) — (1-p_value) x mean cohesion difference"
+)
+
+plot_pvals_x_cohesion_sig_only(
+    combined_df_ttest, combined_cohesion_diff_df, alpha=0.05, separators=separators,
+    title="t-test (paired 2m vs 4m) — (1-p_value) x mean cohesion difference"
+)
+
+
+#%%
+
+#============================================================================
+# -------------------- t-test paired code --------------------
+#============================================================================
+
+
+import pandas as pd
+from scipy.stats import ttest_rel
+
+# ---------- shared cached index builder (reuse this for both tests) ----------
+
+
+# ------------------------- FAST paired t-test: single factor -------------------------
+def ttest_rel_pvals_single_factor_fast(
+    data_T: np.ndarray,            # shape: (n_links, n_animals)
+    link_labels: list[str],        # len = n_links
+    factor_idx: int,               # 0=oip, 1=nor, 2=genotype, 3=sex
+    include_empty: bool = False,
+    nan_to_one: bool = True,       # map NaN p-values (degenerate pairs) to 1.0
+) -> pd.DataFrame:
+    F = _factor_base_indices(factor_idx)
+    # single_factors_and_combinations = _build_single_factors_and_combinations(F)  # cached
+    cols, names = [], []
+    n_links = data_T.shape[0]
+
+    for base, ages in F.items():
+        idx2 = ages.get("2m"); idx4 = ages.get("4m")
+        if idx2 is None or idx4 is None or len(idx2) == 0 or len(idx4) == 0 or len(idx2) != len(idx4):
+            if include_empty:
+                cols.append(np.full(n_links, np.nan))
+                names.append(base)
+            continue
+
+        # Slice once: arrays (n_links, n_pairs)
+        X = data_T[:, idx2]
+        Y = data_T[:, idx4]
+
+        # Vectorized paired t-test over rows
+        _, p = ttest_rel(X, Y, axis=1, nan_policy="propagate", alternative="two-sided")
+        p = np.asarray(p, dtype=float)
+        if nan_to_one:
+            p = np.where(np.isnan(p), 1.0, p)
+
+        cols.append(p)
+        names.append(base)
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+
+    mat = np.column_stack(cols)  # (n_links, n_cols)
+    return pd.DataFrame(mat, index=link_labels, columns=names)
+
+# ------------------------- FAST paired t-test: two factors -------------------------
+def ttest_rel_pvals_two_factors_fast(
+    data_T: np.ndarray,            # shape: (n_links, n_animals)
+    link_labels: list[str],
+    factorA_idx: int, factorB_idx: int,
+    include_empty: bool = False,
+    nan_to_one: bool = True,
+) -> pd.DataFrame:
+    A = _factor_base_indices(factorA_idx)  # cached
+    B = _factor_base_indices(factorB_idx)  # cached
+    cols, names = [], []
+    n_links = data_T.shape[0]
+
+    for a, agesA in A.items():
+        idx2A, idx4A = agesA.get("2m"), agesA.get("4m")
+        if idx2A is None or idx4A is None:
+            continue
+        for b, agesB in B.items():
+            idx2B, idx4B = agesB.get("2m"), agesB.get("4m")
+            if idx2B is None or idx4B is None:
+                continue
+
+            # Intersect 2m/4m sets for the stratum
+            idx2 = np.intersect1d(idx2A, idx2B, assume_unique=False)
+            idx4 = np.intersect1d(idx4A, idx4B, assume_unique=False)
+
+            if len(idx2) == 0 or len(idx4) == 0 or len(idx2) != len(idx4):
+                if include_empty:
+                    cols.append(np.full(n_links, np.nan))
+                    names.append(f"{a}·{b}")
+                continue
+
+            X = data_T[:, idx2]
+            Y = data_T[:, idx4]
+
+            _, p = ttest_rel(X, Y, axis=1, nan_policy="propagate", alternative="two-sided")
+            p = np.asarray(p, dtype=float)
+            if nan_to_one:
+                p = np.where(np.isnan(p), 1.0, p)
+
+            cols.append(p)
+            names.append(f"{a}·{b}")
+
+    if not cols:
+        return pd.DataFrame(np.nan, index=link_labels, columns=[])
+
+    mat = np.column_stack(cols)
+    return pd.DataFrame(mat, index=link_labels, columns=names)
+
+#%%
+
+# Single-factor blocks
+block_oip  = ("OiP",      ttest_rel_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=0))
+block_nor  = ("NOR",      ttest_rel_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=1))
+block_geno = ("Genotype", ttest_rel_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=2))
+block_sex  = ("Sex",      ttest_rel_pvals_single_factor_fast(aux_time_ratio.T, link_labels, factor_idx=3))
+
+# Two-factor combos
+block_sex_geno = ("Sex×Genotype", ttest_rel_pvals_two_factors_fast(aux_time_ratio.T, link_labels, 3, 2))
+block_sex_oip  = ("Sex×OiP",      ttest_rel_pvals_two_factors_fast(aux_time_ratio.T, link_labels, 3, 0))
+block_sex_nor  = ("Sex×NOR",      ttest_rel_pvals_two_factors_fast(aux_time_ratio.T, link_labels, 3, 1))
+# Combine all blocks horizontally: singles + combos
+combined_df_ttest, separators = combine_blocks([
+    block_sex, block_geno, block_oip, block_nor,   # single factors
+    block_sex_geno, block_sex_oip, block_sex_nor,  # combinations
+])
+
+# Optional: prefix columns with block title for clarity
+prefixed_cols = []
+offset = 0
+for title, df in [block_sex, block_geno, block_oip, block_nor,
+                  block_sex_geno, block_sex_oip, block_sex_nor]:
+    prefixed_cols += [f"{title}: {c}" for c in df.columns]
+combined_df_ttest.columns = prefixed_cols
+
+
+#%%
+# Plot: only significant (p ≤ 0.05) cells colored
+plot_pvals_sig_only(
+    combined_df, alpha=0.05, separators=separators,
+    title="t-test paired (2m vs 4m) — single factors and combinations (sig only)"
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#%%
+group = mask_groups[0][0]
+cohesion_probability_all[group]
 # %%
 # plot cohesion_probability_mean_group
 
@@ -662,24 +1495,6 @@ plt.show()
 
 # %%
 # ------------Cohesion time series-------------------------------
-
-
-def cohesion_timeseries(communities, region_index=None):
-
-    if region_index == None:
-        region_index = np.arange(communities.shape[1])
-    cohesion_timeseries = np.zeros(
-        (len(region_index), len(region_index), communities.shape[0])
-    )
-    # cohesion_probability = np.zeros((n_regions, n_regions))
-    for reg1 in range(len(region_index)):
-        for reg2 in range(reg1 + 1, len(region_index)):
-            aux1 = communities[:, region_index[reg1]]
-            aux2 = communities[:, region_index[reg2]]
-            cohesion_timeseries[reg1, reg2, :] = aux1 - aux2
-            # count the number of time windows where the two regions are in the same module
-    return cohesion_timeseries
-
 
 cohesion_timeseries_all = np.zeros((n_animals, n_regions, n_regions, n_windows))
 
@@ -769,8 +1584,6 @@ cohesion_timeseries_dmn_binary = np.transpose(cohesion_timeseries_dmn_binary, (0
 
 # %%
 
-import numpy as np
-import pandas as pd
 
 
 def extract_link_activations_df(
@@ -931,7 +1744,7 @@ plt.colorbar()
 # %%
 anat_labels_sorted = anat_labels[sort_allegiances[0, 0].astype(int)]
 
-links_label = ()
+links_label = []
 for xx in index_timeseries_dmn[0]:
     for yy in index_timeseries_dmn[1]:
         links_label.append(

@@ -350,7 +350,7 @@ plt.show()
 # Compute for each animal the min, max and mean number of modules across time windows
 min_modules = np.min(module_num, axis=1)
 max_modules = np.max(module_num, axis=1)
-mean_modules = np.var(module_num, axis=1)
+mean_modules = np.mean(module_num, axis=1)
 for animal in range(n_animals):
     print(
         f"Animal {animal} - Min: {min_modules[animal]}, Max: {max_modules[animal]}, Mean: {mean_modules[animal]}"
