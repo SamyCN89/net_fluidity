@@ -1,0 +1,11 @@
+Genotype,Sex,Phenotype,count,mean,std,sem,lower95,upper95
+dKI,Female,Bad,16,0.5506,0.1598,0.04,0.4655,0.6358
+dKI,Female,Learners,1,0.3578,,,,
+dKI,Male,Bad,6,0.4907,0.3032,0.1238,0.1724,0.8089
+dKI,Male,Impaired,10,0.5194,0.1288,0.0407,0.4272,0.6115
+wt,Female,Good,10,0.6444,0.1506,0.0476,0.5366,0.7522
+wt,Female,Impaired,2,0.6013,0.0823,0.0582,-0.1381,1.3407
+wt,Female,Learners,3,0.6193,0.2739,0.1581,-0.0611,1.2996
+wt,Male,Good,8,0.3804,0.211,0.0746,0.204,0.5568
+wt,Male,Impaired,3,0.6911,0.2537,0.1465,0.0609,1.3213
+wt,Male,Learners,4,0.7446,0.0546,0.0273,0.6578,0.8314

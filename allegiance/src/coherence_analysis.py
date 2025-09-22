@@ -5,7 +5,9 @@ import logging
 from pathlib import Path as _Path
 import pickle
 import re
+from tkinter import font
 
+from matplotlib import markers
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -304,13 +306,63 @@ plt.title("Mean Number of Modules per Animal")
 for i, label in enumerate(label_variables):
     plt.subplot(len(label_variables), 1, i + 1)
     for j, lbl in enumerate(label):
-        plt.plot(mean_modules[mask_groups[0][j]], marker="o", label=f"{lbl}")
+        plt.plot(mean_modules[mask_groups[0][j]], label=f"{lbl}", alpha=0.5, marker=".")
+    plt.legend(fontsize=4)
 plt.xlabel("Animals")
 plt.ylabel("Mean Number of Modules")
 # plt.xticks(ticks=np.arange(n_animals), labels=[f"Animal {i}" for i in range(n_animals)], rotation=90)
-plt.legend()
 plt.show()
 
+
+
+
+#%%
+#Difference of mean modules between 2m and 4m for each animal in each group
+
+# %%
+
+half_aux = int(len(mean_modules)/2)
+
+diff_mean_modules = mean_modules[:half_aux] - mean_modules[half_aux:]
+normed = (diff_mean_modules - diff_mean_modules.min()) / (diff_mean_modules.max() - diff_mean_modules.min())
+
+
+plt.figure(figsize=(10, 6))
+
+for factor_idx in range(len(label_variables)):
+    # factor_idx = 0  # choose which grouping
+    plt.subplot(4, 1, 1+factor_idx)
+
+    labels = label_variables[factor_idx]
+    masks  = mask_groups[factor_idx]
+    for lbl, mask in zip(labels, masks, strict=False):
+        idx = np.where(mask)[0]
+        print(lbl, idx)
+        #if 2m in lbl:
+        if "2m" in lbl:
+            # plt.plot(normed[idx], label=lbl, marker='.', alpha=0.3)
+            plt.plot(diff_mean_modules[idx], label=lbl, marker='.', alpha=0.3)
+            print(f"Found 2m in {lbl}: {idx}")
+        elif "4m" in lbl:
+            print(f"Found 4m in {lbl}: {idx}")
+    plt.axhline(0, color='black', linestyle='--', linewidth=1)
+    plt.legend()
+
+#Now a violin plot of the difference of mean modules between 2m and 4m for each animal in each group
+plt.figure(figsize=(10, 6))
+sns.violinplot(data=diff_mean_modules)
+#%%
+# diff_mean_modules = mean_modules[mask_groups[0][1]] - mean_modules[mask_groups[0][0]]
+print(f"Difference of mean modules between 2m and 4m: {diff_mean_modules}")
+#plot the difference of mean modules between 2m and 4m for each animal in each group
+plt.figure(figsize=(10, 6))
+plt.bar(np.arange(len(diff_mean_modules)), diff_mean_modules, alpha=0.7)
+plt.xticks(np.arange(len(diff_mean_modules)), [f"Animal {i}" for i in range(len(diff_mean_modules))], rotation=45)
+plt.xlabel("Animals")
+plt.ylabel("Difference in Mean Modules (4m - 2m)")
+plt.title("Difference of Mean Modules between 2m and 4m for Each Animal")
+plt.tight_layout()
+plt.show()
 # %%
 # Assumptions:
 # - mean_modules: shape (n_animals,)
