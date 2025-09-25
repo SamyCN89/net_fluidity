@@ -10,16 +10,36 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from shared_code.fun_loaddata import (
-    extract_mouse_ids,
-    load_fc2_npz,
-    load_mat_timeseries,
-    load_npz_dict,
-    load_pickle,
-    make_file_path,
-)
-from shared_code.fun_paths import get_paths
-from shared_code.shared_code.fun_loaddata import load_pickle
+# Robust imports: prefer installed package, fallback to local package folder
+try:
+    from shared_code.fun_loaddata import (
+        extract_mouse_ids,
+        load_fc2_npz,
+        load_mat_timeseries,
+        load_npz_dict,
+        load_pickle,
+        make_file_path,
+    )
+    from shared_code.fun_paths import get_paths
+except ModuleNotFoundError:
+    import os
+    import sys
+    here = Path(__file__).resolve().parent
+    pkg_dir = here.parent / "shared_code" / "shared_code"
+    if pkg_dir.exists():
+        sys.path.append(str(pkg_dir))
+        from fun_loaddata import (
+            extract_mouse_ids,
+            load_fc2_npz,
+            load_mat_timeseries,
+            load_npz_dict,
+            load_pickle,
+            make_file_path,
+        )
+        from fun_paths import get_paths
+    else:
+        # Re-raise if package is not available locally
+        raise
 
 
 # %%
