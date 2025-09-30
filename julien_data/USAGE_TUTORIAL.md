@@ -222,6 +222,10 @@ Flags:
 - `--no-medians`: skip median vs window plots
 - `--savefig`: save figures next to the merged PKL
 - `--groups`: filter to specific groups, comma‑separated `GENOTYPE-TREATMENT` (e.g., `WT-VEH,Dp1Yey-LCTB92`)
+- `--split-pools`: also plot per‑group distributions for two window pools (first half vs second half of window sizes)
+- `--split-at`: specify the window size threshold (Pool A <= threshold, Pool B > threshold). If omitted, the script splits at mid index; for odd counts it drops the middle to enforce equal group sizes and prints which W was dropped.
+ - `--qq`: produce QQ plots between selected groups for a chosen pool and tau (used with `--groups` and `--split-at`)
+ - `--qq-pool`: which pool for QQ (`A` or `B`)
 
 Use from Jupyter:
 
@@ -234,8 +238,47 @@ run_plot(subset_name='all')
 # Focus specific groups and tau
 run_plot(subset_name='regions-ACC-THAL', tau=0, groups=['WT-VEH','Dp1Yey-LCTB92'])
 
-# Only overall, no groups/medians, and save figures
+# Only overall, no groups/medians, and save figures; also split pools when groups shown
 run_plot(subset_name='myFavoriteSet', no_group=True, no_medians=True, savefig=True)
+run_plot(subset_name='myFavoriteSet', split_pools=True)
+
+# Split at a specific window size (consistent for all groups)
+run_plot(subset_name='all', split_pools=True, split_at=40)
+
+# QQ plots between groups for Pool A, tau=0
+# CLI:  python julien_data/plot_merged_speed.py --subset-name all --groups WT-VEH,Dp1Yey-LCTB92 --split-pools --split-at 40 --tau 0 --qq --qq-pool A
+# NB: From Jupyter you can call the QQ helper (see script) or extend run_plot to enable it.
+
+## 6) Quick Reference
+
+- Preprocess data:
+  - `python julien_data/1_preprocess_data_ts_cog.py`
+- Build dFC streams:
+  - `python julien_data/2_compute_dfc_stream.py`
+- Compute dFC speed (global):
+  - `python julien_data/3_dfc_speed_test_v6.py`
+- Compute dFC speed (labels, within-mode, custom folder):
+  - `python julien_data/3_dfc_speed_test_v6.py --selected-region-labels "ACC,THAL" --region-mode within --subset-name myFavoriteSet`
+- List region labels with indices:
+  - `python julien_data/3_dfc_speed_test_v6.py --list-regions`
+- Plot merged outputs (script):
+  - `python julien_data/plot_merged_speed.py --subset-name myFavoriteSet --split-pools --split-at 40`
+- Plot merged outputs (Jupyter):
+  - `from julien_data.plot_merged_speed import run_plot; run_plot(subset_name='myFavoriteSet', split_pools=True, split_at=40)`
+
+## 7) Resuming This Work — Suggested Prompt
+
+Copy‑paste this prompt to resume the session with full context:
+
+```
+Context: We refactored dFC speed computation to use dfc_speed_split with region subsetting, added per-region loops, explicit subset tags, and per-selection subfolders (including --subset-name). We also implemented merged outputs (PKL with meta; NPZ for FC2) and added a plotting script (plot_merged_speed.py) that supports per‑group plots, quantile bands, and two window pools (equal halves or --split-at threshold). Tutorial is in julien_data/USAGE_TUTORIAL.md.
+
+Please do the following next:
+1) Add a dry‑run flag to 3_dfc_speed_test_v6.py that prints planned filenames and subfolder, then exits.
+2) In plot_merged_speed.py, add an option to plot QQ plots between selected groups for a given pool and tau.
+3) Extend meta saved in merged outputs to include a timestamp and git commit (if available), and surface it in the plotting script summary.
+4) Update USAGE_TUTORIAL.md with the new flags and examples.
+```
 ```
 
 ## Notes

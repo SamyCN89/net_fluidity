@@ -239,6 +239,8 @@ def run_dfc_speed_analysis(
     #    'within' (both endpoints in selected)
     # Always use dfc_speed_split (multi-tau legacy engine)
 
+    dry_run = kwargs.get("dry_run", False)
+
     # Derive selected labels (if indices provided)
     selected_labels = None
     if selected_regions is not None:
@@ -348,6 +350,11 @@ def run_dfc_speed_analysis(
         logger.info(
             f"Run: win={window_size}, mode={mode_desc}, sel={sel_desc}, edges={edges_selected}, out={window_file.name}"
         )
+        # If dry-run, only print summary and return planned path
+        if dry_run:
+            logger.info("DRY RUN → would write: %s", window_file)
+            return str(window_file)
+
         # Initialize lists to store results for each animal
         results = []
         for animal_idx in range(n_animals):
@@ -421,13 +428,20 @@ def run_dfc_speed_analysis(
         for ws in tqdm(time_window_range, desc="Processing windows for ...")
     )
 
-    logging.getLogger(__name__).info("All windows processed successfully.")
+    if dry_run:
+        logging.getLogger(__name__).info("DRY RUN complete. No computation performed.")
+    else:
+        logging.getLogger(__name__).info("All windows processed successfully.")
     # Final summary of outputs
     output_files = [p for p in output_files if p]
     if output_files:
         logger.info("Saved/updated %d window files under: %s", len(output_files), save_path)
         for p in output_files:
             logger.info("  - %s", p)
+
+        # Skip merge on dry-run
+        if dry_run:
+            return
 
         # Consolidate all per-window results into a single artifact (speeds, and fc if available)
         try:
@@ -442,6 +456,18 @@ def run_dfc_speed_analysis(
                         merged_speeds.append(arr["speeds"])  # keep object arrays per window
             if merged_speeds:
                 # Build metadata for merged artifact
+                from datetime import datetime
+                import subprocess
+                # Attempt to capture git commit
+                commit = None
+                try:
+                    commit = (
+                        subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
+                        .stdout.strip()
+                        or None
+                    )
+                except Exception:
+                    commit = None
                 meta = {
                     "method": method,
                     "region_mode": region_mode,
@@ -456,6 +482,8 @@ def run_dfc_speed_analysis(
                     "regions_param": int(nodes),
                     "window_sizes": [int(w) for w in np.array(time_window_range).tolist()],
                     "save_dir": str(out_dir),
+                    "timestamp": datetime.now().isoformat(timespec="seconds"),
+                    "git_commit": commit,
                 }
                 merged_speed_file = out_dir / (
                     f"{prefix}_windows{len(merged_speeds)}_tau{np.size(tau_range)}_animals_{n_animals}_regions_{data.regions}.pkl"
@@ -551,6 +579,11 @@ def _parse_cli_args():
         default=None,
         help="Custom subfolder name under speed/ where outputs are saved (overrides auto-naming)",
     )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned output files and subfolder per window, then exit without computing",
+    )
     args, _unknown = p.parse_known_args(sys.argv[1:])
     # return p.parse_args()
     return args
@@ -620,6 +653,7 @@ def main():
         "region_mode": args.region_mode,
         # no engine parameter – using dfc_speed_split only
         "subset_name": args.subset_name,
+        "dry_run": args.dry_run,
     }
     # Run the analysis
     # Run analysis: either per-region or else once for all regions
