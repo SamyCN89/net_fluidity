@@ -83,6 +83,10 @@ def build_paths(
         "f_mod": figures / "modularity",
         "f_cog": figures / "cog",
         "f_speed": figures / "speed",
+        "f_dfc": figures / "dfc",
+        "f_cohesion": figures / "cohesion",
+        "f_allegiance": figures / "allegiance",
+        "f_trimers": figures / "trimers",
     }
 
 
