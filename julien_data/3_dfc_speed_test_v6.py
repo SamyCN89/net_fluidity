@@ -370,31 +370,60 @@ def run_dfc_speed_analysis(
                 logging.getLogger(__name__).info(
                     f"Computing for window {window_file} and animal {animal_idx + 1}/{n_animals}"
                 )
-                if return_fc2:
-                    fc2 = dfc_speed_split(
-                        dfc_stream[animal_idx],
-                        vstep=int(window_size),
-                        tau_range=0,
-                        method=method,
-                        return_fc2=return_fc2,
-                    )
-                    results.append(fc2)
-                    logging.getLogger(__name__).debug(
-                        f"Animal {animal_idx} window {window_size}: computed FC2"
-                    )
+                if kwargs.get("engine", "legacy") == "shared":
+                    from shared_code.fun_dfcspeed import dfc_speed_multi_tau
+                    if return_fc2:
+                        fc2 = dfc_speed_multi_tau(
+                            dfc_stream[animal_idx],
+                            vstep=int(window_size),
+                            tau_range=np.array([0], dtype=int),
+                            method=method,
+                            return_fc2=True,
+                            time_offset=0,
+                        )
+                        results.append(fc2)
+                        logging.getLogger(__name__).debug(
+                            f"Animal {animal_idx} window {window_size}: computed FC2 (shared)"
+                        )
+                    else:
+                        speeds = dfc_speed_multi_tau(
+                            dfc_stream[animal_idx],
+                            vstep=int(window_size),
+                            tau_range=tau_range,
+                            method=method,
+                            return_fc2=False,
+                            time_offset=window_size,
+                        )
+                        results.append(speeds)
+                        logging.getLogger(__name__).debug(
+                            f"Animal {animal_idx} window {window_size}: computed speeds (shared)"
+                        )
                 else:
-                    speeds = dfc_speed_split(
-                        dfc_stream[animal_idx],
-                        vstep=int(window_size),
-                        tau_range=tau_range,
-                        method=method,
-                        return_fc2=return_fc2,
-                        time_offset=window_size,
-                    )
-                    results.append(speeds)
-                    logging.getLogger(__name__).debug(
-                        f"Animal {animal_idx} window {window_size}: computed speeds"
-                    )
+                    if return_fc2:
+                        fc2 = dfc_speed_split(
+                            dfc_stream[animal_idx],
+                            vstep=int(window_size),
+                            tau_range=0,
+                            method=method,
+                            return_fc2=return_fc2,
+                        )
+                        results.append(fc2)
+                        logging.getLogger(__name__).debug(
+                            f"Animal {animal_idx} window {window_size}: computed FC2"
+                        )
+                    else:
+                        speeds = dfc_speed_split(
+                            dfc_stream[animal_idx],
+                            vstep=int(window_size),
+                            tau_range=tau_range,
+                            method=method,
+                            return_fc2=return_fc2,
+                            time_offset=window_size,
+                        )
+                        results.append(speeds)
+                        logging.getLogger(__name__).debug(
+                            f"Animal {animal_idx} window {window_size}: computed speeds"
+                        )
             except Exception as e:
                 logging.getLogger(__name__).error(
                     f"Error for window {window_file}: {e}"
@@ -584,6 +613,18 @@ def _parse_cli_args():
         action="store_true",
         help="Print planned output files and subfolder per window, then exit without computing",
     )
+    p.add_argument(
+        "--engine",
+        default="legacy",
+        choices=["legacy", "shared"],
+        help="Speed engine: legacy (dfc_speed_split) or shared (shared_code.fun_dfcspeed.dfc_speed_multi_tau)",
+    )
+    p.add_argument(
+        "--tr",
+        type=int,
+        default=None,
+        help="Select preprocessed metadata by total_tr (e.g., 400 or 500). Defaults to the first metadata found.",
+    )
     args, _unknown = p.parse_known_args(sys.argv[1:])
     # return p.parse_args()
     return args
@@ -598,7 +639,15 @@ def main():
 
     # Load data and parameters
     data = DFCAnalysis()
-    data.get_metadata()
+    if args.tr is not None:
+        from pathlib import Path as _Path
+        preproc = _Path(data.paths["preprocessed"])  # type: ignore[index]
+        cands = sorted(preproc.glob(f"metadata_animals_*_tr_{int(args.tr)}.pkl"))
+        if not cands:
+            raise FileNotFoundError(f"No metadata file for tr={args.tr} under {preproc}")
+        data.get_metadata(meta_filename=cands[0].name)
+    else:
+        data.get_metadata()
     data.get_ts_preprocessed()
     data.get_cogdata_preprocessed()
     data.get_temporal_parameters()
@@ -647,11 +696,11 @@ def main():
         "method": args.method,
         "prefix": "speed",
         "return_fc2": args.return_fc2,
+        "engine": args.engine,
         # "processors": args.processors,
         # "preprocessors": args.processors,
         "selected_regions": selected_regions,
         "region_mode": args.region_mode,
-        # no engine parameter – using dfc_speed_split only
         "subset_name": args.subset_name,
         "dry_run": args.dry_run,
     }

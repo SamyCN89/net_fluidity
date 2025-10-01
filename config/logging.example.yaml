@@ -21,6 +21,10 @@ loggers:
     level: INFO
     handlers: [console]
     propagate: false
+  net_fluidity_julien:
+    level: INFO
+    handlers: [console]
+    propagate: false
   allegiance:
     level: INFO
     handlers: [console]
@@ -29,7 +33,10 @@ loggers:
     level: INFO
     handlers: [console]
     propagate: false
+  scripts:
+    level: INFO
+    handlers: [console]
+    propagate: false
 root:
   level: WARNING
   handlers: [console]
-

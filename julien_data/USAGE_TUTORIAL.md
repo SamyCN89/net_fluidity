@@ -193,11 +193,149 @@ if fc2_npz:
     print('FC2 meta:', fc2_meta)
 ```
 
-For richer examples (stats and figures), see `plots_speed.py`, `plot_cog_data.py`, and `local_speed_plot_v2.py`.
+For richer examples (stats and figures), use `speed_plots.py` (or the wrapper `src/speed_plots_cli.py`), and `local_speed_plot_v2.py`. Community‑specific visuals are available in `community_speed_figures.py`.
 
-## 5) Plot From Merged Outputs (Script)
+## 5) Bootstrap CI, Group Comparisons, and Notebook Loaders
+
+You can bootstrap percentiles per group and compare groups either via CLI or directly in a notebook.
+
+CLI (writes CSV tables; optional figures):
+
+```bash
+# Ensure per‑region speeds exist (step 3 with --per-region)
+python scripts/bootstrap_speed_groups_cli.py \
+  --tr 500 --subset shared --tau-index 0 \
+  --pool-threshold median --pool-all \
+  --plot --grid --grid-cols 2
+
+# Outputs:
+# reports/speed_bootstrap_quantiles.csv
+# reports/speed_bootstrap_diffs.csv
+# fig/<dataset>/speed/<subset>/*.png (per‑region figures)
+```
+
+Notebook (no CLI):
+
+```python
+import sys; sys.path.insert(0, '/path/to/repo')
+from scripts.speed_bootstrap_nb import (
+    load_all_speeds_by_region_nb, pool_short_long_nb,
+    bootstrap_quantiles_by_group, bootstrap_quantile_diffs_by_keys,
+    plot_group_quantiles, plot_quantile_diffs, compute_pairs_diffs_nb, plot_pairs_grid_nb,
+)
+
+payload = load_all_speeds_by_region_nb(tr=500, subset_name='shared', tau_index=0)
+regions = payload['regions']; groups = payload['groups']
+r = regions[0]
+windows = payload['by_region'][r]['windows']
+per_by_win = payload['by_region'][r]['per_animal_by_window']
+
+# Short/long pools by median
+pools = pool_short_long_nb(per_by_win, windows, threshold='median')
+qa_short = bootstrap_quantiles_by_group(pools['short'], groups, q=[1,5,50,95,99])
+plot_group_quantiles(qa_short, title=f'{r} | pool=short (cut={pools["cut"]})')
+
+pairs = [
+  (('WT','VEH'), ('WT','LCTB92')),
+  (('Dp1Yey','VEH'), ('Dp1Yey','LCTB92')),
+  (('WT','VEH'), ('Dp1Yey','VEH')),
+  (('WT','LCTB92'), ('Dp1Yey','LCTB92')),
+]
+qd_map = compute_pairs_diffs_nb(pools['short'], groups, pairs)
+plot_pairs_grid_nb(qd_map, pairs, title=f'{r} | pool=short', cols=2)
+```
+
+## 6) Baseline Verification (Low-Risk)
+
+These steps establish a baseline to compare against future refactors. They do not modify compute code.
+
+- Environment
+  - Python 3.11; install core package: `pip install -e shared_code`
+  - Optional: install pre-commit hooks: `pre-commit install`
+  - Run formatting/lint checks: `make check` (or `bash scripts/run_checks.sh check`)
+
+- Smoke tests
+  - Run default smoke: `pytest -q` (targets `tests_smoke/`)
+  - Quick dFC speed synthetic: `pytest -q tests_smoke/test_dfc_speed_smoke.py`
+
+- Data presence check
+  - If you already computed streams/speeds, list latest files under `paths['dfc']` and `paths['speed']`.
+  - Example (python):
+    ```python
+    from julien_data.class_dataanalysis_julien import DFCAnalysis
+    import numpy as np
+    data = DFCAnalysis(); data.load_preprocessed_data(); data.get_temporal_parameters()
+    dfc_candidates = sorted(data.paths['dfc'].glob(f"dfc_window_size=*lag={data.lag}_animals={data.n_animals}_regions={data.regions}.npz"))
+    print('DFC files:', len(dfc_candidates))
+    speed_candidates = list(data.paths['speed'].rglob(f"speed_win{int(data.time_window_range[-1])}_*tau{data.tau+1}_animals_{data.n_animals}_regions_{data.regions}.npz"))
+    print('Speed files:', len(speed_candidates))
+    ```
+
+- Expected: `pytest` green; previously computed files remain unchanged. Keep this snapshot for A/B comparisons.
+
+## 7) Wrapper Usage and Parity Check
+
+- Run original and wrapper with distinct subset names (no overwrite):
+  - Original: `python julien_data/3_dfc_speed_test_v6.py --subset-name orig [your usual args]`
+  - Wrapper: `python julien_data/src/speed_compute.py --subset-name wrap [same args]`
+
+- Compare outputs for a given window (defaults to last if omitted):
+  - `python scripts/compare_speed_outputs.py --subset-a orig --subset-b wrap --window-size 9`
+
+Exit code 0 indicates a match (shapes equal, NaN mask equal, values within tolerance). Non-zero indicates a mismatch and prints a brief diff.
+
+### Engine selection
+
+- The speed script supports an opt‑in shared engine that mirrors legacy results but centralizes logic in `shared_code`:
+  - Use `--engine shared` to run via `shared_code.fun_dfcspeed.dfc_speed_multi_tau`.
+  - Default remains `legacy` to minimize risk.
+  - Compare outputs between `legacy` and `shared` with the comparator for selected windows.
+
+## 8) Plot From Merged Outputs (Script)
 
 Use the helper script to load the merged PKL and create publication‑style plots:
+
+## 9) Additional CLI wrappers
+
+- Preprocess wrapper (with filter control):
+  - `python julien_data/src/preprocess.py --filter-mode exclude_shortest`
+  - Choices: `exclude_shortest` (default), `truncate`, `none`.
+  - To restrict to a specific length (e.g., 400): `python julien_data/src/preprocess.py --only-tr 400`
+
+- DFC streams wrapper (delegates to original script):
+  - `python julien_data/src/dfc_stream_compute.py`
+  - Arguments are forwarded but currently ignored by the underlying script.
+
+These wrappers provide consistent entry points without changing algorithms or outputs.
+
+## 10) Simple DFC CLI (single pass or per-length split)
+
+When you want a predictable, single computation path without the legacy script’s repeated passes:
+
+- Single pass (pad all animals to longest length):
+  - `python julien_data/src/dfc_stream_cli.py --mode all --processors -1 --load-cache --tr 400`
+
+- Per-length groups (e.g., separate 500 and 400 timepoints):
+  - `python julien_data/src/dfc_stream_cli.py --mode split --processors -1 --load-cache --tr 400`
+
+Tip: Use `--tr` to pick the metadata file matching the desired timepoint length. If omitted, the first metadata found is used (often the 500-tr set).
+
+This CLI uses the same shared API and produces the same `dfc_*.npz` files for the targeted run.
+
+## 10) Plotting (merged outputs)
+
+- Plot using merged PKL outputs (supports selecting TR and subfolder):
+  - `python julien_data/src/speed_stats_plot.py --tr 400 --subset-name all --savefig`
+  - Add `--tau 0` to focus on a specific tau index; use `--groups` to filter plotted groups.
+  - Use `--split-pools` to compare short vs long window pools; optional `--split-at` threshold.
+
+The wrapper delegates to `julien_data/plot_merged_speed.py` and preserves all behavior.
+
+## 11) Community Plots
+
+- Plot per-community distributions from merged outputs + communities file:
+  - `python julien_data/src/community_speed_plot.py --tr 400 --subset-name all --pool all --savefig`
+  - Pools: `all`, `short`, `long` (by window index split).
 
 ```bash
 # Overall + per‑group + medians (auto‑detect merged file under speed/)

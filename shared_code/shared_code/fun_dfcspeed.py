@@ -633,6 +633,99 @@ def dfc_speed(
 
 
 # %%
+def dfc_speed_multi_tau(
+    dfc_stream, *, vstep: int = 1, tau_range=(0,), method: str = "pearson",
+    return_fc2: bool = False, triu_indices=None, time_offset: int = 0,
+):
+    """
+    Multi-tau dFC speed, matching legacy semantics from julien_data.
+
+    Parameters
+    ----------
+    dfc_stream : np.ndarray
+        2D (n_pairs, n_frames) vectorized dFC stream or 3D (n_rois, n_rois, n_frames) matrices.
+    vstep : int
+        Time step for second frame (>=1 and < n_frames).
+    tau_range : array-like
+        Iterable of non-negative tau offsets applied in addition to vstep+time_offset.
+    method : {"pearson","spearman","cosine"}
+        Correlation method for speed.
+    return_fc2 : bool
+        If True, return the indices of FC2 frames used (legacy behavior).
+    triu_indices : tuple or None
+        Optional precomputed indices for upper triangle when dfc_stream is 3D.
+    time_offset : int
+        Additional offset applied to FC2 frame indices (legacy compatibility).
+
+    Returns
+    -------
+    speeds_mat : np.ndarray
+        Array of shape (len(tau_range), T_eff) with speeds per tau.
+    or
+    fc2_indices : np.ndarray
+        If return_fc2=True, the flattened array of FC2 indices used (legacy behavior).
+    """
+    if not isinstance(dfc_stream, np.ndarray):
+        raise TypeError("dfc_stream must be a numpy array")
+
+    if dfc_stream.ndim not in (2, 3):
+        raise ValueError("dfc_stream must be 2D or 3D")
+
+    if not isinstance(vstep, int) or vstep <= 0:
+        raise TypeError("vstep must be a positive integer")
+
+    if method not in ("pearson", "spearman", "cosine"):
+        raise ValueError("Unsupported method")
+
+    # Convert to 2D pair-stream if needed (use upper-tri as in legacy)
+    if dfc_stream.ndim == 3:
+        n_rois = dfc_stream.shape[0]
+        if triu_indices is None:
+            triu_indices = np.triu_indices(n_rois, k=1)
+        fc_stream = dfc_stream[triu_indices[0], triu_indices[1], :]
+    else:
+        fc_stream = dfc_stream
+
+    n_frames = fc_stream.shape[1]
+    tau_arr = np.atleast_1d(np.asarray(tau_range, dtype=int))
+    if tau_arr.size == 0:
+        tau_arr = np.array([0], dtype=int)
+
+    tau_max = int(tau_arr.max())
+    indices_max = n_frames - (vstep + tau_max + int(time_offset))
+    if indices_max <= 1:
+        raise ValueError("Not enough frames for given vstep/tau_range/time_offset")
+    base = np.arange(0, indices_max, 1)
+
+    # Build FC1/FC2 index sequences per tau (legacy slicing)
+    fc1_idx = []
+    fc2_idx = []
+    for tau in tau_arr:
+        fc1_idx.append(base[:-1])
+        fc2_idx.append(base[1:] + int(tau) + int(time_offset) + vstep - 1)
+
+    n_speeds = (len(base) - 1) * tau_arr.size
+    # Extract matrices
+    fc1 = fc_stream[:, np.array(fc1_idx).flatten()]
+    fc2 = fc_stream[:, np.array(fc2_idx).flatten()]
+
+    if return_fc2:
+        idx = np.empty(n_speeds, dtype=int)
+        idx[:] = (np.array(fc2_idx).flatten()).astype(int)
+        return idx
+
+    if method == "pearson":
+        speeds = pearson_speed_vectorized(fc1, fc2)
+    elif method == "spearman":
+        speeds = spearman_speed(fc1, fc2)
+    else:  # cosine
+        speeds = cosine_speed_vectorized(fc1, fc2)
+
+    speeds = np.clip(speeds, 0.0, 2.0)
+    # reshape to (len(tau_range), -1)
+    return speeds.reshape(tau_arr.size, -1)
+
+# %%
 # def dfc_speed_series(ts, window_parameter, lag=1, tau=3, get_speed_dist=False):
 def dfc_speed_oversampled_series(
     ts, window_parameter, lag=1, tau=3, min_tau_zero=False, get_speed_dist=False
