@@ -292,7 +292,20 @@ def main():
         choices=["windows"],
         help="Parallelization scope; currently supports 'windows' (within each region).",
     )
+    ap.add_argument("--print-args", action="store_true", help="Print effective arguments (including defaults applied) and continue.")
+    ap.add_argument("--show-defaults", action="store_true", help="Print all default values and exit.")
+    # Capture defaults before parsing CLI args
+    _defaults = ap.parse_args([])
     args = ap.parse_args()
+    if args.show_defaults:
+        print("Default arguments:")
+        for k, v in sorted(vars(_defaults).items()):
+            print(f"  --{k.replace('_','-')}: {v}")
+        return
+    if args.print_args:
+        print("Effective arguments:")
+        for k, v in sorted(vars(args).items()):
+            print(f"  {k} = {v}")
 
     # q
     q = [float(s) for s in args.q.split(",") if s.strip()]

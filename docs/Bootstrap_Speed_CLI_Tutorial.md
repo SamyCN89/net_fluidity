@@ -56,22 +56,58 @@ Outputs (now under `scripts/reports/<outdir>/`):
 - `scripts/reports/<outdir>/speed_bootstrap_quantiles.csv`
 - `scripts/reports/<outdir>/speed_bootstrap_diffs.csv`
 
-## 3) With Plots and Grids
+## 3) Plots and Grids (what you get and how to tune them)
+
+Command example:
 
 ```bash
 python scripts/bootstrap_speed_groups_cli.py \
   --tr 500 --subset regions500 --tau-index 0 \
   --pool-threshold median --pool-all \
-  --plot --grid --grid-cols 2 --progress \
-  --jobs 4 --parallel-scope windows \
+  --plot --grid --grid-cols 2 --plot-format png \
+  --progress --jobs 4 --parallel-scope windows \
   --outdir j500_t0 --seed 123
 ```
 
-Figures go to `scripts/reports/<outdir>/figs[/<subset>]/...`.
+Where the figures go
+- Saved under `scripts/reports/<outdir>/figs[/<subset>]/`.
+- File naming and types:
+  - Per‑window group quantiles: `quantiles_<region>_win<W>.<fmt>`
+  - Per‑window pairwise diffs: `diffs_<region>_win<W>_<A>_vs_<B>.<fmt>`
+  - Per‑window grid (if `--grid`): `grid_<region>_win<W>.<fmt>`
+  - Pools (“short”, “long”, and optionally “all”):
+    - Group quantiles: `quantiles_<region>_pool-<name>.<fmt>`
+    - Pairwise diffs: `diffs_<region>_pool-<name>_<A>_vs_<B>.<fmt>`
 
-Progress bars: add `--progress` (requires `tqdm`).
+What each plot shows
+- Group quantiles (quantiles_*):
+  - X‑axis: group levels (e.g., WT‑VEH, WT‑LCTB92, ...).
+  - Whiskers: bootstrap percentile spreads — inner by default is 5–95%; thin caps indicate outer 1–99% when available.
+  - Point: the median (q=50) per group; an errorbar overlays the median’s bootstrap CI.
+  - You control which percentiles are computed via `--q` (default `1,5,50,95,99`).
 
-Parallel processing: use `--jobs N` (default 1) and `--parallel-scope windows`.
+- Pairwise diffs (diffs_*):
+  - X‑axis: percentiles requested via `--q` (e.g., 1, 5, 50, 95, 99).
+  - Y‑axis: percentile(A) − percentile(B).
+  - Zero line is drawn; errorbars show the bootstrap CI for each percentile.
+  - Markers: filled = significant (CI excludes 0); open = not significant.
+  - Pairs are provided via `--pairs` (see defaults below).
+
+- Grids (grid_*):
+  - A compact arrangement of all pairwise diffs panels for a given window/pool.
+  - Columns controlled by `--grid-cols` (default 2).
+
+Tuning plotting behavior
+- `--plot-format`: `png` (default), `pdf`, `svg`.
+- `--grid-cols`: layout columns for grid plots (default 2).
+- `--progress`: shows tqdm progress bars.
+- `--load-cache`: skips saving a figure if the file already exists.
+- `--q`: changes the percentiles shown in both quantiles and diffs plots.
+- `--seed`, `--n-boot`, `--ci`: control bootstrap variability and CI width.
+
+Performance tips
+- Use `--jobs N` and `--parallel-scope windows` to parallelize per‑window work within each region.
+- Combine with `--progress` to keep an eye on progress.
 
 ## 4) Custom Groups and Pairs
 
