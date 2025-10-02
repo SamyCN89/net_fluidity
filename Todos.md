@@ -18,6 +18,10 @@ This is a checkpoint of what’s done and what’s next so we can resume quickly
 - Validation:
   - Re-run TR=400/500 flows (dfc → speed → plots) with package imports
   - A/B shared vs legacy engine across multiple windows; keep comparator logs
+ - Tutorial/docs cleanup (this task):
+   - Clean and lock `julien_data/USAGE_TUTORIAL.md` to Phase 3 (done: region listing, shared engine example, notebook path note)
+   - Cross-link root README to Phase 3 usage and scripts (pending)
+   - Sanity run and drop a couple of example figures under `fig/<dataset>/speed/` (pending)
 
 ## Phase 4 — Flip defaults + deprecate
 - Change default `--engine` to `shared` in `3_dfc_speed_test_v6.py` after A/B parity on TR=400/500

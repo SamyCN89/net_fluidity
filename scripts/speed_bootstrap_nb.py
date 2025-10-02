@@ -183,7 +183,8 @@ def bootstrap_per_animal(per_animal: list[np.ndarray], n_boot: int = 2000, stat:
 def bootstrap_overall(per_animal: list[np.ndarray], n_boot: int = 2000, stat: str = 'median',
                       ci: float = 95.0, seed: int = 0) -> tuple[float, float, float, int]:
     """Bootstrap pooled (sample‑weighted) CI across all animals; returns (est, lo, hi, n)."""
-    pooled = np.concatenate([a for a in per_animal if a.size > 0]) if per_animal else np.array([])
+    nonempty = [a for a in per_animal if getattr(a, 'size', 0) > 0]
+    pooled = np.concatenate(nonempty) if nonempty else np.array([])
     if pooled.size == 0:
         return (np.nan, np.nan, np.nan, 0)
     est, lo, hi = bootstrap_ci_1d(pooled, n_boot=n_boot, stat=stat, ci=ci, random_state=seed + 12345)
@@ -199,7 +200,8 @@ def bootstrap_by_group(per_animal: list[np.ndarray], groups: dict, n_boot: int =
     out = {}
     for g, idxs in groups.items():
         vals = [per_animal[int(i)] for i in idxs if int(i) < len(per_animal)]
-        pooled = np.concatenate([v for v in vals if v.size]) if vals else np.array([])
+        nonempty = [v for v in vals if getattr(v, 'size', 0) > 0]
+        pooled = np.concatenate(nonempty) if nonempty else np.array([])
         if pooled.size == 0:
             out[g] = (np.nan, np.nan, np.nan, 0)
         else:
@@ -220,7 +222,8 @@ def bootstrap_quantiles_by_group(per_animal: list[np.ndarray], groups: dict,
     out: dict = {}
     for g, idxs in groups.items():
         vals = [per_animal[int(i)] for i in idxs if int(i) < len(per_animal)]
-        pooled = np.concatenate([v for v in vals if v.size]) if vals else np.array([])
+        nonempty = [v for v in vals if getattr(v, 'size', 0) > 0]
+        pooled = np.concatenate(nonempty) if nonempty else np.array([])
         res = bootstrap_quantiles_1d(
             pooled, q=q, n_boot=n_boot, ci=ci, random_state=seed + (hash(g) % 9973)
         )
@@ -231,7 +234,8 @@ def bootstrap_quantiles_by_group(per_animal: list[np.ndarray], groups: dict,
 def pooled_from_indices(per_animal: list[np.ndarray], idxs: Iterable[int]) -> np.ndarray:
     """Concatenate values for a set of animal indices, skipping empties."""
     vals = [per_animal[int(i)] for i in idxs if int(i) < len(per_animal)]
-    return np.concatenate([v for v in vals if v.size]) if vals else np.array([])
+    nonempty = [v for v in vals if getattr(v, 'size', 0) > 0]
+    return np.concatenate(nonempty) if nonempty else np.array([])
 
 
 def bootstrap_stat_diff(x: np.ndarray, y: np.ndarray, stat: str = 'median', n_boot: int = 2000,

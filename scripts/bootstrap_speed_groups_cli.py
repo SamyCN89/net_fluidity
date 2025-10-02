@@ -193,6 +193,7 @@ def main():
     ap.add_argument("--plot-format", type=str, default="png", choices=["png", "pdf", "svg"], help="Image format.")
     ap.add_argument("--grid", action="store_true", help="Also save a grid figure aggregating all pairwise diffs per window/pool.")
     ap.add_argument("--grid-cols", type=int, default=2, help="Max columns in grid layout for pairwise diffs.")
+    ap.add_argument("--show-tau", action="store_true", help="Print tau range from metadata and exit.")
     args = ap.parse_args()
 
     q = [float(s) for s in args.q.split(",") if s.strip()]
@@ -202,6 +203,16 @@ def main():
     # Load context/data
     data = get_context(tr=args.tr)
     speed_root = Path(data.paths["speed"])  # type: ignore[index]
+    # Validate tau index against metadata (tau_count = tau + 1)
+    tau_count = int(getattr(data, 'tau', 0)) + 1
+    if args.show_tau:
+        print(f"tau (from metadata) = {getattr(data, 'tau', 0)}")
+        print(f"tau_count (valid indices) = {tau_count} -> indices 0..{tau_count-1}")
+        print("Use --tau-index -1 to pool all taus.")
+        return
+    if args.tau_index >= 0 and args.tau_index >= tau_count:
+        raise ValueError(f"tau-index {args.tau_index} is out of range for tau_count={tau_count}. "
+                         f"Use a value in [0, {tau_count-1}] or -1 to pool all taus.")
     if args.subset:
         speed_root = speed_root / args.subset
     region_dirs = _find_region_folders(speed_root)

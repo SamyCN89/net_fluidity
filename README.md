@@ -24,7 +24,7 @@ Python 3.11 is recommended. Optionally create a virtual environment, then instal
 
 ```bash
 pip install -e shared_code
-``
+```
 
 Optional: environment variables for data paths used by `fun_paths` can be placed in a local `.env` file or your shell. For example:
 
@@ -73,6 +73,27 @@ These scripts generate synthetic data and compare implementations. They do not r
 
 - Prefer the unified `shared_code.fun_dfcspeed.dfc_speed` which supports Pearson/Spearman/cosine and returns optional FC2 streams. Earlier variants exist under `metaconnectivity/` and `julien_data/` for reference and benchmarking.
 
+## Phase 3 Workflow
+
+The Julien dataset flow now has a stabilized Phase 3 path with a thin CLI wrapper, a dataset context, notebook helpers, and a bootstrap CLI.
+
+- Tutorial: see `julien_data/USAGE_TUTORIAL.md` (env, preprocess → streams → speed, notebooks, and bootstrap examples).
+- Compute Speed (wrapper): `python julien_data/src/speed_compute.py --tr 500 --processors -1`
+  - Per‑region outputs: add `--per-region`.
+  - Region selection by labels: `--selected-region-labels "ACC,THAL"` and `--region-mode within|touching`.
+  - Shared engine (parity checks): `--engine shared`.
+- Notebook helpers: `scripts/speed_bootstrap_nb.py`
+  - Load all regions/windows: `load_all_speeds_by_region_nb(...)`
+  - Pool windows: `pool_short_long_nb(...)`
+  - Bootstrap quantiles, diffs, and plotting utilities.
+- Bootstrap CLI (CSV + figures):
+  ```bash
+  python scripts/bootstrap_speed_groups_cli.py \
+    --tr 500 --subset shared --tau-index 0 \
+    --pool-threshold median --pool-all \
+    --plot --grid --grid-cols 2
+  ```
+
 ## Contributing
 
 - Follow `shared_code/SCIENTIFIC_CODING_GUIDELINES.md` for style and scientific computing practices.
@@ -82,4 +103,3 @@ These scripts generate synthetic data and compare implementations. They do not r
 ## Citation
 
 Dynamic Functional Connectivity as a complex random walk: Definitions and the dFCwalk toolbox. Lucas Arbabyazd, Diego Lombardo, Olivier Blin, Mira Didic, Demian Battaglia, Viktor Jirsa. MethodsX (2020) doi: 10.1016/j.mex.2020.101168.
-
