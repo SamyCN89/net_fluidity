@@ -78,6 +78,7 @@ These scripts generate synthetic data and compare implementations. They do not r
 The Julien dataset flow now has a stabilized Phase 3 path with a thin CLI wrapper, a dataset context, notebook helpers, and a bootstrap CLI.
 
 - Tutorial: see `julien_data/USAGE_TUTORIAL.md` (env, preprocess → streams → speed, notebooks, and bootstrap examples).
+- Notebook Tutorial (Bootstrap CLI): `docs/Bootstrap_Speed_CLI_Tutorial.md` (end‑to‑end usage, parameters, outputs, troubleshooting).
 - Compute Speed (wrapper): `python julien_data/src/speed_compute.py --tr 500 --processors -1`
   - Per‑region outputs: add `--per-region`.
   - Region selection by labels: `--selected-region-labels "ACC,THAL"` and `--region-mode within|touching`.
@@ -90,9 +91,18 @@ The Julien dataset flow now has a stabilized Phase 3 path with a thin CLI wrappe
   ```bash
   python scripts/bootstrap_speed_groups_cli.py \
     --tr 500 --subset shared --tau-index 0 \
+    --n-boot 2000 --seed 0 --ci 95 \
     --pool-threshold median --pool-all \
-    --plot --grid --grid-cols 2
+    --plot --grid --grid-cols 2 --progress \
+    --jobs 4 --parallel-scope windows \
+    --outdir j500_t0 --load-cache
   ```
+  - Outputs: CSVs and figures under `scripts/reports/<outdir>/...`.
+
+## Docs
+
+- Usage Tutorial: `julien_data/USAGE_TUTORIAL.md`
+- Bootstrap Speed CLI Tutorial: `docs/Bootstrap_Speed_CLI_Tutorial.md`
 
 ## Contributing
 

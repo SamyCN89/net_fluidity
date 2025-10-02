@@ -40,8 +40,9 @@ python scripts/bootstrap_speed_groups_cli.py --tr 500 --subset regions500 --show
 ```bash
 python scripts/bootstrap_speed_groups_cli.py \
   --tr 500 --subset regions500 --tau-index 0 \
+  --n-boot 2000 --seed 0 --ci 95 \
   --pool-threshold median \
-  --outdir reports
+  --outdir j500_t0
 ```
 
 Parameters used:
@@ -51,9 +52,9 @@ Parameters used:
 - percentiles: `--q 1,5,50,95,99` (default).
 - pool threshold: `median` splits windows into short (<= median) and long (> median); per‑window rows are still produced, pools add extra rows.
 
-Outputs:
-- `reports/speed_bootstrap_quantiles.csv`
-- `reports/speed_bootstrap_diffs.csv`
+Outputs (now under `scripts/reports/<outdir>/`):
+- `scripts/reports/<outdir>/speed_bootstrap_quantiles.csv`
+- `scripts/reports/<outdir>/speed_bootstrap_diffs.csv`
 
 ## 3) With Plots and Grids
 
@@ -61,13 +62,16 @@ Outputs:
 python scripts/bootstrap_speed_groups_cli.py \
   --tr 500 --subset regions500 --tau-index 0 \
   --pool-threshold median --pool-all \
-  --plot --grid --grid-cols 2 \
-  --outdir reports
+  --plot --grid --grid-cols 2 --progress \
+  --jobs 4 --parallel-scope windows \
+  --outdir j500_t0 --seed 123
 ```
 
-Figures go to `fig/<dataset>/speed/<subset>/...` (or `reports/figs` fallback).
+Figures go to `scripts/reports/<outdir>/figs[/<subset>]/...`.
 
-Progress bars (optional): add `--progress` (requires `tqdm`).
+Progress bars: add `--progress` (requires `tqdm`).
+
+Parallel processing: use `--jobs N` (default 1) and `--parallel-scope windows`.
 
 ## 4) Custom Groups and Pairs
 
@@ -81,18 +85,103 @@ python scripts/bootstrap_speed_groups_cli.py \
 
 ## 5) Read CSV Outputs
 
+Two CSVs are written to the output directory (default `reports/`):
+
+- `speed_bootstrap_quantiles.csv`: per‑group percentile estimates and CIs.
+  - Columns:
+    - `region`: region label (or `all` if not per‑region).
+    - `window`: window size (int), or pool label (`short`, `long`, `all`).
+    - `group`: group key (scalar or tuple printed as `(geno, treat)` depending on `--group-cols`).
+    - `q`: percentile requested (e.g., 1, 5, 50, 95, 99).
+    - `point`: percentile estimate.
+    - `lo`, `hi`: bootstrap confidence interval bounds (CI set by `--ci`).
+    - `n`: total pooled sample count (after filtering NaNs), across all animals in the group.
+
+- `speed_bootstrap_diffs.csv`: per‑pair percentile differences with CIs and significance.
+  - Columns:
+    - `region`, `window`: as above.
+    - `A`, `B`: group keys compared (A − B).
+    - `q`: percentile compared.
+    - `diff`: difference of percentiles, i.e., `percentile(A) − percentile(B)`.
+    - `lo`, `hi`: bootstrap CI for the difference.
+    - `significant`: boolean; true when the CI does not cross zero.
+    - `n_a`, `n_b`: pooled sample sizes used for A and B.
+
+Reading and basic inspection:
+
 ```python
 import pandas as pd
-qdf = pd.read_csv('reports/speed_bootstrap_quantiles.csv')
-ddf = pd.read_csv('reports/speed_bootstrap_diffs.csv')
-sorted(qdf['region'].unique())[:5], sorted(qdf['window'].unique(), key=str)[:5]
+qdf = pd.read_csv('scripts/reports/j500_t0/speed_bootstrap_quantiles.csv')
+ddf = pd.read_csv('scripts/reports/j500_t0/speed_bootstrap_diffs.csv')
+
+# Unique regions and windows/pools present
+print(sorted(qdf['region'].unique())[:5])
+print(sorted(qdf['window'].unique(), key=str)[:8])
+
+# Focus on median (q=50) for a specific region and pool
+sub_q = qdf[(qdf['region'] == 'ACC') & (qdf['q'] == 50) & (qdf['window'].isin(['short', 'long']))]
+print(sub_q.head())
+
+# Pivot to compare median by group across windows (numerical windows only)
+sub_win = qdf[(qdf['region'] == 'ACC') & (qdf['q'] == 50) & (qdf['window'].apply(lambda x: str(x).isdigit()))]
+pivot = sub_win.pivot_table(index='window', columns='group', values='point')
+print(pivot.head())
+
+# Significant differences at a given window for a given pair and percentile
+pair = (("WT","VEH"), ("WT","LCTB92"))
+mask = (
+    (ddf['region'] == 'ACC') &
+    (ddf['window'] == 9) &
+    (ddf['A'] == str(pair[0])) &
+    (ddf['B'] == str(pair[1])) &
+    (ddf['q'] == 50)
+)
+print(ddf[mask][['diff','lo','hi','significant','n_a','n_b']])
 ```
+
+Interpretation tips:
+- If `n` (or `n_a`/`n_b`) is 0, that group/pair had no valid values (e.g., empty tau or filters).
+- A positive `diff` means group A has a higher percentile than group B.
+- `significant=True` indicates the CI excludes zero; always check magnitude and direction.
 
 ## 6) Troubleshooting
 
 - Tau index: run `--show-tau` first or use `--tau-index -1` to pool all taus.
 - Empty groups/windows: rows with `n=0` and NaN CIs; plots skip gracefully.
 - Subset path: ensure it points to per‑window NPZs in `regions-<label>/` or `all/`.
+
+## 6.1) What bootstrap is used?
+
+Non‑parametric bootstrapping with replacement over pooled samples:
+
+```python
+def bootstrap_ci_1d(x, n_boot=2000, stat='median', ci=95.0, random_state=0):
+    x = np.asarray(x, float)
+    x = x[~np.isnan(x)]
+    if stat == 'median':
+        stat_fn = lambda a: float(np.median(a))
+    elif stat == 'mean':
+        stat_fn = lambda a: float(np.mean(a))
+    elif stat.startswith('q'):
+        q = float(stat[1:]) / 100.0
+        stat_fn = lambda a: float(np.quantile(a, q))
+    est = stat_fn(x)
+    rng = np.random.default_rng(random_state)
+    boots = [stat_fn(x[rng.choice(x.size, x.size, replace=True)]) for _ in range(n_boot)]
+    alpha = (100.0 - ci) / 2.0
+    lo = np.percentile(boots, alpha)
+    hi = np.percentile(boots, 100.0 - alpha)
+    return est, lo, hi
+```
+
+- Group percentiles `bootstrap_quantiles_by_group` bootstrap pooled per‑group samples to estimate requested percentiles and CIs.
+- Pairwise differences `bootstrap_quantile_diffs` resample A and B independently, compute percentile(A) − percentile(B) per resample, and form CIs.
+
+Key parameters:
+- `--n-boot`: number of bootstrap resamples (default 2000).
+- `--seed`: base random seed (deterministic runs).
+- `--ci`: confidence level in percent (default 95).
+- `--q`: which percentiles to compute (default 1,5,50,95,99).
 
 ## 7) End‑to‑End Example
 
@@ -102,16 +191,19 @@ python scripts/bootstrap_speed_groups_cli.py --tr 500 --subset regions500 --show
 python scripts/bootstrap_speed_groups_cli.py \
   --tr 500 --subset regions500 --tau-index 0 \
   --pool-threshold median --pool-all \
-  --plot --grid --grid-cols 2 \
-  --progress \
-  --outdir reports
+  --plot --grid --grid-cols 2 --progress \
+  --jobs 4 --parallel-scope windows \
+  --outdir j500_t0 --seed 123
+
+## 8) How does "-all" pooling work?
+
+When you pass `--pool-all`, the CLI concatenates raw speed samples across all windows for each animal (per region) and then runs the bootstrap on the pooled samples. It does NOT pool bootstrap summaries; it pools the underlying samples first, which preserves sample‑level variability across windows.
 ```
 
-## 8) Possible Additions
+## 9) Possible Additions
 
 - Filtering: `--include-regions`, `--window-min/--window-max`.
 - Statistics: `--stat` selector, interaction effects export, FDR marking.
 - Metadata: write a JSON sidecar describing run parameters and discovered windows.
 - UX: `--dry-run` to list work units; richer progress/reporting.
 - Visualization: theme/size options; default SVG export.
-

@@ -38,6 +38,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # safe headless plotting
 import matplotlib.pyplot as plt
+from joblib import Parallel, delayed
 try:
     from tqdm import tqdm
 except Exception:  # pragma: no cover
@@ -180,6 +181,88 @@ def _plot_pairs_grid(region_label: str, win_label: str,
     plt.close(fig)
 
 
+def _process_window_and_return(
+    region_label: str,
+    win: int,
+    npz: Path,
+    tau_index: int,
+    groups_map: Dict,
+    groups_to_compare: List[Tuple[Tuple[str, str], Tuple[str, str]]],
+    q: List[float],
+    n_boot: int,
+    ci: float,
+    seed: int,
+    plot: bool,
+    plot_format: str,
+    fig_root: Path,
+    load_cache: bool,
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]], Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict]]:
+    def _sanitize(s: str) -> str:
+        return (
+            str(s)
+            .replace("/", "-")
+            .replace(" ", "_")
+            .replace(",", "-")
+            .replace("|", "-")
+            .replace("(", "").replace(")", "")
+        )
+
+    quant_rows: List[Dict[str, object]] = []
+    diff_rows: List[Dict[str, object]] = []
+    window_pairs_qd: Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict] = {}
+
+    per_animal = load_per_animal_from_npz(npz, tau_index=None if tau_index < 0 else tau_index)
+    qa = bootstrap_quantiles_by_group(per_animal, groups_map, q=q, n_boot=n_boot, ci=ci, seed=seed)
+    for gk, res in qa.items():
+        for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
+            quant_rows.append({
+                "region": region_label,
+                "window": int(win),
+                "group": gk,
+                "q": float(qi),
+                "point": float(pt),
+                "lo": float(lo),
+                "hi": float(hi),
+                "n": int(res["n"]),
+            })
+    if plot:
+        ax = plot_group_quantiles(qa, title=f"{region_label} | win={win}")
+        fig_path = fig_root / f"quantiles_{_sanitize(region_label)}_win{win}.{plot_format}"
+        if not (load_cache and fig_path.exists()):
+            ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+        plt.close(ax.figure)
+
+    for (A, B) in groups_to_compare:
+        if A not in groups_map or B not in groups_map:
+            continue
+        qd = bootstrap_quantile_diffs_by_keys(per_animal, groups_map, A, B, q=q, n_boot=n_boot, ci=ci, seed=seed)
+        window_pairs_qd[(A, B)] = qd
+        for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
+            diff_rows.append({
+                "region": region_label,
+                "window": int(win),
+                "A": A,
+                "B": B,
+                "q": float(qi),
+                "diff": float(pt),
+                "lo": float(lo),
+                "hi": float(hi),
+                "significant": bool(sig),
+                "n_a": int(qd.get("n_x", 0)),
+                "n_b": int(qd.get("n_y", 0)),
+            })
+        if plot:
+            ax = plot_quantile_diffs(qd, title=f"{region_label} | win={win} | {A}-{B}")
+            a_str = _sanitize(A)
+            b_str = _sanitize(B)
+            fig_path = fig_root / f"diffs_{_sanitize(region_label)}_win{win}_{a_str}_vs_{b_str}.{plot_format}"
+            if not (load_cache and fig_path.exists()):
+                ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+            plt.close(ax.figure)
+
+    return quant_rows, diff_rows, window_pairs_qd
+
+
 def main():
     ap = argparse.ArgumentParser(description="Bootstrap speed percentiles per group/region/window.")
     ap.add_argument("--tr", type=int, default=500, help="Select metadata by total_tr (e.g., 500).")
@@ -188,19 +271,30 @@ def main():
     ap.add_argument("--group-cols", type=str, default="genotype,treatment", help="Grouping columns, comma-separated.")
     ap.add_argument("--q", type=str, default="1,5,50,95,99", help="Percentiles to bootstrap, comma-separated.")
     ap.add_argument("--pairs", type=str, default="(WT,VEH)-(WT,LCTB92);(Dp1Yey,VEH)-(Dp1Yey,LCTB92);(WT,VEH)-(Dp1Yey,VEH);(WT,LCTB92)-(Dp1Yey,LCTB92)", help="Pairs A-B; semicolon-separated.")
-    ap.add_argument("--n-boot", type=int, default=2000, help="Bootstrap resamples.")
+    ap.add_argument("--n-boot", type=int, default=2000, help="Bootstrap resamples. Default 2000.")
+    ap.add_argument("--seed", type=int, default=0, help="Base random seed for bootstrapping.")
     ap.add_argument("--ci", type=float, default=95.0, help="Confidence level (percent).")
     ap.add_argument("--pool-threshold", type=str, default=None, help="Pool windows into short/long by 'median' or integer cutoff.")
     ap.add_argument("--pool-all", action="store_true", help="Also add an 'all' pool combining all windows.")
-    ap.add_argument("--outdir", type=str, default="reports", help="Output directory for CSV tables.")
+    ap.add_argument("--outdir", type=str, default="bootstrap", help="Subfolder under scripts/reports for outputs.")
     ap.add_argument("--plot", action="store_true", help="Save plots for per-group quantiles and pairwise diffs.")
     ap.add_argument("--plot-format", type=str, default="png", choices=["png", "pdf", "svg"], help="Image format.")
     ap.add_argument("--grid", action="store_true", help="Also save a grid figure aggregating all pairwise diffs per window/pool.")
     ap.add_argument("--grid-cols", type=int, default=2, help="Max columns in grid layout for pairwise diffs.")
     ap.add_argument("--show-tau", action="store_true", help="Print tau range from metadata and exit.")
     ap.add_argument("--progress", action="store_true", help="Show progress bars for regions/windows/pools (requires tqdm).")
+    ap.add_argument("--load-cache", action="store_true", help="Reuse existing outputs if present; skip recomputation/plots where possible.")
+    ap.add_argument("--jobs", type=int, default=1, help="Parallel jobs for per-window processing (1 = serial).")
+    ap.add_argument(
+        "--parallel-scope",
+        type=str,
+        default="windows",
+        choices=["windows"],
+        help="Parallelization scope; currently supports 'windows' (within each region).",
+    )
     args = ap.parse_args()
 
+    # q
     q = [float(s) for s in args.q.split(",") if s.strip()]
     groups_to_compare = _parse_pairs(args.pairs)
     group_cols = [s.strip() for s in args.group_cols.split(",") if s.strip()]
@@ -225,15 +319,24 @@ def main():
     # Build grouping mapping from cognitive data
     groups_map = build_groups_from_columns(data.cog_data_filtered, group_cols)
 
-    # Prepare outputs
-    outdir = Path(args.outdir)
+    # Prepare outputs under scripts/reports/<outdir>
+    script_dir = Path(__file__).resolve().parent
+    reports_root = script_dir / "reports"
+    outdir = reports_root / (args.outdir or "bootstrap")
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Figure output root (prefer dataset figures path)
-    fig_root = Path(data.paths.get("f_speed", outdir / "figs"))  # type: ignore[attr-defined]
+    # Figures under the same outdir
+    fig_root = outdir / "figs"
     if args.subset:
         fig_root = fig_root / str(args.subset)
     fig_root.mkdir(parents=True, exist_ok=True)
+
+    # CSV paths
+    q_path = outdir / "speed_bootstrap_quantiles.csv"
+    d_path = outdir / "speed_bootstrap_diffs.csv"
+    if args.load_cache and q_path.exists() and d_path.exists() and not args.plot:
+        print(f"[cache] Found existing outputs: {q_path} and {d_path}. Skipping.")
+        return
     quantiles_rows: List[Dict[str, object]] = []
     diffs_rows: List[Dict[str, object]] = []
 
@@ -259,71 +362,91 @@ def main():
         pools = _pool_windows_indices(windows, args.pool_threshold)
 
         # Per-window processing
-        win_iter = win_files
-        if args.progress and tqdm is not None:
-            win_iter = tqdm(win_files, desc=f"{region_label} windows", unit="win", leave=False)
-        for win, npz in win_iter:
-            per_animal = load_per_animal_from_npz(npz, tau_index=None if args.tau_index < 0 else args.tau_index)
-            # Per-group quantiles
-            qa = bootstrap_quantiles_by_group(per_animal, groups_map, q=q, n_boot=args.n_boot, ci=args.ci)
-            for gk, res in qa.items():
-                for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
-                    quantiles_rows.append({
-                        "region": region_label,
-                        "window": int(win),
-                        "group": gk,
-                        "q": float(qi),
-                        "point": float(pt),
-                        "lo": float(lo),
-                        "hi": float(hi),
-                        "n": int(res["n"]),
-                    })
-            if args.plot:
-                # Plot per-group quantiles for this window
-                try:
-                    from scripts.speed_bootstrap_nb import plot_group_quantiles
-                except ModuleNotFoundError:
-                    from speed_bootstrap_nb import plot_group_quantiles  # type: ignore
-                ax = plot_group_quantiles(qa, title=f"{region_label} | win={win}")
-                fig_path = fig_root / f"quantiles_{_sanitize(region_label)}_win{win}.{args.plot_format}"
-                ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
-                plt.close(ax.figure)
-            # Pairwise diffs
-            window_pairs_qd: Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict] = {}
-            for (A, B) in groups_to_compare:
-                if A not in groups_map or B not in groups_map:
-                    continue
-                qd = bootstrap_quantile_diffs_by_keys(per_animal, groups_map, A, B, q=q, n_boot=args.n_boot, ci=args.ci)
-                window_pairs_qd[(A, B)] = qd
-                for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
-                    diffs_rows.append({
-                        "region": region_label,
-                        "window": int(win),
-                        "A": A,
-                        "B": B,
-                        "q": float(qi),
-                        "diff": float(pt),
-                        "lo": float(lo),
-                        "hi": float(hi),
-                        "significant": bool(sig),
-                        "n_a": int(qd.get("n_x", 0)),
-                        "n_b": int(qd.get("n_y", 0)),
-                    })
+        if args.jobs > 1 and args.parallel_scope == "windows":
+            tasks = win_files
+            results = Parallel(n_jobs=args.jobs)(
+                delayed(_process_window_and_return)(
+                    region_label, w, p, args.tau_index, groups_map, groups_to_compare, q,
+                    args.n_boot, args.ci, args.seed, args.plot, args.plot_format, fig_root, args.load_cache
+                )
+                for (w, p) in tasks
+            )
+            for idx, (qr, dr, window_pairs_qd) in enumerate(results):
+                quantiles_rows.extend(qr)
+                diffs_rows.extend(dr)
+                if args.plot and args.grid and window_pairs_qd:
+                    w = tasks[idx][0]
+                    grid_path = fig_root / f"grid_{_sanitize(region_label)}_win{w}.{args.plot_format}"
+                    _plot_pairs_grid(region_label, f"win={w}", window_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+        else:
+            win_iter = win_files
+            if args.progress and tqdm is not None:
+                win_iter = tqdm(win_files, desc=f"{region_label} windows", unit="win", leave=False)
+            for win, npz in win_iter:
+                per_animal = load_per_animal_from_npz(npz, tau_index=None if args.tau_index < 0 else args.tau_index)
+                # Per-group quantiles
+                qa = bootstrap_quantiles_by_group(per_animal, groups_map, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
+                for gk, res in qa.items():
+                    for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
+                        quantiles_rows.append({
+                            "region": region_label,
+                            "window": int(win),
+                            "group": gk,
+                            "q": float(qi),
+                            "point": float(pt),
+                            "lo": float(lo),
+                            "hi": float(hi),
+                            "n": int(res["n"]),
+                        })
                 if args.plot:
+                    # Plot per-group quantiles for this window
                     try:
-                        from scripts.speed_bootstrap_nb import plot_quantile_diffs
+                        from scripts.speed_bootstrap_nb import plot_group_quantiles
                     except ModuleNotFoundError:
-                        from speed_bootstrap_nb import plot_quantile_diffs  # type: ignore
-                    ax = plot_quantile_diffs(qd, title=f"{region_label} | win={win} | {A}-{B}")
-                    a_str = _sanitize(A)
-                    b_str = _sanitize(B)
-                    fig_path = fig_root / f"diffs_{_sanitize(region_label)}_win{win}_{a_str}_vs_{b_str}.{args.plot_format}"
-                    ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+                        from speed_bootstrap_nb import plot_group_quantiles  # type: ignore
+                    ax = plot_group_quantiles(qa, title=f"{region_label} | win={win}")
+                    fig_path = fig_root / f"quantiles_{_sanitize(region_label)}_win{win}.{args.plot_format}"
+                    if not (args.load_cache and fig_path.exists()):
+                        ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
                     plt.close(ax.figure)
-            # Save grid per window
-            if args.plot and args.grid and window_pairs_qd:
-                grid_path = fig_root / f"grid_{_sanitize(region_label)}_win{win}.{args.plot_format}"
-                _plot_pairs_grid(region_label, f"win={win}", window_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                # Pairwise diffs
+                window_pairs_qd: Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict] = {}
+                for (A, B) in groups_to_compare:
+                    if A not in groups_map or B not in groups_map:
+                        continue
+                    qd = bootstrap_quantile_diffs_by_keys(per_animal, groups_map, A, B, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
+                    window_pairs_qd[(A, B)] = qd
+                    for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
+                        diffs_rows.append({
+                            "region": region_label,
+                            "window": int(win),
+                            "A": A,
+                            "B": B,
+                            "q": float(qi),
+                            "diff": float(pt),
+                            "lo": float(lo),
+                            "hi": float(hi),
+                            "significant": bool(sig),
+                            "n_a": int(qd.get("n_x", 0)),
+                            "n_b": int(qd.get("n_y", 0)),
+                        })
+                    if args.plot:
+                        try:
+                            from scripts.speed_bootstrap_nb import plot_quantile_diffs
+                        except ModuleNotFoundError:
+                            from speed_bootstrap_nb import plot_quantile_diffs  # type: ignore
+                        ax = plot_quantile_diffs(qd, title=f"{region_label} | win={win} | {A}-{B}")
+                        a_str = _sanitize(A)
+                        b_str = _sanitize(B)
+                        fig_path = fig_root / f"diffs_{_sanitize(region_label)}_win{win}_{a_str}_vs_{b_str}.{args.plot_format}"
+                        if not (args.load_cache and fig_path.exists()):
+                            ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+                        plt.close(ax.figure)
+                # Save grid per window
+                if args.plot and args.grid and window_pairs_qd:
+                    grid_path = fig_root / f"grid_{_sanitize(region_label)}_win{win}.{args.plot_format}"
+                    if not (args.load_cache and grid_path.exists()):
+                        _plot_pairs_grid(region_label, f"win={win}", window_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
 
         # Window pools (short/long)
         if pools:
@@ -340,7 +463,7 @@ def main():
                     continue
                 per_animals = [load_per_animal_from_npz(by_win[w], tau_index=None if args.tau_index < 0 else args.tau_index) for w in pool_windows if w in by_win]
                 pooled = _concat_per_animal(per_animals)
-                qa = bootstrap_quantiles_by_group(pooled, groups_map, q=q, n_boot=args.n_boot, ci=args.ci)
+                qa = bootstrap_quantiles_by_group(pooled, groups_map, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
                 for gk, res in qa.items():
                     for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
                         quantiles_rows.append({
@@ -360,13 +483,14 @@ def main():
                         from speed_bootstrap_nb import plot_group_quantiles  # type: ignore
                     ax = plot_group_quantiles(qa, title=f"{region_label} | pool={pool_name}")
                     fig_path = fig_root / f"quantiles_{_sanitize(region_label)}_pool-{pool_name}.{args.plot_format}"
-                    ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+                    if not (args.load_cache and fig_path.exists()):
+                        ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
                     plt.close(ax.figure)
                 pool_pairs_qd: Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict] = {}
                 for (A, B) in groups_to_compare:
                     if A not in groups_map or B not in groups_map:
                         continue
-                    qd = bootstrap_quantile_diffs_by_keys(pooled, groups_map, A, B, q=q, n_boot=args.n_boot, ci=args.ci)
+                    qd = bootstrap_quantile_diffs_by_keys(pooled, groups_map, A, B, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
                     pool_pairs_qd[(A, B)] = qd
                     for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
                         diffs_rows.append({
@@ -391,15 +515,15 @@ def main():
                         a_str = _sanitize(A)
                         b_str = _sanitize(B)
                         fig_path = fig_root / f"diffs_{_sanitize(region_label)}_pool-{pool_name}_{a_str}_vs_{b_str}.{args.plot_format}"
-                        ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+                        if not (args.load_cache and fig_path.exists()):
+                            ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
                         plt.close(ax.figure)
                 if args.plot and args.grid and pool_pairs_qd:
                     grid_path = fig_root / f"grid_{_sanitize(region_label)}_pool-{pool_name}.{args.plot_format}"
-                    _plot_pairs_grid(region_label, f"pool={pool_name}", pool_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                    if not (args.load_cache and grid_path.exists()):
+                        _plot_pairs_grid(region_label, f"pool={pool_name}", pool_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
 
     # Write CSVs
-    q_path = outdir / "speed_bootstrap_quantiles.csv"
-    d_path = outdir / "speed_bootstrap_diffs.csv"
     if quantiles_rows:
         q_cols = ["region", "window", "group", "q", "point", "lo", "hi", "n"]
         with q_path.open("w", newline="") as f:
