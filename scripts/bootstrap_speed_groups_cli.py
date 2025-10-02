@@ -38,6 +38,10 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # safe headless plotting
 import matplotlib.pyplot as plt
+try:
+    from tqdm import tqdm
+except Exception:  # pragma: no cover
+    tqdm = None  # fallback if tqdm is not installed
 
 # Robust imports whether run from repo root or from scripts/ directory
 try:
@@ -194,6 +198,7 @@ def main():
     ap.add_argument("--grid", action="store_true", help="Also save a grid figure aggregating all pairwise diffs per window/pool.")
     ap.add_argument("--grid-cols", type=int, default=2, help="Max columns in grid layout for pairwise diffs.")
     ap.add_argument("--show-tau", action="store_true", help="Print tau range from metadata and exit.")
+    ap.add_argument("--progress", action="store_true", help="Show progress bars for regions/windows/pools (requires tqdm).")
     args = ap.parse_args()
 
     q = [float(s) for s in args.q.split(",") if s.strip()]
@@ -242,7 +247,10 @@ def main():
             .replace("(", "").replace(")", "")
         )
 
-    for region_dir in region_dirs:
+    reg_iter = region_dirs
+    if args.progress and tqdm is not None:
+        reg_iter = tqdm(region_dirs, desc="Regions", unit="region")
+    for region_dir in reg_iter:
         region_label = region_dir.name.replace("regions-", "") if region_dir.name.startswith("regions-") else region_dir.name
         win_files = _list_window_files(region_dir)
         if not win_files:
@@ -251,7 +259,10 @@ def main():
         pools = _pool_windows_indices(windows, args.pool_threshold)
 
         # Per-window processing
-        for win, npz in win_files:
+        win_iter = win_files
+        if args.progress and tqdm is not None:
+            win_iter = tqdm(win_files, desc=f"{region_label} windows", unit="win", leave=False)
+        for win, npz in win_iter:
             per_animal = load_per_animal_from_npz(npz, tau_index=None if args.tau_index < 0 else args.tau_index)
             # Per-group quantiles
             qa = bootstrap_quantiles_by_group(per_animal, groups_map, q=q, n_boot=args.n_boot, ci=args.ci)
@@ -321,7 +332,10 @@ def main():
             pool_items = dict(pools)
             if args.pool_all:
                 pool_items["all"] = windows
-            for pool_name, pool_windows in pool_items.items():
+            pool_iter = list(pool_items.items())
+            if args.progress and tqdm is not None:
+                pool_iter = tqdm(pool_iter, desc=f"{region_label} pools", unit="pool", leave=False)
+            for pool_name, pool_windows in pool_iter:
                 if not pool_windows:
                     continue
                 per_animals = [load_per_animal_from_npz(by_win[w], tau_index=None if args.tau_index < 0 else args.tau_index) for w in pool_windows if w in by_win]
