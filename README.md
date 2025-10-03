@@ -95,9 +95,10 @@ The Julien dataset flow now has a stabilized Phase 3 path with a thin CLI wrappe
     --pool-threshold median --pool-all \
     --plot --grid --grid-cols 2 --progress \
     --jobs 4 --parallel-scope windows \
-    --outdir j500_t0 --load-cache
+    --outdir j500_t0 --append-subset-to-outdir --load-cache
   ```
-  - Outputs: CSVs and figures under `scripts/reports/<outdir>/...`.
+  - Outputs: CSVs under `paths['speed']/<outdir>/*.csv` and figures under `paths['f_speed']/<outdir>/*.<fmt>`.
+  - If `--outdir` is omitted, it defaults to `--subset` (or `bootstrap` if no subset).
 
 ## Docs
 

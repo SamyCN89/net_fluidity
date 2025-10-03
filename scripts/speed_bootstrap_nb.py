@@ -114,28 +114,40 @@ def load_per_animal_from_npz(npz_path: Path, tau_index: int | None = None) -> li
 
 
 def bootstrap_ci_1d(x: np.ndarray, n_boot: int = 2000, stat: str = 'median', ci: float = 95.0,
-                    random_state: int | None = 0) -> tuple[float, float, float]:
-    """Basic bootstrap CI for a 1D array x (ignoring NaNs). Returns (est, lo, hi)."""
+                    random_state: int | None = 0, _chunk: int = 256) -> tuple[float, float, float]:
+    """Basic bootstrap CI for a 1D array x (ignoring NaNs). Returns (est, lo, hi).
+
+    Optimized with vectorized chunked resampling to reduce Python overhead.
+    """
     x = np.asarray(x, float)
     x = x[~np.isnan(x)]
     if x.size == 0:
         return (np.nan, np.nan, np.nan)
+    stat = str(stat)
     if stat == 'median':
-        stat_fn: Callable[[np.ndarray], float] = lambda a: float(np.median(a))
+        est = float(np.median(x))
+        f = lambda a: np.median(a, axis=1)
     elif stat == 'mean':
-        stat_fn = lambda a: float(np.mean(a))
+        est = float(np.mean(x))
+        f = lambda a: np.mean(a, axis=1)
     elif stat.startswith('q'):
-        q = float(stat[1:]) / 100.0
-        stat_fn = lambda a: float(np.quantile(a, q))
+        q = float(stat[1:])
+        est = float(np.percentile(x, q))
+        f = lambda a: np.percentile(a, q, axis=1)
     else:
         raise ValueError("stat must be 'median', 'mean' or 'qXX'")
 
-    est = stat_fn(x)
     rng = np.random.default_rng(random_state)
     boots = np.empty(n_boot, float)
-    for i in range(n_boot):
-        idx = rng.choice(x.size, size=x.size, replace=True)
-        boots[i] = stat_fn(x[idx])
+    n = x.size
+    chunk = max(1, int(_chunk))
+    done = 0
+    while done < n_boot:
+        m = min(chunk, n_boot - done)
+        idx = rng.integers(0, n, size=(m, n), endpoint=False)
+        vals = f(x[idx])
+        boots[done:done + m] = vals
+        done += m
     alpha = (100.0 - float(ci)) / 2.0
     lo = float(np.percentile(boots, alpha))
     hi = float(np.percentile(boots, 100.0 - alpha))
@@ -144,26 +156,31 @@ def bootstrap_ci_1d(x: np.ndarray, n_boot: int = 2000, stat: str = 'median', ci:
 
 def bootstrap_quantiles_1d(x: np.ndarray, q: Iterable[float] = (1, 5, 50, 95, 99),
                            n_boot: int = 2000, ci: float = 95.0,
-                           random_state: int | None = 0) -> dict[str, np.ndarray | int]:
+                           random_state: int | None = 0, _chunk: int = 128) -> dict[str, np.ndarray | int]:
     """Bootstrap CIs for multiple percentiles of a 1D array.
 
-    Returns a dict with keys: 'q' (np.ndarray of percentiles), 'point', 'lo', 'hi', and 'n'.
+    Vectorized in chunks to avoid Python loops; returns dict with keys: 'q', 'point', 'lo', 'hi', 'n'.
     """
     x = np.asarray(x, float)
     x = x[~np.isnan(x)]
+    q_arr = np.asarray(list(q), dtype=float)
     if x.size == 0:
-        q_arr = np.asarray(list(q), dtype=float)
         nan = np.full_like(q_arr, np.nan, dtype=float)
         return {"q": q_arr, "point": nan, "lo": nan, "hi": nan, "n": 0}
 
-    q_arr = np.asarray(list(q), dtype=float)
     point = np.percentile(x, q_arr)
     rng = np.random.default_rng(random_state)
-    boots = np.empty((n_boot, q_arr.size), float)
     n = x.size
-    for i in range(n_boot):
-        idx = rng.choice(n, size=n, replace=True)
-        boots[i, :] = np.percentile(x[idx], q_arr)
+    boots = np.empty((n_boot, q_arr.size), float)
+    chunk = max(1, int(_chunk))
+    done = 0
+    while done < n_boot:
+        m = min(chunk, n_boot - done)
+        idx = rng.integers(0, n, size=(m, n), endpoint=False)
+        xb = x[idx]
+        # percentile over axis=1 (per bootstrap); transpose to shape (m, len(q))
+        boots[done:done + m, :] = np.percentile(xb, q_arr, axis=1).T
+        done += m
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
@@ -239,33 +256,40 @@ def pooled_from_indices(per_animal: list[np.ndarray], idxs: Iterable[int]) -> np
 
 
 def bootstrap_stat_diff(x: np.ndarray, y: np.ndarray, stat: str = 'median', n_boot: int = 2000,
-                        ci: float = 95.0, random_state: int | None = 0) -> tuple[float, float, float]:
+                        ci: float = 95.0, random_state: int | None = 0, _chunk: int = 256) -> tuple[float, float, float]:
     """Bootstrap CI for the difference stat(x) - stat(y)."""
     x = np.asarray(x, float); y = np.asarray(y, float)
     x = x[~np.isnan(x)]; y = y[~np.isnan(y)]
+    stat = str(stat)
     if stat == 'median':
-        f: Callable[[np.ndarray], float] = lambda a: float(np.median(a))
+        f = lambda a, axis: np.median(a, axis=axis)
     elif stat == 'mean':
-        f = lambda a: float(np.mean(a))
+        f = lambda a, axis: np.mean(a, axis=axis)
     elif stat.startswith('q'):
         q = float(stat[1:])
-        f = lambda a: float(np.percentile(a, q))
+        f = lambda a, axis: np.percentile(a, q, axis=axis)
     else:
         raise ValueError("stat must be 'median', 'mean' or 'qXX'")
 
     if x.size == 0 or y.size == 0:
         return (np.nan, np.nan, np.nan)
 
-    est = f(x) - f(y)
+    est = float(f(x, axis=None) - f(y, axis=None))
     rng = np.random.default_rng(random_state)
-    xb = np.empty(n_boot, float); yb = np.empty(n_boot, float)
     nx, ny = x.size, y.size
-    for i in range(n_boot):
-        xb[i] = f(x[rng.integers(0, nx, nx)])
-        yb[i] = f(y[rng.integers(0, ny, ny)])
-    diff = xb - yb
+    chunk = max(1, int(_chunk))
+    diffs = np.empty(n_boot, float)
+    done = 0
+    while done < n_boot:
+        m = min(chunk, n_boot - done)
+        idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
+        idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
+        xb = f(x[idx_x], axis=1)
+        yb = f(y[idx_y], axis=1)
+        diffs[done:done + m] = xb - yb
+        done += m
     alpha = (100.0 - float(ci)) / 2.0
-    lo, hi = np.percentile(diff, [alpha, 100.0 - alpha])
+    lo, hi = np.percentile(diffs, [alpha, 100.0 - alpha])
     return float(est), float(lo), float(hi)
 
 
@@ -328,7 +352,7 @@ def bootstrap_diff_of_diffs(per_animal: list[np.ndarray], groups: dict,
 def bootstrap_quantile_diffs(x: np.ndarray, y: np.ndarray,
                              q: Iterable[float] = (1, 5, 50, 95, 99),
                              n_boot: int = 2000, ci: float = 95.0,
-                             random_state: int | None = 0) -> dict[str, np.ndarray | int]:
+                             random_state: int | None = 0, _chunk: int = 128) -> dict[str, np.ndarray | int]:
     """Bootstrap CI for percentile differences between two samples.
 
     Returns dict with keys: 'q', 'point', 'lo', 'hi', 'sig', 'n_x', 'n_y'.
@@ -350,10 +374,16 @@ def bootstrap_quantile_diffs(x: np.ndarray, y: np.ndarray,
     rng = np.random.default_rng(random_state)
     nx, ny = x.size, y.size
     boots = np.empty((n_boot, q_arr.size), float)
-    for i in range(n_boot):
-        xb = x[rng.integers(0, nx, nx)]
-        yb = y[rng.integers(0, ny, ny)]
-        boots[i, :] = np.percentile(xb, q_arr) - np.percentile(yb, q_arr)
+    chunk = max(1, int(_chunk))
+    done = 0
+    while done < n_boot:
+        m = min(chunk, n_boot - done)
+        idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
+        idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
+        xb = x[idx_x]
+        yb = y[idx_y]
+        boots[done:done + m, :] = (np.percentile(xb, q_arr, axis=1) - np.percentile(yb, q_arr, axis=1)).T
+        done += m
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
@@ -525,8 +555,9 @@ def plot_group_quantiles(group_quants: dict,
             ax.plot([x[i]], [y50], marker='o', color='C0')
             if show_median_ci:
                 y50_lo, y50_hi = float(lo[i50]), float(hi[i50])
-                err_lo, err_hi = y50 - y50_lo, y50_hi - y50
-                if np.isfinite(err_lo) and np.isfinite(err_hi):
+                # Clamp to zero if numerically negative (tiny n_boot or noise)
+                err_lo, err_hi = max(0.0, y50 - y50_lo), max(0.0, y50_hi - y50)
+                if np.isfinite(err_lo) and np.isfinite(err_hi) and (err_lo > 0.0 or err_hi > 0.0):
                     ax.errorbar([x[i]], [y50], yerr=[[err_lo], [err_hi]], fmt='none', ecolor='C0', capsize=3)
 
         # Inner whiskers (5–95 by default) using point percentiles

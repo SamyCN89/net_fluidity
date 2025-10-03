@@ -52,6 +52,8 @@ try:
         build_groups_from_columns,
         bootstrap_quantiles_by_group,
         bootstrap_quantile_diffs_by_keys,
+        plot_group_quantiles,
+        plot_quantile_diffs,
     )
 except ModuleNotFoundError:
     try:
@@ -62,6 +64,8 @@ except ModuleNotFoundError:
             build_groups_from_columns,
             bootstrap_quantiles_by_group,
             bootstrap_quantile_diffs_by_keys,
+            plot_group_quantiles,
+            plot_quantile_diffs,
         )
     except ModuleNotFoundError:
         # Last resort: append repo root to path and retry
@@ -76,6 +80,8 @@ except ModuleNotFoundError:
             build_groups_from_columns,
             bootstrap_quantiles_by_group,
             bootstrap_quantile_diffs_by_keys,
+            plot_group_quantiles,
+            plot_quantile_diffs,
         )
 
 
@@ -101,11 +107,25 @@ def _parse_pairs(pairs_arg: str) -> List[Tuple[Tuple[str, str], Tuple[str, str]]
 
 
 def _find_region_folders(speed_root: Path) -> List[Path]:
-    """Return list of region subfolders; fallback to ['all'] if none found."""
-    cands = sorted([p for p in speed_root.iterdir() if p.is_dir() and p.name.startswith("regions-")])
-    if cands:
-        return cands
-    # Fallback to a single 'all' folder or the root itself
+    """Return list of region subfolders; fallback to ['all'] or base if none found.
+
+    Detection rules (in order):
+    - Any subfolder whose name starts with 'regions-'
+    - Any subfolder that contains at least one per-window NPZ (speed_win*_*.npz)
+    - Else, fallback to 'all' or the root itself
+    """
+    # 1) Prefixed region folders
+    prefixed = sorted([p for p in speed_root.iterdir() if p.is_dir() and p.name.startswith("regions-")])
+    if prefixed:
+        return prefixed
+    # 2) Any subfolder with per-window NPZs
+    generic = []
+    for p in sorted([x for x in speed_root.iterdir() if x.is_dir()]):
+        if list(p.glob("speed_win*_*.npz")):
+            generic.append(p)
+    if generic:
+        return generic
+    # 3) Fallback to a single 'all' folder or the root itself
     all_dir = speed_root / "all"
     return [all_dir] if all_dir.exists() else [speed_root]
 
@@ -120,6 +140,30 @@ def _list_window_files(region_dir: Path) -> List[Tuple[int, Path]]:
         if m:
             files.append((int(m.group(1)), p))
     return files
+
+
+_SUBSET_TAG_RE = re.compile(
+    r"_subset_mode-[^_]*_(?:region-\d+-(?P<region>[^_]+)|lab-(?P<lab>[^_]+))"
+)
+
+
+def _infer_region_from_filename(name: str) -> str | None:
+    """Try to extract a region label from NPZ filename subset tag.
+
+    Supports patterns like:
+      ..._subset_mode-touching_region-3-ACC_...
+      ..._subset_mode-touching_lab-ACC_...
+    Returns the inferred label or None if not found.
+    """
+    m = _SUBSET_TAG_RE.search(name)
+    if not m:
+        return None
+    if m.group("region"):
+        return m.group("region")
+    if m.group("lab"):
+        # When multiple labels present, return the full joined string
+        return m.group("lab")
+    return None
 
 
 def _pool_windows_indices(windows: List[int], threshold: str | int | None) -> Dict[str, List[int]]:
@@ -194,6 +238,8 @@ def _process_window_and_return(
     seed: int,
     plot: bool,
     plot_format: str,
+    no_quantiles_win: bool,
+    no_diffs_win: bool,
     fig_root: Path,
     load_cache: bool,
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]], Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict]]:
@@ -210,13 +256,20 @@ def _process_window_and_return(
     quant_rows: List[Dict[str, object]] = []
     diff_rows: List[Dict[str, object]] = []
     window_pairs_qd: Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict] = {}
+    # Infer display region from filename if present (fallback to provided label)
+    try:
+        region_disp = _infer_region_from_filename(npz.name) or region_label
+    except Exception:
+        region_disp = region_label
 
+    # Load data and bootstrap
     per_animal = load_per_animal_from_npz(npz, tau_index=None if tau_index < 0 else tau_index)
     qa = bootstrap_quantiles_by_group(per_animal, groups_map, q=q, n_boot=n_boot, ci=ci, seed=seed)
     for gk, res in qa.items():
         for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
             quant_rows.append({
-                "region": region_label,
+                "region": region_disp,
+                "roi": region_disp,
                 "window": int(win),
                 "group": gk,
                 "q": float(qi),
@@ -225,13 +278,15 @@ def _process_window_and_return(
                 "hi": float(hi),
                 "n": int(res["n"]),
             })
-    if plot:
-        ax = plot_group_quantiles(qa, title=f"{region_label} | win={win}")
-        fig_path = fig_root / f"quantiles_{_sanitize(region_label)}_win{win}.{plot_format}"
+    # Plot per-group quantiles for this window if requested
+    if plot and not no_quantiles_win:
+        ax = plot_group_quantiles(qa, title=f"{region_disp} | win={win}")
+        fig_path = fig_root / f"quantiles_{_sanitize(region_disp)}_win{win}.{plot_format}"
         if not (load_cache and fig_path.exists()):
             ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
         plt.close(ax.figure)
 
+    # Pairwise diffs
     for (A, B) in groups_to_compare:
         if A not in groups_map or B not in groups_map:
             continue
@@ -239,7 +294,8 @@ def _process_window_and_return(
         window_pairs_qd[(A, B)] = qd
         for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
             diff_rows.append({
-                "region": region_label,
+                "region": region_disp,
+                "roi": region_disp,
                 "window": int(win),
                 "A": A,
                 "B": B,
@@ -251,11 +307,11 @@ def _process_window_and_return(
                 "n_a": int(qd.get("n_x", 0)),
                 "n_b": int(qd.get("n_y", 0)),
             })
-        if plot:
-            ax = plot_quantile_diffs(qd, title=f"{region_label} | win={win} | {A}-{B}")
+        if plot and not no_diffs_win:
+            ax = plot_quantile_diffs(qd, title=f"{region_disp} | win={win} | {A}-{B}")
             a_str = _sanitize(A)
             b_str = _sanitize(B)
-            fig_path = fig_root / f"diffs_{_sanitize(region_label)}_win{win}_{a_str}_vs_{b_str}.{plot_format}"
+            fig_path = fig_root / f"diffs_{_sanitize(region_disp)}_win{win}_{a_str}_vs_{b_str}.{plot_format}"
             if not (load_cache and fig_path.exists()):
                 ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
             plt.close(ax.figure)
@@ -276,11 +332,20 @@ def main():
     ap.add_argument("--ci", type=float, default=95.0, help="Confidence level (percent).")
     ap.add_argument("--pool-threshold", type=str, default=None, help="Pool windows into short/long by 'median' or integer cutoff.")
     ap.add_argument("--pool-all", action="store_true", help="Also add an 'all' pool combining all windows.")
-    ap.add_argument("--outdir", type=str, default="bootstrap", help="Subfolder under scripts/reports for outputs.")
+    ap.add_argument("--outdir", type=str, default=None, help="Output folder name under dataset paths; defaults to --subset or 'bootstrap'.")
     ap.add_argument("--plot", action="store_true", help="Save plots for per-group quantiles and pairwise diffs.")
     ap.add_argument("--plot-format", type=str, default="png", choices=["png", "pdf", "svg"], help="Image format.")
     ap.add_argument("--grid", action="store_true", help="Also save a grid figure aggregating all pairwise diffs per window/pool.")
     ap.add_argument("--grid-cols", type=int, default=2, help="Max columns in grid layout for pairwise diffs.")
+    ap.add_argument("--no-diffs-win", action="store_true", help="Disable saving per-window pairwise diffs figures (diffs_*_win*.png).")
+    ap.add_argument("--no-quantiles-win", action="store_true", help="Disable saving per-window group quantiles figures (quantiles_*_win*.png).")
+    ap.add_argument("--plot-diffs-by-win", action="store_true", help="Save a summary plot per ROI and pair: diff(A-B) vs window with percentiles as legends (filled=significant, open=ns).")
+    ap.add_argument("--plot-diffs-bywin-grid", action="store_true", help="Save a grid figure per ROI aggregating all by-window diff(A-B) vs window panels.")
+    ap.add_argument("--bywin-grid-cols", type=int, default=2, help="Columns for bywin grid layout.")
+    # Correlation with cognitive score (NOR)
+    ap.add_argument("--correlate-nor", action="store_true", help="Compute correlation between per-animal speed percentiles and NOR cognitive score.")
+    ap.add_argument("--nor-col", type=str, default=None, help="Column name for NOR score in cognitive data; auto-detect if omitted.")
+    ap.add_argument("--plot-only", action="store_true", help="Generate figures from existing CSVs in outdir; skip all bootstrap and NPZ processing.")
     ap.add_argument("--show-tau", action="store_true", help="Print tau range from metadata and exit.")
     ap.add_argument("--progress", action="store_true", help="Show progress bars for regions/windows/pools (requires tqdm).")
     ap.add_argument("--load-cache", action="store_true", help="Reuse existing outputs if present; skip recomputation/plots where possible.")
@@ -292,8 +357,16 @@ def main():
         choices=["windows"],
         help="Parallelization scope; currently supports 'windows' (within each region).",
     )
+    ap.add_argument(
+        "--append-subset-to-outdir",
+        action="store_true",
+        help="If set and --subset is provided, append '__subset-<subset>' to the outdir name for CSVs and figures.",
+    )
     ap.add_argument("--print-args", action="store_true", help="Print effective arguments (including defaults applied) and continue.")
     ap.add_argument("--show-defaults", action="store_true", help="Print all default values and exit.")
+    ap.add_argument("--dry-run", action="store_true", help="List planned regions/windows, pools, and output paths; then exit without computing.")
+    ap.add_argument("--list-inputs", action="store_true", help="Print the full list of NPZ files that will be read.")
+
     # Capture defaults before parsing CLI args
     _defaults = ap.parse_args([])
     args = ap.parse_args()
@@ -307,7 +380,7 @@ def main():
         for k, v in sorted(vars(args).items()):
             print(f"  {k} = {v}")
 
-    # q
+    # q as list of floats
     q = [float(s) for s in args.q.split(",") if s.strip()]
     groups_to_compare = _parse_pairs(args.pairs)
     group_cols = [s.strip() for s in args.group_cols.split(",") if s.strip()]
@@ -332,26 +405,169 @@ def main():
     # Build grouping mapping from cognitive data
     groups_map = build_groups_from_columns(data.cog_data_filtered, group_cols)
 
-    # Prepare outputs under scripts/reports/<outdir>
-    script_dir = Path(__file__).resolve().parent
-    reports_root = script_dir / "reports"
-    outdir = reports_root / (args.outdir or "bootstrap")
+    # Prepare outputs under dataset paths
+    # CSV tables under paths['speed']/<outdir>
+    outputs_root = Path(data.paths["speed"])  # type: ignore[index]
+    # Choose base outdir name: prefer explicit --outdir; else fallback to --subset; else 'bootstrap'
+    outdir_name = args.outdir if args.outdir else (args.subset if args.subset else "bootstrap")
+    # Optionally append subset to an explicit outdir to avoid collisions
+    if args.append_subset_to_outdir and args.subset and args.outdir:
+        def _san(s: str) -> str:
+            return (
+                str(s)
+                .replace("/", "-")
+                .replace(" ", "_")
+                .replace(",", "-")
+                .replace("|", "-")
+                .replace("(", "").replace(")", "")
+            )
+        outdir_name = f"{outdir_name}__subset-{_san(args.subset)}"
+    outdir = outputs_root / outdir_name
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Figures under the same outdir
-    fig_root = outdir / "figs"
-    if args.subset:
-        fig_root = fig_root / str(args.subset)
-    fig_root.mkdir(parents=True, exist_ok=True)
+    # Figures under paths['f_speed']/<outdir> (only if plotting is requested)
+    fig_root = None
+    if args.plot or args.grid or args.plot_diffs_by_win or args.plot_diffs_bywin_grid:
+        fig_base = Path(data.paths.get("f_speed", outputs_root))  # type: ignore[attr-defined]
+        fig_root = fig_base / outdir_name
+        fig_root.mkdir(parents=True, exist_ok=True)
 
     # CSV paths
     q_path = outdir / "speed_bootstrap_quantiles.csv"
     d_path = outdir / "speed_bootstrap_diffs.csv"
+    # Announce output locations upfront
+    print(f"Output CSV dir: {outdir}")
+    if fig_root is not None:
+        print(f"Output figure dir: {fig_root}")
+    if args.load_cache:
+        print(f"Input data dir (NPZs): {speed_root}")
+    if args.dry_run:
+        # Show planned work and exit
+        print("[dry-run] Would write CSV tables:")
+        print(f"  {q_path}")
+        print(f"  {d_path}")
+        total_windows = 0
+        print(f"[dry-run] Regions to process: {len(region_dirs)}")
+        for region_dir in region_dirs:
+            region_label = region_dir.name.replace("regions-", "") if region_dir.name.startswith("regions-") else region_dir.name
+            win_files = _list_window_files(region_dir)
+            windows = [w for (w, _) in win_files]
+            total_windows += len(windows)
+            pools = _pool_windows_indices(windows, args.pool_threshold)
+            if windows:
+                preview = windows[:10]
+                extra = '...' if len(windows) > 10 else ''
+                print(f"  - {region_label}: windows={len(windows)} ({preview}{extra})")
+            else:
+                print(f"  - {region_label}: windows=0")
+            # Optionally list exact inputs
+            if args.list_inputs and win_files:
+                for w, npz in win_files:
+                    print(f"      win={w}: {npz}")
+            if pools:
+                for pname, plist in pools.items():
+                    print(f"      pool '{pname}': {len(plist)} windows")
+            else:
+                print("      pools: none")
+            if args.plot:
+                print(f"      figures dir: {fig_root}")
+        print(f"[dry-run] Total window files: {total_windows}")
+        return
     if args.load_cache and q_path.exists() and d_path.exists() and not args.plot:
         print(f"[cache] Found existing outputs: {q_path} and {d_path}. Skipping.")
         return
+
+
     quantiles_rows: List[Dict[str, object]] = []
     diffs_rows: List[Dict[str, object]] = []
+    corr_rows: List[Dict[str, object]] = []
+    # Plot-only: load CSVs and render figures without recompute
+    if args.plot_only:
+        if not q_path.exists() or not d_path.exists():
+            raise FileNotFoundError(f"plot-only requires existing CSVs: {q_path} and {d_path}")
+        with q_path.open("r", newline="") as f:
+            quantiles_rows = list(csv.DictReader(f))
+        with d_path.open("r", newline="") as f:
+            diffs_rows = list(csv.DictReader(f))
+        # Render bywin and grids if requested
+        if fig_root is not None:
+            def _san(s: str) -> str:
+                return str(s).replace('/', '-').replace(' ', '_').replace(',', '-').replace('|', '-').replace('(', '').replace(')', '')
+            # Build mapping: (roi, (A,B)) -> { q -> [(win, diff, sig), ...] }
+            by_roi_pair_q: Dict[Tuple[str, Tuple[str, str]], Dict[float, List[Tuple[int, float, bool]]]] = {}
+            for r in diffs_rows:
+                roi = str(r.get("roi", r.get("region", "")))
+                A = r.get("A"); B = r.get("B")
+                if A is None or B is None:
+                    continue
+                key = (roi, (str(A), str(B)))
+                # Skip pooled rows
+                win_raw = r.get("window", -1)
+                try:
+                    win = int(win_raw)
+                except Exception:
+                    continue
+                try:
+                    qv = float(r.get("q", 0.0)); diffv = float(r.get("diff", 0.0))
+                except Exception:
+                    continue
+                sig = str(r.get("significant", "False")).lower() in ("1","true","yes")
+                by_roi_pair_q.setdefault(key, {}).setdefault(qv, []).append((win, diffv, sig))
+            import matplotlib.pyplot as _plt
+            # Individual bywin plots
+            if args.plot_diffs_by_win and by_roi_pair_q:
+                for (roi, (A, B)), qmap in by_roi_pair_q.items():
+                    fig, ax = _plt.subplots(figsize=(8,4))
+                    qs_sorted = sorted(qmap.keys())
+                    palette = _plt.rcParams.get('axes.prop_cycle', None)
+                    base_colors = (palette.by_key()['color'] if palette is not None else ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf'])
+                    color_for_q = {float(qi): base_colors[i % len(base_colors)] for i, qi in enumerate(qs_sorted)}
+                    for qi in qs_sorted:
+                        triples = sorted(qmap[qi], key=lambda t: t[0])
+                        wins = [t[0] for t in triples]
+                        diffs = [t[1] for t in triples]
+                        sigs = [t[2] for t in triples]
+                        color = color_for_q[float(qi)]
+                        ax.plot(wins, diffs, label=f"q{int(qi)}", color=color)
+                        for xw, yw, s in zip(wins, diffs, sigs):
+                            ax.plot(xw, yw, 'o', color=color, mfc=(color if s else 'none'), mec=color)
+                    ax.axhline(0.0, color='k', linewidth=1, alpha=0.5)
+                    ax.set_xlabel('Window size'); ax.set_ylabel('Difference (A - B)')
+                    ax.set_title(f"{roi} | {A}-{B}"); ax.legend(loc='best', title='Percentile')
+                    fig.tight_layout()
+                    a_str = _san(A); b_str = _san(B)
+                    out_path = fig_root / f"bywin_{_san(roi)}_{a_str}_vs_{b_str}.{args.plot_format}"
+                    fig.savefig(out_path, dpi=150, bbox_inches='tight'); _plt.close(fig)
+            # Bywin grids per ROI
+            if args.plot_diffs_bywin_grid and by_roi_pair_q:
+                roi_to_pairs: Dict[str, List[Tuple[Tuple[str, str], Dict[float, List[Tuple[int, float, bool]]]]]] = {}
+                for (roi, pair), qmap in by_roi_pair_q.items():
+                    roi_to_pairs.setdefault(roi, []).append((pair, qmap))
+                for roi, items in roi_to_pairs.items():
+                    n = len(items); cols = max(1, int(args.bywin_grid_cols)); rows = int(np.ceil(n/cols))
+                    fig, axes = _plt.subplots(rows, cols, figsize=(6*cols, 3.5*rows), squeeze=False)
+                    all_qs = sorted({qi for _, qmap in items for qi in qmap.keys()})
+                    palette = _plt.rcParams.get('axes.prop_cycle', None)
+                    base_colors = (palette.by_key()['color'] if palette is not None else ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf'])
+                    color_for_q = {float(qi): base_colors[i % len(base_colors)] for i, qi in enumerate(all_qs)}
+                    for idx, (pair, qmap) in enumerate(items):
+                        r, c = divmod(idx, cols); ax = axes[r, c]
+                        for qi in sorted(qmap.keys()):
+                            triples = sorted(qmap[qi], key=lambda t: t[0])
+                            wins = [t[0] for t in triples]; diffs = [t[1] for t in triples]; sigs = [t[2] for t in triples]
+                            color = color_for_q[float(qi)]
+                            ax.plot(wins, diffs, label=f"q{int(qi)}", color=color)
+                            for xw, yw, s in zip(wins, diffs, sigs):
+                                ax.plot(xw, yw, 'o', color=color, mfc=(color if s else 'none'), mec=color)
+                        A, B = pair; ax.set_title(f"{A}-{B}"); ax.axhline(0.0, color='k', linewidth=1, alpha=0.5)
+                        if r == rows-1: ax.set_xlabel('Window size')
+                        if c == 0: ax.set_ylabel('Diff (A - B)')
+                    for k in range(n, rows*cols): r, c = divmod(k, cols); axes[r, c].axis('off')
+                    handles, labels = axes[0,0].get_legend_handles_labels();
+                    if handles: fig.legend(handles, labels, loc='upper right', title='Percentile')
+                    fig.suptitle(f"{roi} | diff(A-B) vs window"); fig.tight_layout(rect=[0,0,0.98,0.95])
+                    grid_out = fig_root / f"bywin_grid_{_san(roi)}.{args.plot_format}"; fig.savefig(grid_out, dpi=150, bbox_inches='tight'); _plt.close(fig)
+        return
 
     def _sanitize(s: str) -> str:
         return (
@@ -377,10 +593,10 @@ def main():
         # Per-window processing
         if args.jobs > 1 and args.parallel_scope == "windows":
             tasks = win_files
-            results = Parallel(n_jobs=args.jobs)(
+            results = Parallel(n_jobs=args.jobs, prefer="processes")(
                 delayed(_process_window_and_return)(
                     region_label, w, p, args.tau_index, groups_map, groups_to_compare, q,
-                    args.n_boot, args.ci, args.seed, args.plot, args.plot_format, fig_root, args.load_cache
+                    args.n_boot, args.ci, args.seed, args.plot, args.plot_format, args.no_quantiles_win, args.no_diffs_win, fig_root, args.load_cache
                 )
                 for (w, p) in tasks
             )
@@ -389,88 +605,59 @@ def main():
                 diffs_rows.extend(dr)
                 if args.plot and args.grid and window_pairs_qd:
                     w = tasks[idx][0]
-                    grid_path = fig_root / f"grid_{_sanitize(region_label)}_win{w}.{args.plot_format}"
-                    _plot_pairs_grid(region_label, f"win={w}", window_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                    try:
+                        roi_name = _infer_region_from_filename(tasks[idx][1].name) or region_label
+                    except Exception:
+                        roi_name = region_label
+                    grid_path = fig_root / f"grid_{_sanitize(roi_name)}_win{w}.{args.plot_format}"
+                    if not (args.load_cache and grid_path.exists()):
+                        _plot_pairs_grid(roi_name, f"win={w}", window_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                    else:
+                        print(f"[cache] Using cached grid figure: {grid_path}")
         else:
             win_iter = win_files
             if args.progress and tqdm is not None:
                 win_iter = tqdm(win_files, desc=f"{region_label} windows", unit="win", leave=False)
             for win, npz in win_iter:
-                per_animal = load_per_animal_from_npz(npz, tau_index=None if args.tau_index < 0 else args.tau_index)
-                # Per-group quantiles
-                qa = bootstrap_quantiles_by_group(per_animal, groups_map, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
-                for gk, res in qa.items():
-                    for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
-                        quantiles_rows.append({
-                            "region": region_label,
-                            "window": int(win),
-                            "group": gk,
-                            "q": float(qi),
-                            "point": float(pt),
-                            "lo": float(lo),
-                            "hi": float(hi),
-                            "n": int(res["n"]),
-                        })
-                if args.plot:
-                    # Plot per-group quantiles for this window
-                    try:
-                        from scripts.speed_bootstrap_nb import plot_group_quantiles
-                    except ModuleNotFoundError:
-                        from speed_bootstrap_nb import plot_group_quantiles  # type: ignore
-                    ax = plot_group_quantiles(qa, title=f"{region_label} | win={win}")
-                    fig_path = fig_root / f"quantiles_{_sanitize(region_label)}_win{win}.{args.plot_format}"
-                    if not (args.load_cache and fig_path.exists()):
-                        ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
-                    plt.close(ax.figure)
-                # Pairwise diffs
-                window_pairs_qd: Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict] = {}
-                for (A, B) in groups_to_compare:
-                    if A not in groups_map or B not in groups_map:
-                        continue
-                    qd = bootstrap_quantile_diffs_by_keys(per_animal, groups_map, A, B, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
-                    window_pairs_qd[(A, B)] = qd
-                    for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
-                        diffs_rows.append({
-                            "region": region_label,
-                            "window": int(win),
-                            "A": A,
-                            "B": B,
-                            "q": float(qi),
-                            "diff": float(pt),
-                            "lo": float(lo),
-                            "hi": float(hi),
-                            "significant": bool(sig),
-                            "n_a": int(qd.get("n_x", 0)),
-                            "n_b": int(qd.get("n_y", 0)),
-                        })
-                    if args.plot:
-                        try:
-                            from scripts.speed_bootstrap_nb import plot_quantile_diffs
-                        except ModuleNotFoundError:
-                            from speed_bootstrap_nb import plot_quantile_diffs  # type: ignore
-                        ax = plot_quantile_diffs(qd, title=f"{region_label} | win={win} | {A}-{B}")
-                        a_str = _sanitize(A)
-                        b_str = _sanitize(B)
-                        fig_path = fig_root / f"diffs_{_sanitize(region_label)}_win{win}_{a_str}_vs_{b_str}.{args.plot_format}"
-                        if not (args.load_cache and fig_path.exists()):
-                            ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
-                        plt.close(ax.figure)
-                # Save grid per window
+                qr, dr, window_pairs_qd = _process_window_and_return(
+                    region_label, win, npz, args.tau_index, groups_map, groups_to_compare, q,
+                    args.n_boot, args.ci, args.seed, args.plot, args.plot_format, args.no_quantiles_win, args.no_diffs_win, fig_root, args.load_cache
+                )
+                quantiles_rows.extend(qr)
+                diffs_rows.extend(dr)
                 if args.plot and args.grid and window_pairs_qd:
-                    grid_path = fig_root / f"grid_{_sanitize(region_label)}_win{win}.{args.plot_format}"
+                    try:
+                        region_name = _infer_region_from_filename(npz.name) or region_label
+                    except Exception:
+                        region_name = region_label
+                    grid_path = fig_root / f"grid_{_sanitize(region_name)}_win{win}.{args.plot_format}"
                     if not (args.load_cache and grid_path.exists()):
-                        _plot_pairs_grid(region_label, f"win={win}", window_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                        _plot_pairs_grid(region_name, f"win={win}", window_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                    else:
+                        print(f"[cache] Using cached grid figure: {grid_path}")
 
-        # Window pools (short/long)
-        if pools:
-            by_win = {w: p for (w, p) in win_files}
-            # Optionally add an 'all' pool across all windows
-            pool_items = dict(pools)
+        # Window pools (short/long) — enforce per-ROI pooling
+        # Build mapping from ROI -> list[(win, path)]
+        roi_map: Dict[str, List[Tuple[int, Path]]] = {}
+        for w, p in win_files:
+            try:
+                roi = _infer_region_from_filename(p.name) or region_label
+            except Exception:
+                roi = region_label
+            roi_map.setdefault(roi, []).append((w, p))
+        for roi_name, files in roi_map.items():
+            roi_windows = [w for (w, _) in files]
+            pools_roi = _pool_windows_indices(roi_windows, args.pool_threshold)
+            if not pools_roi:
+                continue
+            by_win = {w: p for (w, p) in files}
+            # Optionally add an 'all' pool across all ROI windows
+            pool_items = dict(pools_roi)
             if args.pool_all:
-                pool_items["all"] = windows
+                pool_items["all"] = roi_windows
             pool_iter = list(pool_items.items())
             if args.progress and tqdm is not None:
-                pool_iter = tqdm(pool_iter, desc=f"{region_label} pools", unit="pool", leave=False)
+                pool_iter = tqdm(pool_iter, desc=f"{roi_name} pools", unit="pool", leave=False)
             for pool_name, pool_windows in pool_iter:
                 if not pool_windows:
                     continue
@@ -480,7 +667,8 @@ def main():
                 for gk, res in qa.items():
                     for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
                         quantiles_rows.append({
-                            "region": region_label,
+                            "region": roi_name,
+                            "roi": roi_name,
                             "window": pool_name,
                             "group": gk,
                             "q": float(qi),
@@ -489,15 +677,71 @@ def main():
                             "hi": float(hi),
                             "n": int(res["n"]),
                         })
+                # Correlation with NOR per percentile for this ROI/pool
+                if args.correlate_nor:
+                    # Auto-detect NOR column if needed
+                    nor_col = args.nor_col
+                    if nor_col is None:
+                        cand_cols = [c for c in data.cog_data_filtered.columns if 'nor' in str(c).lower()]
+                        if len(cand_cols) == 1:
+                            nor_col = cand_cols[0]
+                        elif len(cand_cols) > 1:
+                            # pick first by default; could be refined
+                            nor_col = cand_cols[0]
+                        else:
+                            nor_col = None
+                    if nor_col is not None and nor_col in data.cog_data_filtered.columns:
+                        import numpy as _np
+                        # Build per-animal percentile vectors for requested q
+                        q_list = [float(x) for x in q]
+                        # assemble per-animal values into matrix (n_animals x len(q))
+                        n_anim = len(pooled)
+                        mat = _np.full((n_anim, len(q_list)), _np.nan, float)
+                        for i in range(n_anim):
+                            vals = _np.asarray(pooled[i], float)
+                            if vals.size:
+                                mat[i, :] = _np.percentile(vals, q_list)
+                        nor_vals = _np.asarray(data.cog_data_filtered[nor_col], float)
+                        # Compute correlation per percentile (Pearson + Spearman)
+                        def _pearson(a, b):
+                            m = _np.isfinite(a) & _np.isfinite(b)
+                            if m.sum() < 3:
+                                return _np.nan
+                            return float(_np.corrcoef(a[m], b[m])[0, 1])
+                        def _spearman(a, b):
+                            m = _np.isfinite(a) & _np.isfinite(b)
+                            if m.sum() < 3:
+                                return _np.nan
+                            aa = a[m]; bb = b[m]
+                            # simple rank (ties handled arbitrarily)
+                            ra = _np.argsort(_np.argsort(aa))
+                            rb = _np.argsort(_np.argsort(bb))
+                            return float(_np.corrcoef(ra, rb)[0, 1])
+                        for j, qi in enumerate(q_list):
+                            r = _pearson(mat[:, j], nor_vals)
+                            rho = _spearman(mat[:, j], nor_vals)
+                            n_used = int(_np.count_nonzero(_np.isfinite(mat[:, j]) & _np.isfinite(nor_vals)))
+                            corr_rows.append({
+                                "region": roi_name,
+                                "roi": roi_name,
+                                "window": pool_name,
+                                "q": float(qi),
+                                "pearson_r": r,
+                                "spearman_rho": rho,
+                                "n": n_used,
+                                "nor_col": nor_col,
+                            })
                 if args.plot:
                     try:
                         from scripts.speed_bootstrap_nb import plot_group_quantiles
                     except ModuleNotFoundError:
                         from speed_bootstrap_nb import plot_group_quantiles  # type: ignore
-                    ax = plot_group_quantiles(qa, title=f"{region_label} | pool={pool_name}")
-                    fig_path = fig_root / f"quantiles_{_sanitize(region_label)}_pool-{pool_name}.{args.plot_format}"
+                    ax = plot_group_quantiles(qa, title=f"{roi_name} | pool={pool_name}")
+                    fig_path = fig_root / f"quantiles_{_sanitize(roi_name)}_pool-{pool_name}.{args.plot_format}"
                     if not (args.load_cache and fig_path.exists()):
                         ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+                    else:
+                        print(f"[cache] Using cached quantiles figure: {fig_path}")
                     plt.close(ax.figure)
                 pool_pairs_qd: Dict[Tuple[Tuple[str, str], Tuple[str, str]], dict] = {}
                 for (A, B) in groups_to_compare:
@@ -507,7 +751,8 @@ def main():
                     pool_pairs_qd[(A, B)] = qd
                     for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
                         diffs_rows.append({
-                            "region": region_label,
+                            "region": roi_name,
+                            "roi": roi_name,
                             "window": pool_name,
                             "A": A,
                             "B": B,
@@ -519,32 +764,22 @@ def main():
                             "n_a": int(qd.get("n_x", 0)),
                             "n_b": int(qd.get("n_y", 0)),
                         })
-                    if args.plot:
-                        try:
-                            from scripts.speed_bootstrap_nb import plot_quantile_diffs
-                        except ModuleNotFoundError:
-                            from speed_bootstrap_nb import plot_quantile_diffs  # type: ignore
-                        ax = plot_quantile_diffs(qd, title=f"{region_label} | pool={pool_name} | {A}-{B}")
-                        a_str = _sanitize(A)
-                        b_str = _sanitize(B)
-                        fig_path = fig_root / f"diffs_{_sanitize(region_label)}_pool-{pool_name}_{a_str}_vs_{b_str}.{args.plot_format}"
-                        if not (args.load_cache and fig_path.exists()):
-                            ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
-                        plt.close(ax.figure)
-                if args.plot and args.grid and pool_pairs_qd:
-                    grid_path = fig_root / f"grid_{_sanitize(region_label)}_pool-{pool_name}.{args.plot_format}"
+                if args.plot and not args.no_diffs_win and args.grid and pool_pairs_qd:
+                    grid_path = fig_root / f"grid_{_sanitize(roi_name)}_pool-{pool_name}.{args.plot_format}"
                     if not (args.load_cache and grid_path.exists()):
-                        _plot_pairs_grid(region_label, f"pool={pool_name}", pool_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                        _plot_pairs_grid(roi_name, f"pool={pool_name}", pool_pairs_qd, groups_to_compare, grid_path, cols=args.grid_cols)
+                    else:
+                        print(f"[cache] Using cached grid figure: {grid_path}")
 
     # Write CSVs
     if quantiles_rows:
-        q_cols = ["region", "window", "group", "q", "point", "lo", "hi", "n"]
+        q_cols = ["region", "roi", "window", "group", "q", "point", "lo", "hi", "n"]
         with q_path.open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=q_cols)
             w.writeheader()
             w.writerows(quantiles_rows)
     if diffs_rows:
-        d_cols = ["region", "window", "A", "B", "q", "diff", "lo", "hi", "significant", "n_a", "n_b"]
+        d_cols = ["region", "roi", "window", "A", "B", "q", "diff", "lo", "hi", "significant", "n_a", "n_b"]
         with d_path.open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=d_cols)
             w.writeheader()
@@ -552,6 +787,124 @@ def main():
 
     print(f"Wrote: {q_path}")
     print(f"Wrote: {d_path}")
+    # Write correlations CSV if requested
+    if corr_rows:
+        corr_path = outdir / "speed_nor_correlations.csv"
+        c_cols = ["region", "roi", "window", "q", "pearson_r", "spearman_rho", "n", "nor_col"]
+        with corr_path.open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=c_cols)
+            w.writeheader()
+            w.writerows(corr_rows)
+        print(f"Wrote: {corr_path}")
+
+    # Optional: plot diff(A-B) vs window by ROI with percentiles as legends
+    if fig_root is not None and args.plot and args.plot_diffs_by_win and diffs_rows:
+        # Build mapping: (roi, (A,B)) -> { q -> [(win, diff, sig), ...] }
+        by_roi_pair_q: Dict[Tuple[str, Tuple[str, str]], Dict[float, List[Tuple[int, float, bool]]]] = {}
+        for r in diffs_rows:
+            roi = str(r.get("roi", r.get("region", "")))
+            A = r.get("A"); B = r.get("B")
+            if A is None or B is None:
+                continue
+            key = (roi, (str(A), str(B)))
+            # Skip pooled entries (short/long/all) — only plot true windows
+            win_raw = r.get("window", -1)
+            try:
+                win = int(win_raw)
+            except Exception:
+                continue
+            qv = float(r.get("q", 0.0))
+            by_roi_pair_q.setdefault(key, {}).setdefault(qv, []).append((win, float(r.get("diff", 0.0)), bool(r.get("significant", False))))
+        for (roi, (A, B)), qmap in by_roi_pair_q.items():
+            fig, ax = plt.subplots(figsize=(8, 4))
+            # Stable color mapping per percentile
+            qs_sorted = sorted(qmap.keys())
+            palette = plt.rcParams.get('axes.prop_cycle', None)
+            base_colors = (palette.by_key()['color'] if palette is not None else [
+                '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+            ])
+            color_for_q = {float(qi): base_colors[i % len(base_colors)] for i, qi in enumerate(qs_sorted)}
+
+            for qi in qs_sorted:
+                triples = sorted(qmap[qi], key=lambda t: t[0])
+                wins = [t[0] for t in triples]
+                diffs = [t[1] for t in triples]
+                sigs = [t[2] for t in triples]
+                color = color_for_q[float(qi)]
+                # Line per percentile
+                ax.plot(wins, diffs, label=f"q{int(qi)}", color=color)
+                # Markers: filled if significant, open (no fill) if ns
+                for x, y, s in zip(wins, diffs, sigs):
+                    if s:
+                        ax.plot(x, y, 'o', color=color)
+                    else:
+                        ax.plot(x, y, 'o', mfc='none', mec=color, color=color)
+            ax.axhline(0.0, color='k', linewidth=1, alpha=0.5)
+            ax.set_xlabel('Window size')
+            ax.set_ylabel('Difference (A - B)')
+            ax.set_title(f"{roi} | {A}-{B}")
+            ax.legend(loc='best', title='Percentile')
+            fig.tight_layout()
+            a_str = _sanitize(A); b_str = _sanitize(B)
+            out_path = fig_root / f"bywin_{_sanitize(roi)}_{a_str}_vs_{b_str}.{args.plot_format}"
+            fig.savefig(out_path, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+
+        # Optional grid aggregating all pairs per ROI
+        if args.plot_diffs_bywin_grid and by_roi_pair_q:
+            # Group back by ROI
+            roi_to_pairs: Dict[str, List[Tuple[Tuple[str, str], Dict[float, List[Tuple[int, float, bool]]]]]] = {}
+            for (roi, pair), qmap in by_roi_pair_q.items():
+                roi_to_pairs.setdefault(roi, []).append((pair, qmap))
+            for roi, items in roi_to_pairs.items():
+                n = len(items)
+                cols = max(1, int(args.bywin_grid_cols))
+                rows = int(np.ceil(n / cols))
+                fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 3.5*rows), squeeze=False)
+                # Build stable colors
+                all_qs = sorted({qi for _, qmap in items for qi in qmap.keys()})
+                palette = plt.rcParams.get('axes.prop_cycle', None)
+                base_colors = (palette.by_key()['color'] if palette is not None else [
+                    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+                ])
+                color_for_q = {float(qi): base_colors[i % len(base_colors)] for i, qi in enumerate(all_qs)}
+                for idx, (pair, qmap) in enumerate(items):
+                    r, c = divmod(idx, cols)
+                    ax = axes[r, c]
+                    for qi in sorted(qmap.keys()):
+                        triples = sorted(qmap[qi], key=lambda t: t[0])
+                        wins = [t[0] for t in triples]
+                        diffs = [t[1] for t in triples]
+                        sigs = [t[2] for t in triples]
+                        color = color_for_q[float(qi)]
+                        ax.plot(wins, diffs, label=f"q{int(qi)}", color=color)
+                        for x, y, s in zip(wins, diffs, sigs):
+                            if s:
+                                ax.plot(x, y, 'o', color=color)
+                            else:
+                                ax.plot(x, y, 'o', mfc='none', mec=color, color=color)
+                    ax.axhline(0.0, color='k', linewidth=1, alpha=0.5)
+                    A, B = pair
+                    ax.set_title(f"{A}-{B}")
+                    if r == rows-1:
+                        ax.set_xlabel('Window size')
+                    if c == 0:
+                        ax.set_ylabel('Diff (A - B)')
+                # Hide unused axes
+                for k in range(n, rows*cols):
+                    r, c = divmod(k, cols)
+                    axes[r, c].axis('off')
+                # Single legend
+                handles, labels = axes[0,0].get_legend_handles_labels()
+                if handles:
+                    fig.legend(handles, labels, loc='upper right', title='Percentile')
+                fig.suptitle(f"{roi} | diff(A-B) vs window")
+                fig.tight_layout(rect=[0, 0, 0.98, 0.95])
+                grid_out = fig_root / f"bywin_grid_{_sanitize(roi)}.{args.plot_format}"
+                fig.savefig(grid_out, dpi=150, bbox_inches='tight')
+                plt.close(fig)
 
 
 if __name__ == "__main__":

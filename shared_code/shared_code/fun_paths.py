@@ -77,6 +77,8 @@ def build_paths(
         "mc_mod": results / "mc_mod",
         "allegiance": results / "allegiance",
         "trimers": results / "trimers",
+        "cohesion": results / "cohesion",
+
         # Figures paths
         "figures": figures,
         "fmodularity": figures / "modularity",

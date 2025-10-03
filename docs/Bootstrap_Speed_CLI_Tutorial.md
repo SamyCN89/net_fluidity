@@ -41,8 +41,7 @@ python scripts/bootstrap_speed_groups_cli.py --tr 500 --subset regions500 --show
 python scripts/bootstrap_speed_groups_cli.py \
   --tr 500 --subset regions500 --tau-index 0 \
   --n-boot 2000 --seed 0 --ci 95 \
-  --pool-threshold median \
-  --outdir j500_t0
+  --pool-threshold median
 ```
 
 Parameters used:
@@ -52,13 +51,12 @@ Parameters used:
 - percentiles: `--q 1,5,50,95,99` (default).
 - pool threshold: `median` splits windows into short (<= median) and long (> median); per‑window rows are still produced, pools add extra rows.
 
-Outputs (now under `scripts/reports/<outdir>/`):
-- `scripts/reports/<outdir>/speed_bootstrap_quantiles.csv`
-- `scripts/reports/<outdir>/speed_bootstrap_diffs.csv`
+Outputs are written under dataset paths:
+- CSVs: `paths['speed']/<outdir>/speed_bootstrap_quantiles.csv` and `..._diffs.csv`
 
 ## 3) Plots and Grids (what you get and how to tune them)
 
-Command example:
+Command example (outdir defaults to subset if not provided):
 
 ```bash
 python scripts/bootstrap_speed_groups_cli.py \
@@ -66,11 +64,11 @@ python scripts/bootstrap_speed_groups_cli.py \
   --pool-threshold median --pool-all \
   --plot --grid --grid-cols 2 --plot-format png \
   --progress --jobs 4 --parallel-scope windows \
-  --outdir j500_t0 --seed 123
+  --seed 123
 ```
 
 Where the figures go
-- Saved under `scripts/reports/<outdir>/figs[/<subset>]/`.
+- Saved under `paths['f_speed']/<outdir>/`.
 - File naming and types:
   - Per‑window group quantiles: `quantiles_<region>_win<W>.<fmt>`
   - Per‑window pairwise diffs: `diffs_<region>_win<W>_<A>_vs_<B>.<fmt>`
@@ -102,12 +100,18 @@ Tuning plotting behavior
 - `--grid-cols`: layout columns for grid plots (default 2).
 - `--progress`: shows tqdm progress bars.
 - `--load-cache`: skips saving a figure if the file already exists.
+- `--dry-run`: prints what will be processed (regions, windows, pools, output paths) and exits without computing.
+- `--list-inputs`: with `--dry-run`, prints the exact NPZ files that would be read.
 - `--q`: changes the percentiles shown in both quantiles and diffs plots.
 - `--seed`, `--n-boot`, `--ci`: control bootstrap variability and CI width.
 
 Performance tips
 - Use `--jobs N` and `--parallel-scope windows` to parallelize per‑window work within each region.
 - Combine with `--progress` to keep an eye on progress.
+
+Note on output folder names
+- If you omit `--outdir`, it defaults to the value of `--subset` (or to `bootstrap` if no subset). This keeps outputs tidy without extra flags.
+- If you provide a custom `--outdir` for multiple subsets, you can optionally add `--append-subset-to-outdir` to avoid collisions (writes to `<outdir>__subset-<subset>`).
 
 ## 4) Custom Groups and Pairs
 
@@ -147,8 +151,12 @@ Reading and basic inspection:
 
 ```python
 import pandas as pd
-qdf = pd.read_csv('scripts/reports/j500_t0/speed_bootstrap_quantiles.csv')
-ddf = pd.read_csv('scripts/reports/j500_t0/speed_bootstrap_diffs.csv')
+from net_fluidity_julien.context import DFCAnalysis
+ctx = DFCAnalysis(); ctx.get_metadata();
+from pathlib import Path
+out_csv_root = Path(ctx.paths['speed']) / 'j500_t0'
+qdf = pd.read_csv(out_csv_root / 'speed_bootstrap_quantiles.csv')
+ddf = pd.read_csv(out_csv_root / 'speed_bootstrap_diffs.csv')
 
 # Unique regions and windows/pools present
 print(sorted(qdf['region'].unique())[:5])
@@ -229,7 +237,7 @@ python scripts/bootstrap_speed_groups_cli.py \
   --pool-threshold median --pool-all \
   --plot --grid --grid-cols 2 --progress \
   --jobs 4 --parallel-scope windows \
-  --outdir j500_t0 --seed 123
+  --outdir j500_t0 --append-subset-to-outdir --seed 123
 
 ## 8) How does "-all" pooling work?
 
