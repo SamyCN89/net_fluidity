@@ -83,6 +83,17 @@ except ModuleNotFoundError:
             plot_group_quantiles,
             plot_quantile_diffs,
         )
+        # Optional centralized kernels for reuse optimization
+        try:
+            from shared_code.shared_code.fun_bootstrap import (
+                bootstrap_groups_boots as _central_bootstrap_groups_boots,
+                ci_from_boots as _central_ci_from_boots,
+                pool_per_animal as _central_pool_per_animal,
+            )
+        except Exception:
+            _central_bootstrap_groups_boots = None
+            _central_ci_from_boots = None
+            _central_pool_per_animal = None
 
 
 def _parse_pairs(pairs_arg: str) -> List[Tuple[Tuple[str, str], Tuple[str, str]]]:
@@ -236,6 +247,10 @@ def _process_window_and_return(
     n_boot: int,
     ci: float,
     seed: int,
+    early_stop: float,
+    chunk: int,
+    boots_float32: bool,
+    reuse_group_boots: bool,
     plot: bool,
     plot_format: str,
     no_quantiles_win: bool,
@@ -264,20 +279,56 @@ def _process_window_and_return(
 
     # Load data and bootstrap
     per_animal = load_per_animal_from_npz(npz, tau_index=None if tau_index < 0 else tau_index)
-    qa = bootstrap_quantiles_by_group(per_animal, groups_map, q=q, n_boot=n_boot, ci=ci, seed=seed)
-    for gk, res in qa.items():
-        for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
-            quant_rows.append({
-                "region": region_disp,
-                "roi": region_disp,
-                "window": int(win),
-                "group": gk,
-                "q": float(qi),
-                "point": float(pt),
-                "lo": float(lo),
-                "hi": float(hi),
-                "n": int(res["n"]),
-            })
+    if reuse_group_boots and _central_bootstrap_groups_boots is not None and _central_ci_from_boots is not None:
+        boots_map = _central_bootstrap_groups_boots(
+            per_animal, groups_map, q=q, n_boot=n_boot, seed=seed, chunk=chunk, dtype=(np.float32 if boots_float32 else float)
+        )
+        q_arr = boots_map.get('__q__', np.asarray(q, float))
+        qa = {}
+        for gk, idxs in groups_map.items():
+            if gk == '__q__':
+                continue
+            pooled_g = _central_pool_per_animal(per_animal, idxs) if _central_pool_per_animal is not None else np.concatenate([per_animal[i] for i in idxs if i < len(per_animal)])
+            point = np.percentile(pooled_g, q_arr)
+            lo, hi = _central_ci_from_boots(boots_map[gk], ci=ci)
+            qa[gk] = {"q": q_arr, "point": point, "lo": lo, "hi": hi, "n": int(pooled_g.size)}
+            for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
+                quant_rows.append({
+                    "region": region_disp,
+                    "roi": region_disp,
+                    "window": int(win),
+                    "group": gk,
+                    "q": float(qi),
+                    "point": float(pt),
+                    "lo": float(lo_i),
+                    "hi": float(hi_i),
+                    "n": int(pooled_g.size),
+                })
+    else:
+        qa = bootstrap_quantiles_by_group(
+            per_animal,
+            groups_map,
+            q=q,
+            n_boot=n_boot,
+            ci=ci,
+            seed=seed,
+            early_stop=early_stop,
+            _chunk=chunk,
+            boots_float32=boots_float32,
+        )
+        for gk, res in qa.items():
+            for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
+                quant_rows.append({
+                    "region": region_disp,
+                    "roi": region_disp,
+                    "window": int(win),
+                    "group": gk,
+                    "q": float(qi),
+                    "point": float(pt),
+                    "lo": float(lo),
+                    "hi": float(hi),
+                    "n": int(res["n"]),
+                })
     # Plot per-group quantiles for this window if requested
     if plot and not no_quantiles_win:
         ax = plot_group_quantiles(qa, title=f"{region_disp} | win={win}")
@@ -290,31 +341,81 @@ def _process_window_and_return(
     for (A, B) in groups_to_compare:
         if A not in groups_map or B not in groups_map:
             continue
-        qd = bootstrap_quantile_diffs_by_keys(per_animal, groups_map, A, B, q=q, n_boot=n_boot, ci=ci, seed=seed)
-        window_pairs_qd[(A, B)] = qd
-        for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
-            diff_rows.append({
-                "region": region_disp,
-                "roi": region_disp,
-                "window": int(win),
-                "A": A,
-                "B": B,
-                "q": float(qi),
-                "diff": float(pt),
-                "lo": float(lo),
-                "hi": float(hi),
-                "significant": bool(sig),
-                "n_a": int(qd.get("n_x", 0)),
-                "n_b": int(qd.get("n_y", 0)),
-            })
-        if plot and not no_diffs_win:
-            ax = plot_quantile_diffs(qd, title=f"{region_disp} | win={win} | {A}-{B}")
-            a_str = _sanitize(A)
-            b_str = _sanitize(B)
-            fig_path = fig_root / f"diffs_{_sanitize(region_disp)}_win{win}_{a_str}_vs_{b_str}.{plot_format}"
-            if not (load_cache and fig_path.exists()):
-                ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
-            plt.close(ax.figure)
+        if reuse_group_boots and _central_bootstrap_groups_boots is not None and _central_ci_from_boots is not None:
+            q_arr = boots_map.get('__q__', np.asarray(q, float))
+            boots_A = boots_map.get(A); boots_B = boots_map.get(B)
+            if boots_A is None or boots_B is None:
+                continue
+            n_used = min(boots_A.shape[0], boots_B.shape[0])
+            diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
+            lo, hi = _central_ci_from_boots(diff_boots, ci=ci)
+            pooled_A = _central_pool_per_animal(per_animal, groups_map[A]) if _central_pool_per_animal is not None else np.concatenate([per_animal[i] for i in groups_map[A] if i < len(per_animal)])
+            pooled_B = _central_pool_per_animal(per_animal, groups_map[B]) if _central_pool_per_animal is not None else np.concatenate([per_animal[i] for i in groups_map[B] if i < len(per_animal)])
+            point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
+            sig = (lo > 0) | (hi < 0)
+            qd = {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(pooled_A.size), "n_y": int(pooled_B.size)}
+            window_pairs_qd[(A, B)] = qd
+            for qi, pt, lo_i, hi_i, s in zip(q_arr, point, lo, hi, sig, strict=False):
+                diff_rows.append({
+                    "region": region_disp,
+                    "roi": region_disp,
+                    "window": int(win),
+                    "A": A,
+                    "B": B,
+                    "q": float(qi),
+                    "diff": float(pt),
+                    "lo": float(lo_i),
+                    "hi": float(hi_i),
+                    "significant": bool(s),
+                    "n_a": int(pooled_A.size),
+                    "n_b": int(pooled_B.size),
+                })
+            if plot and not no_diffs_win:
+                ax = plot_quantile_diffs(qd, title=f"{region_disp} | win={win} | {A}-{B}")
+                a_str = _sanitize(A)
+                b_str = _sanitize(B)
+                fig_path = fig_root / f"diffs_{_sanitize(region_disp)}_win{win}_{a_str}_vs_{b_str}.{plot_format}"
+                if not (load_cache and fig_path.exists()):
+                    ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+                plt.close(ax.figure)
+        else:
+            qd = bootstrap_quantile_diffs_by_keys(
+                per_animal,
+                groups_map,
+                A,
+                B,
+                q=q,
+                n_boot=n_boot,
+                ci=ci,
+                seed=seed,
+                early_stop=early_stop,
+                _chunk=chunk,
+                boots_float32=boots_float32,
+            )
+            window_pairs_qd[(A, B)] = qd
+            for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
+                diff_rows.append({
+                    "region": region_disp,
+                    "roi": region_disp,
+                    "window": int(win),
+                    "A": A,
+                    "B": B,
+                    "q": float(qi),
+                    "diff": float(pt),
+                    "lo": float(lo),
+                    "hi": float(hi),
+                    "significant": bool(sig),
+                    "n_a": int(qd.get("n_x", 0)),
+                    "n_b": int(qd.get("n_y", 0)),
+                })
+            if plot and not no_diffs_win:
+                ax = plot_quantile_diffs(qd, title=f"{region_disp} | win={win} | {A}-{B}")
+                a_str = _sanitize(A)
+                b_str = _sanitize(B)
+                fig_path = fig_root / f"diffs_{_sanitize(region_disp)}_win{win}_{a_str}_vs_{b_str}.{plot_format}"
+                if not (load_cache and fig_path.exists()):
+                    ax.figure.savefig(fig_path, dpi=150, bbox_inches="tight")
+                plt.close(ax.figure)
 
     return quant_rows, diff_rows, window_pairs_qd
 
@@ -328,8 +429,12 @@ def main():
     ap.add_argument("--q", type=str, default="1,5,50,95,99", help="Percentiles to bootstrap, comma-separated.")
     ap.add_argument("--pairs", type=str, default="(WT,VEH)-(WT,LCTB92);(Dp1Yey,VEH)-(Dp1Yey,LCTB92);(WT,VEH)-(Dp1Yey,VEH);(WT,LCTB92)-(Dp1Yey,LCTB92)", help="Pairs A-B; semicolon-separated.")
     ap.add_argument("--n-boot", type=int, default=2000, help="Bootstrap resamples. Default 2000.")
+    ap.add_argument("--reuse-group-boots", action="store_true", help="Reuse per-group bootstrap replicates to compute all pairs (faster for many pairs).")
+    ap.add_argument("--early-stop", type=float, default=0.0, help="Adaptive CI tolerance (fraction). 0 disables.")
     ap.add_argument("--seed", type=int, default=0, help="Base random seed for bootstrapping.")
     ap.add_argument("--ci", type=float, default=95.0, help="Confidence level (percent).")
+    ap.add_argument("--chunk", type=int, default=128, help="Bootstrap chunk size for vectorized resampling.")
+    ap.add_argument("--boots-float32", action="store_true", help="Store bootstrap arrays in float32 to reduce memory.")
     ap.add_argument("--pool-threshold", type=str, default=None, help="Pool windows into short/long by 'median' or integer cutoff.")
     ap.add_argument("--pool-all", action="store_true", help="Also add an 'all' pool combining all windows.")
     ap.add_argument("--outdir", type=str, default=None, help="Output folder name under dataset paths; defaults to --subset or 'bootstrap'.")
@@ -596,7 +701,7 @@ def main():
             results = Parallel(n_jobs=args.jobs, prefer="processes")(
                 delayed(_process_window_and_return)(
                     region_label, w, p, args.tau_index, groups_map, groups_to_compare, q,
-                    args.n_boot, args.ci, args.seed, args.plot, args.plot_format, args.no_quantiles_win, args.no_diffs_win, fig_root, args.load_cache
+                    args.n_boot, args.ci, args.seed, float(args.early_stop or 0.0), int(args.chunk), bool(args.boots_float32), bool(args.reuse_group_boots), args.plot, args.plot_format, args.no_quantiles_win, args.no_diffs_win, fig_root, args.load_cache
                 )
                 for (w, p) in tasks
             )
@@ -621,7 +726,7 @@ def main():
             for win, npz in win_iter:
                 qr, dr, window_pairs_qd = _process_window_and_return(
                     region_label, win, npz, args.tau_index, groups_map, groups_to_compare, q,
-                    args.n_boot, args.ci, args.seed, args.plot, args.plot_format, args.no_quantiles_win, args.no_diffs_win, fig_root, args.load_cache
+                    args.n_boot, args.ci, args.seed, float(args.early_stop or 0.0), int(args.chunk), bool(args.boots_float32), bool(args.reuse_group_boots), args.plot, args.plot_format, args.no_quantiles_win, args.no_diffs_win, fig_root, args.load_cache
                 )
                 quantiles_rows.extend(qr)
                 diffs_rows.extend(dr)
@@ -663,20 +768,54 @@ def main():
                     continue
                 per_animals = [load_per_animal_from_npz(by_win[w], tau_index=None if args.tau_index < 0 else args.tau_index) for w in pool_windows if w in by_win]
                 pooled = _concat_per_animal(per_animals)
-                qa = bootstrap_quantiles_by_group(pooled, groups_map, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
-                for gk, res in qa.items():
-                    for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
-                        quantiles_rows.append({
-                            "region": roi_name,
-                            "roi": roi_name,
-                            "window": pool_name,
-                            "group": gk,
-                            "q": float(qi),
-                            "point": float(pt),
-                            "lo": float(lo),
-                            "hi": float(hi),
-                            "n": int(res["n"]),
-                        })
+                if args.reuse_group_boots and _central_bootstrap_groups_boots is not None and _central_ci_from_boots is not None:
+                    boots_map = _central_bootstrap_groups_boots(pooled, groups_map, q=q, n_boot=args.n_boot, seed=args.seed)
+                    q_arr = boots_map.get('__q__', np.asarray(q, float))
+                    qa = {}
+                    for gk, idxs in groups_map.items():
+                        if gk == '__q__':
+                            continue
+                        pooled_g = _central_pool_per_animal(pooled, idxs) if _central_pool_per_animal is not None else np.concatenate([pooled[i] for i in idxs if i < len(pooled)])
+                        lo, hi = _central_ci_from_boots(boots_map[gk], ci=args.ci)
+                        point = np.percentile(pooled_g, q_arr)
+                        qa[gk] = {"q": q_arr, "point": point, "lo": lo, "hi": hi, "n": int(pooled_g.size)}
+                        for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
+                            quantiles_rows.append({
+                                "region": roi_name,
+                                "roi": roi_name,
+                                "window": pool_name,
+                                "group": gk,
+                                "q": float(qi),
+                                "point": float(pt),
+                                "lo": float(lo_i),
+                                "hi": float(hi_i),
+                                "n": int(pooled_g.size),
+                            })
+                else:
+                    qa = bootstrap_quantiles_by_group(
+                        pooled,
+                        groups_map,
+                        q=q,
+                        n_boot=args.n_boot,
+                        ci=args.ci,
+                        seed=args.seed,
+                        early_stop=float(args.early_stop or 0.0),
+                        _chunk=int(args.chunk),
+                        boots_float32=bool(args.boots_float32),
+                    )
+                    for gk, res in qa.items():
+                        for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
+                            quantiles_rows.append({
+                                "region": roi_name,
+                                "roi": roi_name,
+                                "window": pool_name,
+                                "group": gk,
+                                "q": float(qi),
+                                "point": float(pt),
+                                "lo": float(lo),
+                                "hi": float(hi),
+                                "n": int(res["n"]),
+                            })
                 # Correlation with NOR per percentile for this ROI/pool
                 if args.correlate_nor:
                     # Auto-detect NOR column if needed
@@ -747,23 +886,65 @@ def main():
                 for (A, B) in groups_to_compare:
                     if A not in groups_map or B not in groups_map:
                         continue
-                    qd = bootstrap_quantile_diffs_by_keys(pooled, groups_map, A, B, q=q, n_boot=args.n_boot, ci=args.ci, seed=args.seed)
-                    pool_pairs_qd[(A, B)] = qd
-                    for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
-                        diffs_rows.append({
-                            "region": roi_name,
-                            "roi": roi_name,
-                            "window": pool_name,
-                            "A": A,
-                            "B": B,
-                            "q": float(qi),
-                            "diff": float(pt),
-                            "lo": float(lo),
-                            "hi": float(hi),
-                            "significant": bool(sig),
-                            "n_a": int(qd.get("n_x", 0)),
-                            "n_b": int(qd.get("n_y", 0)),
-                        })
+                    if args.reuse_group_boots and _central_bootstrap_groups_boots is not None and _central_ci_from_boots is not None:
+                        q_arr = boots_map.get('__q__', np.asarray(q, float))
+                        boots_A = boots_map.get(A); boots_B = boots_map.get(B)
+                        if boots_A is None or boots_B is None:
+                            continue
+                        n_used = min(boots_A.shape[0], boots_B.shape[0])
+                        diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
+                        lo, hi = _central_ci_from_boots(diff_boots, ci=args.ci)
+                        pooled_A = _central_pool_per_animal(pooled, groups_map[A]) if _central_pool_per_animal is not None else np.concatenate([pooled[i] for i in groups_map[A] if i < len(pooled)])
+                        pooled_B = _central_pool_per_animal(pooled, groups_map[B]) if _central_pool_per_animal is not None else np.concatenate([pooled[i] for i in groups_map[B] if i < len(pooled)])
+                        point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
+                        sig = (lo > 0) | (hi < 0)
+                        qd = {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(pooled_A.size), "n_y": int(pooled_B.size)}
+                        pool_pairs_qd[(A, B)] = qd
+                        for qi, pt, lo_i, hi_i, s in zip(q_arr, point, lo, hi, sig, strict=False):
+                            diffs_rows.append({
+                                "region": roi_name,
+                                "roi": roi_name,
+                                "window": pool_name,
+                                "A": A,
+                                "B": B,
+                                "q": float(qi),
+                                "diff": float(pt),
+                                "lo": float(lo_i),
+                                "hi": float(hi_i),
+                                "significant": bool(s),
+                                "n_a": int(pooled_A.size),
+                                "n_b": int(pooled_B.size),
+                            })
+                    else:
+                        qd = bootstrap_quantile_diffs_by_keys(
+                            pooled,
+                            groups_map,
+                            A,
+                            B,
+                            q=q,
+                            n_boot=args.n_boot,
+                            ci=args.ci,
+                            seed=args.seed,
+                            early_stop=float(args.early_stop or 0.0),
+                            _chunk=int(args.chunk),
+                            boots_float32=bool(args.boots_float32),
+                        )
+                        pool_pairs_qd[(A, B)] = qd
+                        for qi, pt, lo, hi, sig in zip(qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False):
+                            diffs_rows.append({
+                                "region": roi_name,
+                                "roi": roi_name,
+                                "window": pool_name,
+                                "A": A,
+                                "B": B,
+                                "q": float(qi),
+                                "diff": float(pt),
+                                "lo": float(lo),
+                                "hi": float(hi),
+                                "significant": bool(sig),
+                                "n_a": int(qd.get("n_x", 0)),
+                                "n_b": int(qd.get("n_y", 0)),
+                            })
                 if args.plot and not args.no_diffs_win and args.grid and pool_pairs_qd:
                     grid_path = fig_root / f"grid_{_sanitize(roi_name)}_pool-{pool_name}.{args.plot_format}"
                     if not (args.load_cache and grid_path.exists()):

@@ -100,10 +100,42 @@ The Julien dataset flow now has a stabilized Phase 3 path with a thin CLI wrappe
   - Outputs: CSVs under `paths['speed']/<outdir>/*.csv` and figures under `paths['f_speed']/<outdir>/*.<fmt>`.
   - If `--outdir` is omitted, it defaults to `--subset` (or `bootstrap` if no subset).
 
+### Centralized Bootstrap Kernels (Phase 3)
+
+- All bootstrap kernels are centralized in `shared_code/shared_code/fun_bootstrap.py`.
+  - Use these from scripts and notebooks; avoid local duplicates.
+  - Supports adaptive early stop, vectorized chunking, and memory controls.
+
+- Compute CSVs with `scripts/compute_speed_bootstrap.py` (compute‑only):
+  - Important flags:
+    - `--reuse-group-boots`: compute per‑group bootstrap replicates once; derive all pairs from them (major speedup for many pairs).
+    - `--chunk INT`: batch size for vectorized resampling (throughput vs memory).
+    - `--boots-float32`: store bootstrap arrays in float32.
+    - `--values-float32`: cast pooled values to float32 before resampling (reduces batch memory).
+    - `--index-int32`: use int32 index arrays for resampling (reduces index memory).
+    - `--blas-threads INT`: limit BLAS threads per worker (defaults to 1 when `--jobs > 1`).
+  - Example (fast + moderate memory):
+    ```bash
+    python scripts/compute_speed_bootstrap.py \
+      --tr 400 --subset regions400 --tau-index 0 \
+      --n-boot 2000 --reuse-group-boots \
+      --chunk 256 --boots-float32 \
+      --jobs 8 --parallel-scope windows --progress
+    ```
+  - Example (lower memory):
+    ```bash
+    python scripts/compute_speed_bootstrap.py \
+      --tr 400 --subset regions400 --tau-index 0 \
+      --n-boot 2000 --reuse-group-boots \
+      --chunk 128 --boots-float32 --values-float32 --index-int32 \
+      --jobs 4 --parallel-scope windows --progress
+    ```
+
 ## Docs
 
 - Usage Tutorial: `julien_data/USAGE_TUTORIAL.md`
 - Bootstrap Speed CLI Tutorial: `docs/Bootstrap_Speed_CLI_Tutorial.md`
+- Compute/Plot Split Tutorial: `docs/Compute_and_Plot_Tutorial.md`
 
 ## Contributing
 

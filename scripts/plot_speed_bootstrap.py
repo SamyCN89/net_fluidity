@@ -34,6 +34,7 @@ def main() -> int:
     ap.add_argument("--plot-diffs-bywin-grid", action="store_true")
     ap.add_argument("--bywin-grid-cols", type=int, default=2)
     ap.add_argument("--append-subset-to-outdir", action="store_true")
+    ap.add_argument("--reuse-group-boots", action="store_true", help="Pass through to CLI for symmetry; plot-only mode ignores it.")
     args = ap.parse_args()
 
     here = Path(__file__).resolve()
@@ -62,10 +63,11 @@ def main() -> int:
         cmd += ["--plot-diffs-by-win"]
     if args.plot_diffs_bywin_grid:
         cmd += ["--plot-diffs-bywin-grid", "--bywin-grid-cols", str(args.bywin_grid_cols)]
+    if args.reuse_group_boots:
+        cmd += ["--reuse-group-boots"]
 
     return subprocess.call(cmd)
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

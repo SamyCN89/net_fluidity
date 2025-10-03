@@ -27,6 +27,18 @@ from __future__ import annotations
 from pathlib import Path
 import re
 from typing import Iterable, Callable
+try:
+    from shared_code.shared_code.fun_bootstrap import (
+        bootstrap_percentiles as _central_bootstrap_percentiles,
+        bootstrap_diff_percentiles as _central_bootstrap_diff_percentiles,
+        bootstrap_groups_percentiles as _central_bootstrap_groups_percentiles,
+        pool_per_animal as _central_pool_per_animal,
+    )
+except Exception:
+    _central_bootstrap_percentiles = None
+    _central_bootstrap_diff_percentiles = None
+    _central_bootstrap_groups_percentiles = None
+    _central_pool_per_animal = None
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -156,7 +168,8 @@ def bootstrap_ci_1d(x: np.ndarray, n_boot: int = 2000, stat: str = 'median', ci:
 
 def bootstrap_quantiles_1d(x: np.ndarray, q: Iterable[float] = (1, 5, 50, 95, 99),
                            n_boot: int = 2000, ci: float = 95.0,
-                           random_state: int | None = 0, _chunk: int = 128) -> dict[str, np.ndarray | int]:
+                           random_state: int | None = 0, _chunk: int = 128,
+                           early_stop: float = 0.0, boots_float32: bool = False) -> dict[str, np.ndarray | int]:
     """Bootstrap CIs for multiple percentiles of a 1D array.
 
     Vectorized in chunks to avoid Python loops; returns dict with keys: 'q', 'point', 'lo', 'hi', 'n'.
@@ -171,16 +184,35 @@ def bootstrap_quantiles_1d(x: np.ndarray, q: Iterable[float] = (1, 5, 50, 95, 99
     point = np.percentile(x, q_arr)
     rng = np.random.default_rng(random_state)
     n = x.size
+    if _central_bootstrap_percentiles is not None:
+        point_c, lo_c, hi_c = _central_bootstrap_percentiles(
+            x, q=q_arr, n_boot=n_boot, ci=ci, seed=random_state, chunk=_chunk, early_stop=early_stop, dtype=(np.float32 if boots_float32 else float)
+        )
+        return {"q": q_arr, "point": point_c, "lo": lo_c, "hi": hi_c, "n": int(n)}
+    # Fallback local (kept for robustness)
     boots = np.empty((n_boot, q_arr.size), float)
     chunk = max(1, int(_chunk))
     done = 0
+    check_every = max(1, int(0.1 * n_boot))
+    last_lo = None
+    last_hi = None
     while done < n_boot:
         m = min(chunk, n_boot - done)
         idx = rng.integers(0, n, size=(m, n), endpoint=False)
         xb = x[idx]
-        # percentile over axis=1 (per bootstrap); transpose to shape (m, len(q))
         boots[done:done + m, :] = np.percentile(xb, q_arr, axis=1).T
         done += m
+        if early_stop and (done % check_every == 0 or done == n_boot):
+            alpha_tmp = (100.0 - float(ci)) / 2.0
+            lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
+            hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
+            if last_lo is not None and last_hi is not None and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi))):
+                rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
+                rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
+                if rel_lo <= early_stop and rel_hi <= early_stop:
+                    return {"q": q_arr, "point": point, "lo": lo_t, "hi": hi_t, "n": int(n)}
+            last_lo = lo_t
+            last_hi = hi_t
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
@@ -231,18 +263,23 @@ def bootstrap_by_group(per_animal: list[np.ndarray], groups: dict, n_boot: int =
 
 def bootstrap_quantiles_by_group(per_animal: list[np.ndarray], groups: dict,
                                  q: Iterable[float] = (1, 5, 50, 95, 99),
-                                 n_boot: int = 2000, ci: float = 95.0, seed: int = 0) -> dict:
+                                 n_boot: int = 2000, ci: float = 95.0, seed: int = 0,
+                                 early_stop: float = 0.0, _chunk: int = 128, boots_float32: bool = False) -> dict:
     """Return {group_key: {q, point, lo, hi, n}} for pooled group percentiles.
 
     Each value is a dict matching the output of `bootstrap_quantiles_1d`.
     """
+    if _central_bootstrap_groups_percentiles is not None:
+        return _central_bootstrap_groups_percentiles(
+            per_animal, groups, q=q, n_boot=n_boot, ci=ci, seed=seed, early_stop=early_stop, chunk=_chunk, dtype=(np.float32 if boots_float32 else float)
+        )
     out: dict = {}
     for g, idxs in groups.items():
         vals = [per_animal[int(i)] for i in idxs if int(i) < len(per_animal)]
         nonempty = [v for v in vals if getattr(v, 'size', 0) > 0]
         pooled = np.concatenate(nonempty) if nonempty else np.array([])
         res = bootstrap_quantiles_1d(
-            pooled, q=q, n_boot=n_boot, ci=ci, random_state=seed + (hash(g) % 9973)
+            pooled, q=q, n_boot=n_boot, ci=ci, random_state=seed + (hash(g) % 9973), early_stop=early_stop, _chunk=_chunk, boots_float32=boots_float32
         )
         out[g] = res
     return out
@@ -352,7 +389,8 @@ def bootstrap_diff_of_diffs(per_animal: list[np.ndarray], groups: dict,
 def bootstrap_quantile_diffs(x: np.ndarray, y: np.ndarray,
                              q: Iterable[float] = (1, 5, 50, 95, 99),
                              n_boot: int = 2000, ci: float = 95.0,
-                             random_state: int | None = 0, _chunk: int = 128) -> dict[str, np.ndarray | int]:
+                             random_state: int | None = 0, _chunk: int = 128,
+                             early_stop: float = 0.0, boots_float32: bool = False) -> dict[str, np.ndarray | int]:
     """Bootstrap CI for percentile differences between two samples.
 
     Returns dict with keys: 'q', 'point', 'lo', 'hi', 'sig', 'n_x', 'n_y'.
@@ -371,11 +409,18 @@ def bootstrap_quantile_diffs(x: np.ndarray, y: np.ndarray,
     py = np.percentile(y, q_arr)
     point = px - py
 
+    if _central_bootstrap_diff_percentiles is not None:
+        return _central_bootstrap_diff_percentiles(
+            x, y, q=q_arr, n_boot=n_boot, ci=ci, seed=random_state, chunk=_chunk, early_stop=early_stop, dtype=(np.float32 if boots_float32 else float)
+        )
     rng = np.random.default_rng(random_state)
     nx, ny = x.size, y.size
     boots = np.empty((n_boot, q_arr.size), float)
     chunk = max(1, int(_chunk))
     done = 0
+    check_every = max(1, int(0.1 * n_boot))
+    last_lo = None
+    last_hi = None
     while done < n_boot:
         m = min(chunk, n_boot - done)
         idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
@@ -384,6 +429,18 @@ def bootstrap_quantile_diffs(x: np.ndarray, y: np.ndarray,
         yb = y[idx_y]
         boots[done:done + m, :] = (np.percentile(xb, q_arr, axis=1) - np.percentile(yb, q_arr, axis=1)).T
         done += m
+        if early_stop and (done % check_every == 0 or done == n_boot):
+            alpha_tmp = (100.0 - float(ci)) / 2.0
+            lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
+            hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
+            if last_lo is not None and last_hi is not None and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi))):
+                rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
+                rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
+                if rel_lo <= early_stop and rel_hi <= early_stop:
+                    sig_t = (lo_t > 0) | (hi_t < 0)
+                    return {"q": q_arr, "point": point, "lo": lo_t, "hi": hi_t, "sig": sig_t, "n_x": int(nx), "n_y": int(ny)}
+            last_lo = lo_t
+            last_hi = hi_t
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
@@ -394,11 +451,18 @@ def bootstrap_quantile_diffs(x: np.ndarray, y: np.ndarray,
 def bootstrap_quantile_diffs_by_keys(per_animal: list[np.ndarray], groups: dict,
                                      key_a, key_b,
                                      q: Iterable[float] = (1, 5, 50, 95, 99),
-                                     n_boot: int = 2000, ci: float = 95.0, seed: int = 0) -> dict:
+                                     n_boot: int = 2000, ci: float = 95.0, seed: int = 0,
+                                     early_stop: float = 0.0, _chunk: int = 128, boots_float32: bool = False) -> dict:
     """Wrapper: percentile difference CIs between two group keys (A - B)."""
+    idx_a = groups[key_a]
+    idx_b = groups[key_b]
+    if _central_pool_per_animal is not None and _central_bootstrap_diff_percentiles is not None:
+        xa = _central_pool_per_animal(per_animal, idx_a)
+        xb = _central_pool_per_animal(per_animal, idx_b)
+        return _central_bootstrap_diff_percentiles(xa, xb, q=q, n_boot=n_boot, ci=ci, seed=seed, early_stop=early_stop)
     xa = pooled_from_indices(per_animal, groups[key_a])
     xb = pooled_from_indices(per_animal, groups[key_b])
-    return bootstrap_quantile_diffs(xa, xb, q=q, n_boot=n_boot, ci=ci, random_state=seed)
+    return bootstrap_quantile_diffs(xa, xb, q=q, n_boot=n_boot, ci=ci, random_state=seed, early_stop=early_stop, _chunk=_chunk, boots_float32=boots_float32)
 
 
 def summarize_significant_quantiles(qdiff_res: dict, min_effect: float | None = None) -> list[dict]:
