@@ -1,79 +1,94 @@
 #!/usr/bin/env python3
 """
-Compute dFC speed bootstrap tables (CSV only), no plotting.
+Compute dFC speed bootstrap tables (CSV only).
 
-Standalone implementation that reads per-window NPZ speed files written by the
-speed compute step, bootstraps per-group percentiles and per-pair percentile
-differences, and writes two CSVs under paths['speed']/<outdir>/.
-
-Outputs
-- speed_bootstrap_quantiles.csv: region, roi, window, group, q, point, lo, hi, n
-- speed_bootstrap_diffs.csv:     region, roi, window, A, B, q, diff, lo, hi, significant, n_a, n_b
+Reads per-window NPZ speed files, bootstraps per-group percentiles and per-pair
+percentile differences (with empirical two-sided p-values), optionally pools
+windows and correlates pooled per-animal percentiles with a NOR score.
 """
 from __future__ import annotations
 
 import argparse
 from collections.abc import Iterable
 import csv
+from dataclasses import dataclass, field
+import os
 from pathlib import Path
 import re
-import sys
-import os
 
-from joblib import Parallel, delayed
+
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 
-# Ensure local packages are importable when running from repo without installation.
-# - Prefer `src/net_fluidity_julien` (official context)
-# - Fallback to `julien_data` module path for legacy DFCAnalysis
-_HERE = Path(__file__).resolve()
-_REPO_ROOT = _HERE.parents[1]
-_SRC_DIR = _REPO_ROOT / "src"
-_JULIEN_DIR = _REPO_ROOT / "julien_data"
-_SHARED_DIR = _REPO_ROOT / "shared_code"
-for _p in (str(_SRC_DIR), str(_SHARED_DIR), str(_JULIEN_DIR)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-# ---------------- Central kernels (preferred) ---------------- #
-try:
-    from shared_code.shared_code.fun_bootstrap import (
+# Centralized kernels (prefer shared_code.*; fallback to shared_code.shared_code.*)
+try:  # preferred: shared_code.*
+    from shared_code.fun_bootstrap import (
         bootstrap_percentiles as _central_bootstrap_percentiles,
         bootstrap_diff_percentiles as _central_bootstrap_diff_percentiles,
         bootstrap_groups_percentiles as _central_bootstrap_groups_percentiles,
-        pool_per_animal as _central_pool_per_animal,
         bootstrap_groups_boots as _central_bootstrap_groups_boots,
         ci_from_boots as _central_ci_from_boots,
+        pool_per_animal as _central_pool_per_animal,
     )
-except Exception:
-    _central_bootstrap_percentiles = None
-    _central_bootstrap_diff_percentiles = None
-    _central_bootstrap_groups_percentiles = None
-    _central_pool_per_animal = None
-    _central_bootstrap_groups_boots = None
-    _central_ci_from_boots = None
+except Exception:  # pragma: no cover
+    try:  # fallback: nested package path
+        from shared_code.shared_code.fun_bootstrap import (
+            bootstrap_percentiles as _central_bootstrap_percentiles,
+            bootstrap_diff_percentiles as _central_bootstrap_diff_percentiles,
+            bootstrap_groups_percentiles as _central_bootstrap_groups_percentiles,
+            bootstrap_groups_boots as _central_bootstrap_groups_boots,
+            ci_from_boots as _central_ci_from_boots,
+            pool_per_animal as _central_pool_per_animal,
+        )
+    except Exception:  # final: disable central kernels
+        _central_bootstrap_percentiles = None
+        _central_bootstrap_diff_percentiles = None
+        _central_bootstrap_groups_percentiles = None
+        _central_bootstrap_groups_boots = None
+        _central_ci_from_boots = None
+        _central_pool_per_animal = None
 
-# ---------------- Standalone helpers (no import from scripts.speed_bootstrap_nb) ---------------- #
+
+# ---------------- Context and IO helpers ---------------- #
 
 
 def get_context(tr: int | None = None):
     """Return a dataset context with paths and metadata loaded.
 
-    Uses net_fluidity_julien.context.DFCAnalysis (preferred), with legacy fallback.
+    Prefers the packaged context under src/net_fluidity_julien; if missing,
+    falls back to julien_data/class_dataanalysis_julien.py by adding the
+    julien_data folder to sys.path.
     """
+    DFC = None
+    # Try package import; if it fails, add src/ to sys.path and retry
     try:
-        from net_fluidity_julien.context import DFCAnalysis
+        from net_fluidity_julien.context import DFCAnalysis as DFC  # type: ignore
     except ModuleNotFoundError:
         try:
-            # legacy (within julien_data)
-            from julien_data.class_dataanalysis_julien import (
-                DFCAnalysis,  # type: ignore
-            )
+            import sys
+            here = Path(__file__).resolve()
+            repo_root = here.parents[1]
+            src_path = repo_root / "src"
+            if src_path.exists() and str(src_path) not in sys.path:
+                sys.path.insert(0, str(src_path))
+            from net_fluidity_julien.context import DFCAnalysis as DFC  # type: ignore
+        except Exception:
+            DFC = None
+    # Fallback to julien_data module file
+    if DFC is None:
+        try:
+            from class_dataanalysis_julien import DFCAnalysis as DFC  # type: ignore
         except ModuleNotFoundError:
-            from class_dataanalysis_julien import DFCAnalysis  # type: ignore
+            import sys
+            here = Path(__file__).resolve()
+            repo_root = here.parents[1]
+            jd_path = repo_root / "julien_data"
+            if jd_path.exists() and str(jd_path) not in sys.path:
+                sys.path.insert(0, str(jd_path))
+            from class_dataanalysis_julien import DFCAnalysis as DFC  # type: ignore
 
-    data = DFCAnalysis()
+    data = DFC()
     if tr is None:
         data.get_metadata()
     else:
@@ -88,21 +103,16 @@ def get_context(tr: int | None = None):
     return data
 
 
-def load_per_animal_from_npz(
-    npz_path: Path, tau_index: int | None = None
-) -> list[np.ndarray]:
-    """Load per-animal speed arrays from a per-window NPZ (key: 'speeds').
-    Returns list of 1D arrays (per animal), pooled over taus if tau_index=None or -1.
-    """
+def load_per_animal_from_npz(npz_path: Path, tau_index: int | None = None) -> list[np.ndarray]:
     z = np.load(npz_path, allow_pickle=True)
     if "speeds" not in z:
         raise KeyError(f"NPZ file missing 'speeds' key: {npz_path}")
-    speeds = z["speeds"]  # object array length n_animals; each entry 2D (n_tau, T_w)
-    per_animal: list[np.ndarray] = []
+    speeds = z["speeds"]  # object array len=n_animals; each is 2D (n_tau, T_w)
+    out: list[np.ndarray] = []
     for a in range(len(speeds)):
         arr = np.asarray(speeds[a], float)
         if arr.ndim != 2:
-            per_animal.append(np.array([], float))
+            out.append(np.array([], float))
             continue
         if tau_index is None or int(tau_index) < 0:
             vals = arr[~np.isnan(arr)]
@@ -111,20 +121,23 @@ def load_per_animal_from_npz(
                 vals = np.array([], float)
             else:
                 vals = arr[tau_index][~np.isnan(arr[tau_index])]
-        per_animal.append(vals)
-    return per_animal
+        out.append(vals)
+    return out
 
 
 def build_groups_from_columns(cog_df: pd.DataFrame, columns: list[str]) -> dict:
     if not isinstance(cog_df, pd.DataFrame):
         raise TypeError("cog_df must be a pandas DataFrame")
-    cols = list(columns)
+    cols = [c.strip() for c in columns if c.strip()]
     tmp = cog_df.reset_index(drop=True)
     grp = tmp.groupby(cols).groups
     out: dict = {}
     for k, idx in grp.items():
-        out[k if isinstance(k, tuple) else k] = sorted(int(i) for i in idx)
+        out[k if isinstance(k, tuple) else (k,)] = sorted(int(i) for i in idx)
     return out
+
+
+# ---------------- Local bootstrap implementations (fallbacks) ---------------- #
 
 
 def bootstrap_quantiles_1d(
@@ -141,12 +154,20 @@ def bootstrap_quantiles_1d(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if _central_bootstrap_percentiles is not None:
         return _central_bootstrap_percentiles(
-            x, q=q, n_boot=n_boot, ci=ci, seed=seed, chunk=chunk, early_stop=early_stop, dtype=dtype,
-            val_dtype=val_dtype, index_dtype=index_dtype
+            x,
+            q=q,
+            n_boot=n_boot,
+            ci=ci,
+            seed=seed,
+            chunk=chunk,
+            early_stop=early_stop,
+            dtype=np.dtype(dtype),
+            val_dtype=(None if val_dtype is None else np.dtype(val_dtype)),
+            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
         )
     x = np.asarray(x, val_dtype or float)
     x = x[~np.isnan(x)]
-    q_arr = np.asarray(list(q), dtype=float)
+    q_arr = np.asarray(list(q), float)
     if x.size == 0:
         nan = np.full_like(q_arr, np.nan, float)
         return nan, nan, nan
@@ -172,7 +193,11 @@ def bootstrap_quantiles_1d(
             alpha_tmp = (100.0 - float(ci)) / 2.0
             lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
             hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
-            if last_lo is not None and last_hi is not None and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi))):
+            if (
+                last_lo is not None
+                and last_hi is not None
+                and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi)))
+            ):
                 rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
                 rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
                 if rel_lo <= early_stop and rel_hi <= early_stop:
@@ -208,9 +233,9 @@ def bootstrap_quantiles_by_group(
             seed=seed,
             early_stop=early_stop,
             chunk=chunk,
-            dtype=dtype,
-            val_dtype=val_dtype,
-            index_dtype=index_dtype,
+            dtype=np.dtype(dtype),
+            val_dtype=(None if val_dtype is None else np.dtype(val_dtype)),
+            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
         )
     out: dict = {}
     for g, idxs in groups.items():
@@ -267,8 +292,17 @@ def bootstrap_quantile_diffs(
 ) -> dict:
     if _central_bootstrap_diff_percentiles is not None:
         return _central_bootstrap_diff_percentiles(
-            x, y, q=q, n_boot=n_boot, ci=ci, seed=seed, chunk=chunk, early_stop=early_stop, dtype=dtype,
-            val_dtype=val_dtype, index_dtype=index_dtype
+            x,
+            y,
+            q=q,
+            n_boot=n_boot,
+            ci=ci,
+            seed=seed,
+            chunk=chunk,
+            early_stop=early_stop,
+            dtype=np.dtype(dtype),
+            val_dtype=(None if val_dtype is None else np.dtype(val_dtype)),
+            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
         )
     x = np.asarray(x, val_dtype or float)
     y = np.asarray(y, val_dtype or float)
@@ -314,7 +348,11 @@ def bootstrap_quantile_diffs(
             alpha_tmp = (100.0 - float(ci)) / 2.0
             lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
             hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
-            if last_lo is not None and last_hi is not None and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi))):
+            if (
+                last_lo is not None
+                and last_hi is not None
+                and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi)))
+            ):
                 rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
                 rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
                 if rel_lo <= early_stop and rel_hi <= early_stop:
@@ -334,15 +372,68 @@ def bootstrap_quantile_diffs(
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
     sig = (lo > 0) | (hi < 0)
+    # Empirical two-sided p-values per quantile
+    p = np.empty_like(q_arr, dtype=float)
+    for j in range(q_arr.size):
+        p[j] = (np.count_nonzero(np.abs(boots[:, j]) >= abs(point[j])) + 1.0) / (
+            boots.shape[0] + 1.0
+        )
     return {
         "q": q_arr,
         "point": point,
         "lo": lo,
         "hi": hi,
         "sig": sig,
+        "p": p,
         "n_x": int(nx),
         "n_y": int(ny),
     }
+
+
+def _bootstrap_diff_p_only_local(
+    x: np.ndarray,
+    y: np.ndarray,
+    q: Iterable[float],
+    n_boot: int,
+    seed: int,
+    chunk: int = 128,
+    val_dtype: type | np.dtype | None = None,
+    index_dtype: type | np.dtype | None = None,
+) -> np.ndarray:
+    """Compute empirical two-sided p-values for percentile diffs via local bootstrap."""
+    x = np.asarray(x, val_dtype or float)
+    y = np.asarray(y, val_dtype or float)
+    x = x[~np.isnan(x)]
+    y = y[~np.isnan(y)]
+    q_arr = np.asarray(list(q), float)
+    if x.size == 0 or y.size == 0 or q_arr.size == 0:
+        return np.full(q_arr.shape, np.nan, float)
+    point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
+    rng = np.random.default_rng(seed)
+    nx, ny = x.size, y.size
+    boots = np.empty((n_boot, q_arr.size), float)
+    done = 0
+    chunk = max(1, int(chunk))
+    while done < n_boot:
+        m = min(chunk, n_boot - done)
+        if index_dtype is not None:
+            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False, dtype=index_dtype)
+            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False, dtype=index_dtype)
+        else:
+            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
+            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
+        xb = x[idx_x]
+        yb = y[idx_y]
+        boots[done : done + m, :] = (
+            np.percentile(xb, q_arr, axis=1) - np.percentile(yb, q_arr, axis=1)
+        ).T
+        done += m
+    p = np.empty_like(q_arr, dtype=float)
+    for j in range(q_arr.size):
+        p[j] = (np.count_nonzero(np.abs(boots[:, j]) >= abs(point[j])) + 1.0) / (
+            boots.shape[0] + 1.0
+        )
+    return p
 
 
 def bootstrap_quantile_diffs_by_keys(
@@ -383,6 +474,115 @@ SUBSET_TAG_RE = re.compile(
 )
 
 
+# ---------------- Configuration dataclass ---------------- #
+
+
+@dataclass
+class BootstrapConfig:
+    tr: int = 500
+    subset: str | None = None
+    outdir: str | None = None
+    tau_index: int = 0
+    q: str = "1,5,50,95,99"
+    pairs: str = (
+        "(WT,VEH)-(WT,LCTB92);(Dp1Yey,VEH)-(Dp1Yey,LCTB92);"
+        "(WT,VEH)-(Dp1Yey,VEH);(WT,LCTB92)-(Dp1Yey,LCTB92)"
+    )
+    n_boot: int = 2000
+    early_stop: float = 0.0
+    seed: int = 0
+    ci: float = 95.0
+    chunk: int = 128
+    boots_float32: bool = False
+    values_float32: bool = False
+    index_int32: bool = False
+    pool_threshold: str | None = None
+    pool_all: bool = False
+    jobs: int = 1
+    blas_threads: int | None = None
+    parallel_scope: str = "windows"
+    append_subset_to_outdir: bool = False
+    load_cache: bool = False
+    progress: bool = False
+    group_cols: str = "genotype,treatment"
+    reuse_group_boots: bool = False
+    correlate_nor: bool = False
+    nor_col: str | None = None
+    correlate_nor_by_groups: bool = False
+
+    # Derived
+    q_list: list[float] = field(default_factory=list)
+    pairs_list: list = field(default_factory=list)
+    boots_dtype: type = float
+    values_dtype: type = float
+    index_dtype: np.dtype | None = None
+
+    @classmethod
+    def from_args(cls, args) -> "BootstrapConfig":
+        cfg = cls(
+            tr=args.tr,
+            subset=args.subset,
+            outdir=args.outdir,
+            tau_index=args.tau_index,
+            q=args.q,
+            pairs=args.pairs,
+            n_boot=args.n_boot,
+            early_stop=float(args.early_stop or 0.0),
+            seed=args.seed,
+            ci=args.ci,
+            chunk=args.chunk,
+            boots_float32=bool(args.boots_float32),
+            values_float32=bool(args.values_float32),
+            index_int32=bool(args.index_int32),
+            pool_threshold=args.pool_threshold,
+            pool_all=bool(args.pool_all),
+            jobs=args.jobs,
+            blas_threads=args.blas_threads,
+            parallel_scope=args.parallel_scope,
+            append_subset_to_outdir=bool(args.append_subset_to_outdir),
+            load_cache=bool(args.load_cache),
+            progress=bool(args.progress),
+            group_cols=args.group_cols,
+            reuse_group_boots=bool(args.reuse_group_boots),
+            correlate_nor=bool(args.correlate_nor),
+            nor_col=args.nor_col,
+            correlate_nor_by_groups=bool(args.correlate_nor_by_groups),
+        )
+        if ";" in str(cfg.q):
+            cfg.q_list = [
+                float(s) for s in str(cfg.q).split(";") for s in s.split(",") if s.strip()
+            ]
+        else:
+            cfg.q_list = [float(s) for s in str(cfg.q).split(",") if s.strip()]
+        cfg.pairs_list = _parse_pairs(cfg.pairs)
+        cfg.boots_dtype = np.float32 if cfg.boots_float32 else float
+        cfg.values_dtype = np.float32 if cfg.values_float32 else float
+        cfg.index_dtype = np.dtype(np.int32) if cfg.index_int32 else None
+        return cfg
+
+    @staticmethod
+    def build_outdir_name(
+        outdir: str | None, subset: str | None, append_subset: bool
+    ) -> str:
+        name = outdir if outdir else (subset if subset else "bootstrap")
+        if append_subset and subset and outdir:
+            def _san(s: str) -> str:
+                return (
+                    str(s)
+                    .replace("/", "-")
+                    .replace(" ", "_")
+                    .replace(",", "-")
+                    .replace("|", "-")
+                    .replace("(", "")
+                    .replace(")", "")
+                )
+            name = f"{name}__subset-{_san(subset)}"
+        return name
+
+
+# ---------------- Utility helpers ---------------- #
+
+
 def _infer_roi_from_filename(name: str) -> str | None:
     m = SUBSET_TAG_RE.search(name)
     if not m:
@@ -404,24 +604,17 @@ def _list_window_files(region_dir: Path) -> list[tuple[int, Path]]:
 
 
 def _find_region_folders(speed_root: Path) -> list[Path]:
-    # 1) 'regions-' prefix
     prefixed = sorted(
-        [
-            p
-            for p in speed_root.iterdir()
-            if p.is_dir() and p.name.startswith("regions-")
-        ]
+        [p for p in speed_root.iterdir() if p.is_dir() and p.name.startswith("regions-")]
     )
     if prefixed:
         return prefixed
-    # 2) any subfolder with NPZs
     generic = []
     for p in sorted([x for x in speed_root.iterdir() if x.is_dir()]):
         if list(p.glob("speed_win*_*.npz")):
             generic.append(p)
     if generic:
         return generic
-    # 3) fallback to 'all' or root
     all_dir = speed_root / "all"
     return [all_dir] if all_dir.exists() else [speed_root]
 
@@ -436,10 +629,7 @@ def _pool_windows_indices(
         cut = int(np.median(vals))
     else:
         cut = int(threshold)
-    return {
-        "short": [w for w in vals if w <= cut],
-        "long": [w for w in vals if w > cut],
-    }
+    return {"short": [w for w in vals if w <= cut], "long": [w for w in vals if w > cut]}
 
 
 def _concat_per_animal(per_animals: list[list[np.ndarray]]) -> list[np.ndarray]:
@@ -471,488 +661,185 @@ def _parse_pairs(pairs_arg: str) -> list[tuple[tuple[str, str], tuple[str, str]]
     return out
 
 
-def main() -> int:
-    class HelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter):
+def _detect_nor_column(cog_df: pd.DataFrame, nor_col_opt: str | None) -> str | None:
+    if not isinstance(cog_df, pd.DataFrame):
+        return None
+    if nor_col_opt:
+        return nor_col_opt if nor_col_opt in cog_df.columns else None
+    cands = [c for c in cog_df.columns if "nor" in str(c).lower()]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _compute_nor_correlation_rows(
+    pooled: list[np.ndarray],
+    q_list: list[float],
+    cog_df: pd.DataFrame,
+    nor_col: str,
+    region_label: str,
+    pool_name: str,
+    mat: np.ndarray | None = None,
+    indices: list[int] | None = None,
+    group_label: str | None = None,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    if not isinstance(cog_df, pd.DataFrame) or nor_col not in cog_df.columns:
+        return rows
+    qs = [float(x) for x in q_list]
+    if mat is None:
+        n_anim = len(pooled)
+        mat = np.full((n_anim, len(qs)), np.nan, float)
+        for i in range(n_anim):
+            vals = np.asarray(pooled[i], float)
+            if vals.size:
+                mat[i, :] = np.percentile(vals, qs)
+    nor_vals = np.asarray(cog_df[nor_col], float)
+
+    # Subset by indices if provided (per-group correlation)
+    if indices is not None:
+        idx = np.asarray(indices, int)
+        idx = idx[(idx >= 0) & (idx < mat.shape[0])]
+        mat = mat[idx, :]
+        nor_vals = nor_vals[idx]
+
+    # Optional SciPy for correlation p-values (falls back to NaN when unavailable)
+    try:
+        from scipy.stats import pearsonr as _pearsonr, spearmanr as _spearmanr  # type: ignore
+    except Exception:  # pragma: no cover
+        _pearsonr = None  # type: ignore
+        _spearmanr = None  # type: ignore
+
+    # Align lengths if mat rows != nor_vals length
+    n_mat = int(mat.shape[0])
+    n_nor = int(nor_vals.shape[0])
+    k = min(n_mat, n_nor)
+    mat_use = mat[:k, :]
+    nor_use = nor_vals[:k]
+
+    for j, qi in enumerate(qs):
+        a = mat_use[:, j]
+        m = np.isfinite(a) & np.isfinite(nor_use)
+        n_used = int(np.count_nonzero(m))
+        pearson_r = float("nan")
+        pearson_p = float("nan")
+        spearman_rho = float("nan")
+        spearman_p = float("nan")
+        if n_used >= 3:
+            aa, bb = a[m], nor_use[m]
+            if _pearsonr is not None:
+                try:
+                    r_val, p_val = _pearsonr(aa, bb)
+                    pearson_r = float(r_val)
+                    pearson_p = float(p_val)
+                except Exception:
+                    pearson_r = float(np.corrcoef(aa, bb)[0, 1])
+                    pearson_p = float("nan")
+            else:
+                pearson_r = float(np.corrcoef(aa, bb)[0, 1])
+            if _spearmanr is not None:
+                try:
+                    rho_val, p_val2 = _spearmanr(aa, bb)
+                    spearman_rho = float(rho_val)
+                    spearman_p = float(p_val2)
+                except Exception:
+                    ra = np.argsort(np.argsort(aa))
+                    rb = np.argsort(np.argsort(bb))
+                    spearman_rho = float(np.corrcoef(ra, rb)[0, 1])
+                    spearman_p = float("nan")
+            else:
+                ra = np.argsort(np.argsort(aa))
+                rb = np.argsort(np.argsort(bb))
+                spearman_rho = float(np.corrcoef(ra, rb)[0, 1])
+        rows.append(
+            {
+                "region": region_label,
+                "roi": region_label,
+                "window": pool_name,
+                "q": float(qi),
+                "pearson_r": pearson_r,
+                "pearson_p": pearson_p,
+                "spearman_rho": spearman_rho,
+                "spearman_p": spearman_p,
+                "n": n_used,
+                "nor_col": nor_col,
+                "group": (group_label if group_label is not None else "__ALL__"),
+            }
+        )
+    return rows
+
+
+def limit_blas_threads(n: int | None):
+    if n is None:
+        return
+    try:
+        n = int(n)
+    except Exception:
+        return
+    for k in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+        "BLIS_NUM_THREADS",
+    ):
+        if os.environ.get(k) is None:
+            os.environ[k] = str(n)
+    try:
+        from threadpoolctl import threadpool_limits  # type: ignore
+
+        threadpool_limits(limits=n)
+    except Exception:
         pass
 
-    ap = argparse.ArgumentParser(
-        description=(
-            "Compute dFC speed bootstrap tables (CSV only):\n"
-            "- Reads per-window NPZ speed files under paths['speed']/[--subset]\n"
-            "- Writes speed_bootstrap_quantiles.csv and speed_bootstrap_diffs.csv to [--outdir]\n"
-        ),
-        formatter_class=HelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  # Quick exploratory run with reuse + float32 boots\n"
-            "  python scripts/compute_speed_bootstrap.py \\\n+              --tr 400 --subset regions400 --tau-index 0 \\\n+              --n-boot 500 --reuse-group-boots --boots-float32 --chunk 256 --progress\n\n"
-            "  # Final run, pooled windows (short/long by median)\n"
-            "  python scripts/compute_speed_bootstrap.py \\\n+              --tr 400 --subset regions400 --tau-index 0 \\\n+              --n-boot 2000 --pool-threshold median --pool-all --reuse-group-boots --jobs 8 --progress\n\n"
-            "  # Single-column groups\n"
-            "  python scripts/compute_speed_bootstrap.py --group-cols treatment --pairs '(VEH)-(LCTB92)'\n"
-        ),
-    )
-    ap.add_argument("--tr", type=int, default=500, help="Total TR used to select metadata (e.g., 400 or 500).")
-    ap.add_argument("--subset", type=str, default=None, help="Subset subfolder under paths['speed'] (e.g., 'regions400', 'shared').")
-    ap.add_argument("--outdir", type=str, default=None, help="Output folder name under paths['speed']; defaults to --subset or 'bootstrap'.")
-    ap.add_argument("--tau-index", type=int, default=0, help="Tau index to select; use a negative value to pool across all taus.")
-    ap.add_argument("--q", type=str, default="1,5,50,95,99", help="Comma-separated percentiles to report (e.g., '5,50,95').")
-    ap.add_argument(
-        "--pairs",
-        type=str,
-        default="(WT,VEH)-(WT,LCTB92);(Dp1Yey,VEH)-(Dp1Yey,LCTB92);(WT,VEH)-(Dp1Yey,VEH);(WT,LCTB92)-(Dp1Yey,LCTB92)",
-        help=(
-            "Pairs to compare as A-B; semicolon-separated. Format per pair: '(a1,a2,...)-(b1,b2,...)'\n"
-            "The tuple arity must match --group-cols (e.g., 2 entries for 'genotype,treatment')."
-        ),
-    )
-    ap.add_argument("--n-boot", type=int, default=2000, help="Bootstrap replicates per unit (per-group and per-pair).")
-    ap.add_argument(
-        "--early-stop",
-        type=float,
-        default=0.0,
-        help=(
-            "Relative tolerance for adaptive CI stability (0.0 disables). "
-            "Every ~10%% of draws, compares CI bounds; stops when both low/high bounds "
-            "across all quantiles change <= tolerance."
-        ),
-    )
-    ap.add_argument("--seed", type=int, default=0, help="Base RNG seed for reproducible bootstrap resampling.")
-    ap.add_argument("--ci", type=float, default=95.0, help="Confidence level for CIs (percent).")
-    ap.add_argument("--chunk", type=int, default=128, help="Bootstrap chunk size for vectorized resampling.")
-    ap.add_argument("--boots-float32", action="store_true", help="Store bootstrap arrays in float32 to reduce memory/IO.")
-    ap.add_argument("--values-float32", action="store_true", help="Cast pooled values to float32 before resampling (reduces batch memory).")
-    ap.add_argument("--index-int32", action="store_true", help="Use int32 index arrays for resampling (reduces index memory).")
-    ap.add_argument("--pool-threshold", type=str, default=None, help="Pool windows into short/long by 'median' or integer cutoff.")
-    ap.add_argument("--pool-all", action="store_true", help="Also add an 'all' pool combining all windows.")
-    ap.add_argument("--jobs", type=int, default=1, help="Parallel jobs for per-window processing (1 = serial).")
-    ap.add_argument(
-        "--blas-threads",
-        type=int,
-        default=None,
-        help=(
-            "Limit BLAS threads per process (sets OMP_NUM_THREADS, MKL_NUM_THREADS, OPENBLAS_NUM_THREADS, etc.). "
-            "Default: 1 when --jobs > 1; otherwise unchanged."
-        ),
-    )
-    ap.add_argument("--parallel-scope", type=str, default="windows", help="Parallelization scope; currently only 'windows'.")
-    ap.add_argument("--append-subset-to-outdir", action="store_true", help="Append '__subset-<subset>' suffix to outdir name.")
-    ap.add_argument("--load-cache", action="store_true", help="Reuse existing CSVs if present; skip recompute.")
-    ap.add_argument("--progress", action="store_true", help="Show progress bars for regions/windows/pools (requires tqdm).")
-    ap.add_argument("--group-cols", type=str, default="genotype,treatment", help="Comma-separated grouping columns (must exist in cognitive data).")
-    ap.add_argument("--reuse-group-boots", action="store_true", help="Reuse per-group bootstrap replicates to compute all pairs (fast for many pairs). Disables early-stop for diffs to keep shapes consistent.")
-    args = ap.parse_args()
 
-    # Configure BLAS thread limits for multi-process to avoid oversubscription
-    def _limit_blas_threads(n: int | None):
-        if n is None:
-            return
-        try:
-            n = int(n)
-        except Exception:
-            return
-        for k in (
-            "OMP_NUM_THREADS",
-            "OPENBLAS_NUM_THREADS",
-            "MKL_NUM_THREADS",
-            "NUMEXPR_NUM_THREADS",
-            "VECLIB_MAXIMUM_THREADS",
-            "BLIS_NUM_THREADS",
-        ):
-            # Only set if not already defined by the user
-            if os.environ.get(k) is None:
-                os.environ[k] = str(n)
-        try:
-            from threadpoolctl import threadpool_limits  # type: ignore
-
-            threadpool_limits(limits=n)
-        except Exception:
-            pass
-
-    _blas_threads = (
-        args.blas_threads if args.blas_threads is not None else (1 if (args.jobs and args.jobs > 1) else None)
-    )
-    _limit_blas_threads(_blas_threads)
-
-    q_list = [float(s) for s in args.q.split(",") if s.strip()]
-    pairs = _parse_pairs(args.pairs)
-
-    # Load context/data
-    data = get_context(tr=args.tr)
+def resolve_paths_and_groups(cfg: BootstrapConfig, data):
     speed_root = Path(data.paths["speed"])  # type: ignore[index]
-    if args.subset:
-        speed_root = speed_root / args.subset
+    if cfg.subset:
+        speed_root = speed_root / cfg.subset
     region_dirs = _find_region_folders(speed_root)
     groups_map = build_groups_from_columns(
         data.cog_data_filtered,
-        [s.strip() for s in args.group_cols.split(",") if s.strip()],
+        [s.strip() for s in cfg.group_cols.split(",") if s.strip()],
     )
-
-    # Prepare outputs
     outputs_root = Path(data.paths["speed"])  # type: ignore[index]
-    outdir_name = (
-        args.outdir if args.outdir else (args.subset if args.subset else "bootstrap")
+    outdir_name = BootstrapConfig.build_outdir_name(
+        cfg.outdir, cfg.subset, cfg.append_subset_to_outdir
     )
-    if args.append_subset_to_outdir and args.subset and args.outdir:
-
-        def _san(s: str) -> str:
-            return (
-                str(s)
-                .replace("/", "-")
-                .replace(" ", "_")
-                .replace(",", "-")
-                .replace("|", "-")
-                .replace("(", "")
-                .replace(")", "")
-            )
-
-        outdir_name = f"{outdir_name}__subset-{_san(args.subset)}"
     outdir = outputs_root / outdir_name
     outdir.mkdir(parents=True, exist_ok=True)
     q_path = outdir / "speed_bootstrap_quantiles.csv"
     d_path = outdir / "speed_bootstrap_diffs.csv"
+    c_path = outdir / "speed_nor_correlations.csv"
+    return region_dirs, groups_map, outdir, q_path, d_path, c_path
 
-    if args.load_cache and q_path.exists() and d_path.exists():
-        print(f"[cache] Found existing outputs: {q_path} and {d_path}. Skipping.")
-        return 0
 
-    quantiles_rows: list[dict[str, object]] = []
-    diffs_rows: list[dict[str, object]] = []
+def maybe_tqdm(progress: bool, it, desc: str):
+    if progress:
+        try:
+            from tqdm import tqdm
 
-    # Progress helper
-    def _tqdm(it, desc):
-        if args.progress:
-            try:
-                from tqdm import tqdm
+            return tqdm(it, desc=desc)
+        except Exception:
+            return it
+    return it
 
-                return tqdm(it, desc=desc)
-            except Exception:
-                return it
-        return it
 
-    # Process per region folder
-    boots_dtype = np.float32 if args.boots_float32 else float
-    values_dtype = np.float32 if args.values_float32 else float
-    index_dtype = np.int32 if args.index_int32 else None
-    for region_dir in _tqdm(region_dirs, desc="Regions"):
-        folder_label = (
-            region_dir.name.replace("regions-", "")
-            if region_dir.name.startswith("regions-")
-            else region_dir.name
-        )
-        win_files = _list_window_files(region_dir)
-        if not win_files:
-            continue
-
-        # Per-window
-        def _process_win(
-            win: int, npz: Path
-        ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-            rows_q: list[dict[str, object]] = []
-            rows_d: list[dict[str, object]] = []
-            try:
-                roi = _infer_roi_from_filename(npz.name) or folder_label
-            except Exception:
-                roi = folder_label
-            per_animal = load_per_animal_from_npz(
-                npz, tau_index=None if args.tau_index < 0 else args.tau_index
-            )
-            if args.reuse_group_boots and _central_bootstrap_groups_boots is not None and _central_ci_from_boots is not None:
-                # Reuse group boots for both quantiles and diffs
-                boots_map = _central_bootstrap_groups_boots(
-                    per_animal, groups_map, q=q_list, n_boot=args.n_boot, seed=args.seed,
-                    chunk=args.chunk, dtype=boots_dtype, val_dtype=values_dtype, index_dtype=index_dtype
-                )
-                q_arr = boots_map.get('__q__', np.asarray(q_list, float))
-                # Per-group point and CI
-                for gk, idxs in groups_map.items():
-                    if gk == '__q__':
-                        continue
-                    pooled_g = pooled_from_indices(per_animal, idxs)
-                    point = np.percentile(pooled_g, q_arr)
-                    boots = boots_map[gk]
-                    lo, hi = _central_ci_from_boots(boots, ci=args.ci)
-                    for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
-                        rows_q.append({
-                            "region": roi,
-                            "roi": roi,
-                            "window": int(win),
-                            "group": gk,
-                            "q": float(qi),
-                            "point": float(pt),
-                            "lo": float(lo_i),
-                            "hi": float(hi_i),
-                            "n": int(pooled_g.size),
-                        })
-                # Pairwise diffs from reused boots
-                for A, B in pairs:
-                    if A not in groups_map or B not in groups_map:
-                        continue
-                    boots_A = boots_map.get(A)
-                    boots_B = boots_map.get(B)
-                    if boots_A is None or boots_B is None:
-                        continue
-                    n_used = min(boots_A.shape[0], boots_B.shape[0])
-                    diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
-                    lo, hi = _central_ci_from_boots(diff_boots, ci=args.ci)
-                    # Points and sizes
-                    pooled_A = pooled_from_indices(per_animal, groups_map[A])
-                    pooled_B = pooled_from_indices(per_animal, groups_map[B])
-                    point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
-                    sig = (lo > 0) | (hi < 0)
-                    for qi, pt, lo_i, hi_i, s in zip(q_arr, point, lo, hi, sig, strict=False):
-                        rows_d.append({
-                            "region": roi,
-                            "roi": roi,
-                            "window": int(win),
-                            "A": A,
-                            "B": B,
-                            "q": float(qi),
-                            "diff": float(pt),
-                            "lo": float(lo_i),
-                            "hi": float(hi_i),
-                            "significant": bool(s),
-                            "n_a": int(pooled_A.size),
-                            "n_b": int(pooled_B.size),
-                        })
-            else:
-                qa = bootstrap_quantiles_by_group(
-                    per_animal,
-                    groups_map,
-                    q=q_list,
-                    n_boot=args.n_boot,
-                    ci=args.ci,
-                    seed=args.seed,
-                    early_stop=float(args.early_stop or 0.0),
-                    chunk=args.chunk,
-                    dtype=boots_dtype,
-                    val_dtype=values_dtype,
-                    index_dtype=index_dtype,
-                )
-                for gk, res in qa.items():
-                    for qi, pt, lo, hi in zip(
-                        res["q"], res["point"], res["lo"], res["hi"], strict=False
-                    ):
-                        rows_q.append(
-                            {
-                                "region": roi,
-                                "roi": roi,
-                                "window": int(win),
-                                "group": gk,
-                                "q": float(qi),
-                                "point": float(pt),
-                                "lo": float(lo),
-                                "hi": float(hi),
-                                "n": int(res["n"]),
-                            }
-                        )
-                for A, B in pairs:
-                    if A not in groups_map or B not in groups_map:
-                        continue
-                    qd = bootstrap_quantile_diffs_by_keys(
-                        per_animal,
-                        groups_map,
-                        A,
-                        B,
-                        q=q_list,
-                        n_boot=args.n_boot,
-                        ci=args.ci,
-                        seed=args.seed,
-                        early_stop=float(args.early_stop or 0.0),
-                        chunk=args.chunk,
-                        dtype=boots_dtype,
-                        val_dtype=values_dtype,
-                        index_dtype=index_dtype,
-                    )
-                    for qi, pt, lo, hi, sig in zip(
-                        qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], strict=False
-                    ):
-                        rows_d.append(
-                            {
-                                "region": roi,
-                                "roi": roi,
-                                "window": int(win),
-                                "A": A,
-                                "B": B,
-                                "q": float(qi),
-                                "diff": float(pt),
-                                "lo": float(lo),
-                                "hi": float(hi),
-                                "significant": bool(sig),
-                                "n_a": int(qd.get("n_x", 0)),
-                                "n_b": int(qd.get("n_y", 0)),
-                            }
-                        )
-            return rows_q, rows_d
-
-        if args.jobs and args.jobs > 1 and args.parallel_scope == "windows":
-            results = Parallel(n_jobs=args.jobs, prefer="processes")(
-                delayed(_process_win)(w, p) for (w, p) in win_files
-            )
-            for rq, rd in results:
-                quantiles_rows.extend(rq)
-                diffs_rows.extend(rd)
-        else:
-            for w, p in _tqdm(win_files, desc=f"{folder_label} windows"):
-                rq, rd = _process_win(w, p)
-                quantiles_rows.extend(rq)
-                diffs_rows.extend(rd)
-
-        # Per-ROI pools
-        windows = [w for (w, _) in win_files]
-        pools = _pool_windows_indices(windows, args.pool_threshold)
-        if args.pool_all and windows:
-            pools["all"] = windows
-        if pools:
-            by_win = {w: p for (w, p) in win_files}
-            for pool_name, pool_windows in pools.items():
-                if not pool_windows:
-                    continue
-                per_animals = [
-                    load_per_animal_from_npz(
-                        by_win[w],
-                        tau_index=None if args.tau_index < 0 else args.tau_index,
-                    )
-                    for w in pool_windows
-                    if w in by_win
-                ]
-                pooled = _concat_per_animal(per_animals)
-                if args.reuse_group_boots and _central_bootstrap_groups_boots is not None and _central_ci_from_boots is not None:
-                    boots_map = _central_bootstrap_groups_boots(
-                        pooled, groups_map, q=q_list, n_boot=args.n_boot, seed=args.seed,
-                        chunk=args.chunk, dtype=boots_dtype, val_dtype=values_dtype, index_dtype=index_dtype
-                    )
-                    q_arr = boots_map.get('__q__', np.asarray(q_list, float))
-                    for gk, idxs in groups_map.items():
-                        if gk == '__q__':
-                            continue
-                        pooled_g = pooled_from_indices(pooled, idxs)
-                        boots = boots_map[gk]
-                        lo, hi = _central_ci_from_boots(boots, ci=args.ci)
-                        point = np.percentile(pooled_g, q_arr)
-                        for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
-                            quantiles_rows.append({
-                                "region": folder_label,
-                                "roi": folder_label,
-                                "window": pool_name,
-                                "group": gk,
-                                "q": float(qi),
-                                "point": float(pt),
-                                "lo": float(lo_i),
-                                "hi": float(hi_i),
-                                "n": int(pooled_g.size),
-                            })
-                    for A, B in pairs:
-                        if A not in groups_map or B not in groups_map:
-                            continue
-                        boots_A = boots_map.get(A)
-                        boots_B = boots_map.get(B)
-                        if boots_A is None or boots_B is None:
-                            continue
-                        n_used = min(boots_A.shape[0], boots_B.shape[0])
-                        diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
-                        lo, hi = _central_ci_from_boots(diff_boots, ci=args.ci)
-                        pooled_A = pooled_from_indices(pooled, groups_map[A])
-                        pooled_B = pooled_from_indices(pooled, groups_map[B])
-                        point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
-                        sig = (lo > 0) | (hi < 0)
-                        for qi, pt, lo_i, hi_i, s in zip(q_arr, point, lo, hi, sig, strict=False):
-                            diffs_rows.append({
-                                "region": folder_label,
-                                "roi": folder_label,
-                                "window": pool_name,
-                                "A": A,
-                                "B": B,
-                                "q": float(qi),
-                                "diff": float(pt),
-                                "lo": float(lo_i),
-                                "hi": float(hi_i),
-                                "significant": bool(s),
-                                "n_a": int(pooled_A.size),
-                                "n_b": int(pooled_B.size),
-                            })
-                else:
-                    qa = bootstrap_quantiles_by_group(
-                        pooled,
-                        groups_map,
-                        q=q_list,
-                        n_boot=args.n_boot,
-                        ci=args.ci,
-                        seed=args.seed,
-                        early_stop=float(args.early_stop or 0.0),
-                        chunk=args.chunk,
-                        dtype=boots_dtype,
-                        val_dtype=values_dtype,
-                        index_dtype=index_dtype,
-                    )
-                    for gk, res in qa.items():
-                        for qi, pt, lo, hi in zip(
-                            res["q"], res["point"], res["lo"], res["hi"], strict=False
-                        ):
-                            quantiles_rows.append(
-                                {
-                                    "region": folder_label,
-                                    "roi": folder_label,
-                                    "window": pool_name,
-                                    "group": gk,
-                                    "q": float(qi),
-                                    "point": float(pt),
-                                    "lo": float(lo),
-                                    "hi": float(hi),
-                                    "n": int(res["n"]),
-                                }
-                            )
-                    for A, B in pairs:
-                        if A not in groups_map or B not in groups_map:
-                            continue
-                        qd = bootstrap_quantile_diffs_by_keys(
-                            pooled,
-                            groups_map,
-                            A,
-                            B,
-                            q=q_list,
-                            n_boot=args.n_boot,
-                            ci=args.ci,
-                            seed=args.seed,
-                            early_stop=float(args.early_stop or 0.0),
-                            chunk=args.chunk,
-                            dtype=boots_dtype,
-                            val_dtype=values_dtype,
-                            index_dtype=index_dtype,
-                        )
-                        for qi, pt, lo, hi, sig in zip(
-                            qd["q"],
-                            qd["point"],
-                            qd["lo"],
-                            qd["hi"],
-                            qd["sig"],
-                            strict=False,
-                        ):
-                            diffs_rows.append(
-                                {
-                                    "region": folder_label,
-                                    "roi": folder_label,
-                                    "window": pool_name,
-                                    "A": A,
-                                    "B": B,
-                                    "q": float(qi),
-                                    "diff": float(pt),
-                                    "lo": float(lo),
-                                    "hi": float(hi),
-                                    "significant": bool(sig),
-                                    "n_a": int(qd.get("n_x", 0)),
-                                    "n_b": int(qd.get("n_y", 0)),
-                                }
-                            )
-
-    # Write CSVs
-    if quantiles_rows:
+def write_outputs(
+    q_rows: list[dict[str, object]],
+    d_rows: list[dict[str, object]],
+    c_rows: list[dict[str, object]],
+    outdir: Path,
+):
+    q_path = outdir / "speed_bootstrap_quantiles.csv"
+    d_path = outdir / "speed_bootstrap_diffs.csv"
+    if q_rows:
         q_cols = ["region", "roi", "window", "group", "q", "point", "lo", "hi", "n"]
         with q_path.open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=q_cols)
             w.writeheader()
-            w.writerows(quantiles_rows)
-    if diffs_rows:
+            w.writerows(q_rows)
+        print(f"Wrote: {q_path}")
+    if d_rows:
         d_cols = [
             "region",
             "roi",
@@ -963,6 +850,8 @@ def main() -> int:
             "diff",
             "lo",
             "hi",
+            "p",
+            "p_method",
             "significant",
             "n_a",
             "n_b",
@@ -970,10 +859,724 @@ def main() -> int:
         with d_path.open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=d_cols)
             w.writeheader()
-            w.writerows(diffs_rows)
+            w.writerows(d_rows)
+        print(f"Wrote: {d_path}")
+    if c_rows:
+        corr_path = outdir / "speed_nor_correlations.csv"
+        c_cols = [
+            "region",
+            "roi",
+            "window",
+            "q",
+            "pearson_r",
+            "pearson_p",
+            "spearman_rho",
+            "spearman_p",
+            "n",
+            "nor_col",
+            "group",
+        ]
+        with corr_path.open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=c_cols)
+            w.writeheader()
+            w.writerows(c_rows)
+        print(f"Wrote: {corr_path}")
 
-    print(f"Wrote: {q_path}")
-    print(f"Wrote: {d_path}")
+
+# ---------------- Processing ---------------- #
+
+
+P_METHOD_DESC = (
+    "empirical two-sided bootstrap on percentile differences with +1/(B+1) smoothing"
+)
+
+
+def process_region_dir(
+    region_dir: Path,
+    folder_label: str,
+    cfg: BootstrapConfig,
+    groups_map: dict,
+    q_list: list[float],
+    boots_dtype: type | np.dtype,
+    values_dtype: type | np.dtype,
+    index_dtype: np.dtype | None,
+    data,
+    pairs: list,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    quantiles_rows: list[dict[str, object]] = []
+    diffs_rows: list[dict[str, object]] = []
+    corr_rows: list[dict[str, object]] = []
+
+    win_files = _list_window_files(region_dir)
+    if not win_files:
+        return quantiles_rows, diffs_rows, corr_rows
+
+    def _process_win(
+        win: int,
+        npz: Path,
+        folder_label: str = folder_label,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+        rows_q: list[dict[str, object]] = []
+        rows_d: list[dict[str, object]] = []
+        rows_c: list[dict[str, object]] = []
+        try:
+            roi = _infer_roi_from_filename(npz.name) or folder_label
+        except Exception:
+            roi = folder_label
+        per_animal = load_per_animal_from_npz(
+            npz, tau_index=None if cfg.tau_index < 0 else cfg.tau_index
+        )
+        if (
+            cfg.reuse_group_boots
+            and _central_bootstrap_groups_boots is not None
+            and _central_ci_from_boots is not None
+        ):
+            boots_map = _central_bootstrap_groups_boots(
+                per_animal,
+                groups_map,
+                q=q_list,
+                n_boot=cfg.n_boot,
+                seed=cfg.seed,
+                chunk=cfg.chunk,
+                dtype=np.dtype(boots_dtype),
+                val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+                index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+            )
+            q_arr = boots_map.get("__q__", np.asarray(q_list, float))
+            for gk, idxs in groups_map.items():
+                if gk == "__q__":
+                    continue
+                pooled_g = pooled_from_indices(per_animal, idxs)
+                if pooled_g.size:
+                    point = np.percentile(pooled_g, q_arr)
+                else:
+                    point = np.full_like(q_arr, np.nan, dtype=float)
+                boots = boots_map[gk]
+                lo, hi = _central_ci_from_boots(boots, ci=cfg.ci)
+                for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
+                    rows_q.append(
+                        {
+                            "region": roi,
+                            "roi": roi,
+                            "window": int(win),
+                            "group": gk,
+                            "q": float(qi),
+                            "point": float(pt),
+                            "lo": float(lo_i),
+                            "hi": float(hi_i),
+                            "n": int(pooled_g.size),
+                        }
+                    )
+            for A, B in pairs:
+                if A not in groups_map or B not in groups_map:
+                    continue
+                boots_A = boots_map.get(A)
+                boots_B = boots_map.get(B)
+                if boots_A is None or boots_B is None:
+                    continue
+                n_used = min(boots_A.shape[0], boots_B.shape[0])
+                diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
+                lo, hi = _central_ci_from_boots(diff_boots, ci=cfg.ci)
+                pooled_A = pooled_from_indices(per_animal, groups_map[A])
+                pooled_B = pooled_from_indices(per_animal, groups_map[B])
+                if pooled_A.size and pooled_B.size:
+                    point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
+                else:
+                    point = np.full_like(q_arr, np.nan, dtype=float)
+                p_vals = [
+                    float(
+                        (np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0)
+                        / (diff_boots.shape[0] + 1.0)
+                    )
+                    for j in range(diff_boots.shape[1])
+                ]
+                sig = (lo > 0) | (hi < 0)
+                for qi, pt, lo_i, hi_i, p_i, s in zip(
+                    q_arr, point, lo, hi, p_vals, sig, strict=False
+                ):
+                    rows_d.append(
+                        {
+                            "region": roi,
+                            "roi": roi,
+                            "window": int(win),
+                            "A": A,
+                            "B": B,
+                            "q": float(qi),
+                            "diff": float(pt),
+                            "lo": float(lo_i),
+                            "hi": float(hi_i),
+                            "p": float(p_i),
+                            "p_method": P_METHOD_DESC,
+                            "significant": bool(s),
+                            "n_a": int(pooled_A.size),
+                            "n_b": int(pooled_B.size),
+                        }
+                    )
+        else:
+            qa = bootstrap_quantiles_by_group(
+                per_animal,
+                groups_map,
+                q=q_list,
+                n_boot=cfg.n_boot,
+                ci=cfg.ci,
+                seed=cfg.seed,
+                early_stop=cfg.early_stop,
+                chunk=cfg.chunk,
+                dtype=np.dtype(boots_dtype),
+                val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+                index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+            )
+            for gk, res in qa.items():
+                for qi, pt, lo, hi in zip(
+                    res["q"], res["point"], res["lo"], res["hi"], strict=False
+                ):
+                    rows_q.append(
+                        {
+                            "region": roi,
+                            "roi": roi,
+                            "window": int(win),
+                            "group": gk,
+                            "q": float(qi),
+                            "point": float(pt),
+                            "lo": float(lo),
+                            "hi": float(hi),
+                            "n": int(res["n"]),
+                        }
+                    )
+            # Per-window correlations with NOR, if requested
+            if cfg.correlate_nor and isinstance(data.cog_data_filtered, pd.DataFrame):
+                nor_col = _detect_nor_column(data.cog_data_filtered, cfg.nor_col)
+                if nor_col:
+                    # Overall (all animals)
+                    rows_c.extend(
+                        _compute_nor_correlation_rows(
+                            per_animal,
+                            q_list,
+                            data.cog_data_filtered,
+                            nor_col,
+                            roi,
+                            int(win),
+                            mat=None,
+                            indices=None,
+                            group_label="__ALL__",
+                        )
+                    )
+                    # Per-group correlations
+                    if cfg.correlate_nor_by_groups:
+                        for gk, idxs in groups_map.items():
+                            if gk == "__q__":
+                                continue
+                            rows_c.extend(
+                                _compute_nor_correlation_rows(
+                                    per_animal,
+                                    q_list,
+                                    data.cog_data_filtered,
+                                    nor_col,
+                                    roi,
+                                    int(win),
+                                    mat=None,
+                                    indices=[int(i) for i in idxs],
+                                    group_label=str(gk),
+                                )
+                            )
+            for A, B in pairs:
+                if A not in groups_map or B not in groups_map:
+                    continue
+                qd = bootstrap_quantile_diffs_by_keys(
+                    per_animal,
+                    groups_map,
+                    A,
+                    B,
+                    q=q_list,
+                    n_boot=cfg.n_boot,
+                    ci=cfg.ci,
+                    seed=cfg.seed,
+                    early_stop=cfg.early_stop,
+                    chunk=cfg.chunk,
+                    dtype=np.dtype(boots_dtype),
+                    val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+                    index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                )
+                p_arr = qd.get("p")
+                if p_arr is None or (isinstance(p_arr, float) and np.isnan(p_arr)):
+                    xa = pooled_from_indices(per_animal, groups_map[A])
+                    xb = pooled_from_indices(per_animal, groups_map[B])
+                    p_arr = _bootstrap_diff_p_only_local(
+                        xa,
+                        xb,
+                        q_list,
+                        cfg.n_boot,
+                        cfg.seed,
+                        chunk=cfg.chunk,
+                        val_dtype=values_dtype,
+                        index_dtype=index_dtype,
+                    )
+                p_arr = np.asarray(p_arr, float).ravel()
+                for qi, pt, lo, hi, sig, p_i in zip(
+                    qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
+                ):
+                    rows_d.append(
+                        {
+                            "region": roi,
+                            "roi": roi,
+                            "window": int(win),
+                            "A": A,
+                            "B": B,
+                            "q": float(qi),
+                            "diff": float(pt),
+                            "lo": float(lo),
+                            "hi": float(hi),
+                            "p": float(p_i),
+                            "p_method": P_METHOD_DESC,
+                            "significant": bool(sig),
+                            "n_a": int(qd.get("n_x", 0)),
+                            "n_b": int(qd.get("n_y", 0)),
+                        }
+                    )
+        return rows_q, rows_d, rows_c
+
+    # Per-window
+    if cfg.jobs and cfg.jobs > 1 and cfg.parallel_scope == "windows":
+        results = Parallel(n_jobs=cfg.jobs, prefer="processes")(
+            delayed(_process_win)(w, p) for (w, p) in win_files
+        )
+        if results:
+            for rq, rd, rc in results:
+                quantiles_rows.extend(rq)
+                diffs_rows.extend(rd)
+                corr_rows.extend(rc)
+    else:
+        for w, p in maybe_tqdm(cfg.progress, win_files, f"{folder_label} windows"):
+            rq, rd, rc = _process_win(w, p)
+            quantiles_rows.extend(rq)
+            diffs_rows.extend(rd)
+            corr_rows.extend(rc)
+
+    # Pools
+    windows = [w for (w, _) in win_files]
+    pools = _pool_windows_indices(windows, cfg.pool_threshold)
+    if cfg.pool_all and windows:
+        pools["all"] = windows
+    if pools:
+        by_win = {w: p for (w, p) in win_files}
+        for pool_name, pool_windows in pools.items():
+            if not pool_windows:
+                continue
+            per_animals = [
+                load_per_animal_from_npz(
+                    by_win[w],
+                    tau_index=None if cfg.tau_index < 0 else cfg.tau_index,
+                )
+                for w in pool_windows
+                if w in by_win
+            ]
+            pooled = _concat_per_animal(per_animals)
+            # Precompute per-animal percentiles matrix for correlations
+            mat = None
+            if cfg.correlate_nor:
+                qs = [float(x) for x in q_list]
+                mat = np.full((len(pooled), len(qs)), np.nan, float)
+                for i in range(len(pooled)):
+                    vals = np.asarray(pooled[i], float)
+                    if vals.size:
+                        mat[i, :] = np.percentile(vals, qs)
+            if (
+                cfg.reuse_group_boots
+                and _central_bootstrap_groups_boots is not None
+                and _central_ci_from_boots is not None
+            ):
+                boots_map = _central_bootstrap_groups_boots(
+                    pooled,
+                    groups_map,
+                    q=q_list,
+                    n_boot=cfg.n_boot,
+                    seed=cfg.seed,
+                    chunk=cfg.chunk,
+                    dtype=np.dtype(boots_dtype),
+                    val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+                    index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                )
+                q_arr = boots_map.get("__q__", np.asarray(q_list, float))
+                for gk, idxs in groups_map.items():
+                    if gk == "__q__":
+                        continue
+                    pooled_g = pooled_from_indices(pooled, idxs)
+                    boots = boots_map[gk]
+                    lo, hi = _central_ci_from_boots(boots, ci=cfg.ci)
+                    if pooled_g.size:
+                        point = np.percentile(pooled_g, q_arr)
+                    else:
+                        point = np.full_like(q_arr, np.nan, dtype=float)
+                    for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
+                        quantiles_rows.append(
+                            {
+                                "region": folder_label,
+                                "roi": folder_label,
+                                "window": pool_name,
+                                "group": gk,
+                                "q": float(qi),
+                                "point": float(pt),
+                                "lo": float(lo_i),
+                                "hi": float(hi_i),
+                                "n": int(pooled_g.size),
+                            }
+                        )
+                for A, B in pairs:
+                    if A not in groups_map or B not in groups_map:
+                        continue
+                    boots_A = boots_map.get(A)
+                    boots_B = boots_map.get(B)
+                    if boots_A is None or boots_B is None:
+                        continue
+                    n_used = min(boots_A.shape[0], boots_B.shape[0])
+                    diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
+                    lo, hi = _central_ci_from_boots(diff_boots, ci=cfg.ci)
+                    pooled_A = pooled_from_indices(pooled, groups_map[A])
+                    pooled_B = pooled_from_indices(pooled, groups_map[B])
+                    point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
+                    p_vals = [
+                        float(
+                            (np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0)
+                            / (diff_boots.shape[0] + 1.0)
+                        )
+                        for j in range(diff_boots.shape[1])
+                    ]
+                    sig = (lo > 0) | (hi < 0)
+                    for qi, pt, lo_i, hi_i, p_i, s in zip(
+                        q_arr, point, lo, hi, p_vals, sig, strict=False
+                    ):
+                        diffs_rows.append(
+                            {
+                                "region": folder_label,
+                                "roi": folder_label,
+                                "window": pool_name,
+                                "A": A,
+                                "B": B,
+                                "q": float(qi),
+                                "diff": float(pt),
+                                "lo": float(lo_i),
+                                "hi": float(hi_i),
+                                "p": float(p_i),
+                                "p_method": P_METHOD_DESC,
+                                "significant": bool(s),
+                                "n_a": int(pooled_A.size),
+                                "n_b": int(pooled_B.size),
+                            }
+                        )
+            else:
+                qa = bootstrap_quantiles_by_group(
+                    pooled,
+                    groups_map,
+                    q=q_list,
+                    n_boot=cfg.n_boot,
+                    ci=cfg.ci,
+                    seed=cfg.seed,
+                    early_stop=cfg.early_stop,
+                    chunk=cfg.chunk,
+                    dtype=np.dtype(boots_dtype),
+                    val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+                    index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                )
+                for gk, res in qa.items():
+                    for qi, pt, lo, hi in zip(
+                        res["q"], res["point"], res["lo"], res["hi"], strict=False
+                    ):
+                        quantiles_rows.append(
+                            {
+                                "region": folder_label,
+                                "roi": folder_label,
+                                "window": pool_name,
+                                "group": gk,
+                                "q": float(qi),
+                                "point": float(pt),
+                                "lo": float(lo),
+                                "hi": float(hi),
+                                "n": int(res["n"]),
+                            }
+                        )
+                if cfg.correlate_nor and isinstance(
+                    data.cog_data_filtered, pd.DataFrame
+                ):
+                    nor_col = _detect_nor_column(data.cog_data_filtered, cfg.nor_col)
+                    if nor_col:
+                        # Overall
+                        corr_rows.extend(
+                            _compute_nor_correlation_rows(
+                                pooled,
+                                q_list,
+                                data.cog_data_filtered,
+                                nor_col,
+                                folder_label,
+                                pool_name,
+                                mat=mat,
+                                indices=None,
+                                group_label="__ALL__",
+                            )
+                        )
+                        # Per-group
+                        if cfg.correlate_nor_by_groups:
+                            for gk, idxs in groups_map.items():
+                                if gk == "__q__":
+                                    continue
+                                corr_rows.extend(
+                                    _compute_nor_correlation_rows(
+                                        pooled,
+                                        q_list,
+                                        data.cog_data_filtered,
+                                        nor_col,
+                                        folder_label,
+                                        pool_name,
+                                        mat=mat,
+                                        indices=[int(i) for i in idxs],
+                                        group_label=str(gk),
+                                    )
+                                )
+                for A, B in pairs:
+                    if A not in groups_map or B not in groups_map:
+                        continue
+                    qd = bootstrap_quantile_diffs_by_keys(
+                        pooled,
+                        groups_map,
+                        A,
+                        B,
+                        q=q_list,
+                        n_boot=cfg.n_boot,
+                        ci=cfg.ci,
+                        seed=cfg.seed,
+                        early_stop=cfg.early_stop,
+                        chunk=cfg.chunk,
+                        dtype=np.dtype(boots_dtype),
+                        val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+                        index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                    )
+                    p_arr = qd.get("p")
+                    if p_arr is None or (isinstance(p_arr, float) and np.isnan(p_arr)):
+                        xa = pooled_from_indices(pooled, groups_map[A])
+                        xb = pooled_from_indices(pooled, groups_map[B])
+                        p_arr = _bootstrap_diff_p_only_local(
+                            xa,
+                            xb,
+                            q_list,
+                            cfg.n_boot,
+                            cfg.seed,
+                            chunk=cfg.chunk,
+                            val_dtype=values_dtype,
+                            index_dtype=index_dtype,
+                        )
+                    p_arr = np.asarray(p_arr, float).ravel()
+                    for qi, pt, lo, hi, sig, p_i in zip(
+                        qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
+                    ):
+                        diffs_rows.append(
+                            {
+                                "region": folder_label,
+                                "roi": folder_label,
+                                "window": pool_name,
+                                "A": A,
+                                "B": B,
+                                "q": float(qi),
+                                "diff": float(pt),
+                                "lo": float(lo),
+                                "hi": float(hi),
+                                "p": float(p_i),
+                                "p_method": P_METHOD_DESC,
+                                "significant": bool(sig),
+                                "n_a": int(qd.get("n_x", 0)),
+                                "n_b": int(qd.get("n_y", 0)),
+                            }
+                        )
+    return quantiles_rows, diffs_rows, corr_rows
+
+
+# ---------------- CLI ---------------- #
+
+
+def main() -> int:
+    class HelpFormatter(
+        argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter
+    ):
+        pass
+
+    ap = argparse.ArgumentParser(
+        description=(
+            "Compute dFC speed bootstrap tables (CSV only):\n"
+            "- Reads per-window NPZ speed files under paths['speed']/[--subset]\n"
+            "- Writes CSVs to [--outdir]"
+        ),
+        formatter_class=HelpFormatter,
+        epilog=(
+            "Example:\n"
+            "  python scripts/compute_speed_bootstrap.py \\\n+              --tr 400 --subset regions400 --tau-index 0 --n-boot 500 \\\n+              --reuse-group-boots --boots-float32 --chunk 256 --progress\n"
+        ),
+    )
+    ap.add_argument("--tr", type=int, default=500, help="Total TR used to select metadata.")
+    ap.add_argument(
+        "--subset",
+        type=str,
+        default=None,
+        help="Subset under paths['speed'] (e.g., 'regions400').",
+    )
+    ap.add_argument(
+        "--outdir",
+        type=str,
+        default=None,
+        help="Output folder name under paths['speed']; defaults to --subset or 'bootstrap'.",
+    )
+    ap.add_argument(
+        "--tau-index",
+        type=int,
+        default=0,
+        help="Tau index (0-based). Use -1 to pool across taus.",
+    )
+    ap.add_argument(
+        "--q",
+        type=str,
+        default="1,5,50,95,99",
+        help="Comma-separated percentiles (e.g., '5,50,95').",
+    )
+    ap.add_argument(
+        "--pairs",
+        type=str,
+        default=(
+            "(WT,VEH)-(WT,LCTB92);(Dp1Yey,VEH)-(Dp1Yey,LCTB92);"
+            "(WT,VEH)-(Dp1Yey,VEH);(WT,LCTB92)-(Dp1Yey,LCTB92)"
+        ),
+        help=(
+            "Pairs to compare as A-B; semicolon-separated. Format: '(a1,a2,...)-(b1,b2,...)'. "
+            "Arity must match --group-cols."
+        ),
+    )
+    ap.add_argument("--n-boot", type=int, default=2000, help="Bootstrap replicates per unit.")
+    ap.add_argument(
+        "--early-stop",
+        type=float,
+        default=0.0,
+        help="Relative tol for adaptive CI stability (0 disables).",
+    )
+    ap.add_argument("--seed", type=int, default=0, help="Base RNG seed.")
+    ap.add_argument("--ci", type=float, default=95.0, help="Confidence level for CIs (percent).")
+    ap.add_argument("--chunk", type=int, default=128, help="Bootstrap chunk size.")
+    ap.add_argument("--boots-float32", action="store_true", help="Use float32 boots.")
+    ap.add_argument("--values-float32", action="store_true", help="Cast values to float32 before resampling.")
+    ap.add_argument("--index-int32", action="store_true", help="Use int32 index arrays for resampling.")
+    ap.add_argument(
+        "--pool-threshold",
+        type=str,
+        default=None,
+        help="Pool windows into short/long by 'median' or integer cutoff.",
+    )
+    ap.add_argument("--pool-all", action="store_true", help="Also add an 'all' pool combining all windows.")
+    ap.add_argument("--jobs", type=int, default=1, help="Parallel jobs for per-window processing (1 = serial).")
+    ap.add_argument(
+        "--blas-threads",
+        type=int,
+        default=None,
+        help="Limit BLAS threads per process (default 1 when --jobs > 1).",
+    )
+    ap.add_argument("--parallel-scope", type=str, default="windows", help="Parallelization scope.")
+    ap.add_argument(
+        "--append-subset-to-outdir",
+        action="store_true",
+        help="Append '__subset-<subset>' suffix to outdir name.",
+    )
+    ap.add_argument("--load-cache", action="store_true", help="Reuse existing CSVs if present.")
+    ap.add_argument("--progress", action="store_true", help="Show progress bars (requires tqdm).")
+    ap.add_argument(
+        "--group-cols",
+        type=str,
+        default="genotype,treatment",
+        help="Comma-separated grouping columns.",
+    )
+    ap.add_argument(
+        "--reuse-group-boots",
+        action="store_true",
+        help="Reuse per-group bootstrap replicates to compute all pairs.",
+    )
+    ap.add_argument(
+        "--correlate-nor",
+        action="store_true",
+        help=(
+            "On pooled windows (short/long/all), correlate per-animal speed "
+            "percentiles with a NOR score column."
+        ),
+    )
+    ap.add_argument(
+        "--nor-col",
+        type=str,
+        default=None,
+        help=(
+            "Exact column name for NOR score; if omitted, auto-detects a single "
+            "column containing 'nor' (case-insensitive)."
+        ),
+    )
+    ap.add_argument(
+        "--correlate-nor-by-groups",
+        action="store_true",
+        help="Also compute correlations within each group (per --group-cols).",
+    )
+
+    args = ap.parse_args()
+    cfg = BootstrapConfig.from_args(args)
+
+    _blas_threads = (
+        cfg.blas_threads
+        if cfg.blas_threads is not None
+        else (1 if (cfg.jobs and cfg.jobs > 1) else None)
+    )
+    limit_blas_threads(_blas_threads)
+
+    q_list = cfg.q_list
+    pairs = cfg.pairs_list
+
+    # Load context/data
+    data = get_context(tr=cfg.tr)
+    region_dirs, groups_map, outdir, q_path, d_path, c_path = resolve_paths_and_groups(
+        cfg, data
+    )
+
+    # Load-cache behavior: skip recomputation if outputs exist
+    if cfg.load_cache and q_path.exists() and d_path.exists() and (
+        not cfg.correlate_nor or c_path.exists()
+    ):
+        print(
+            "Found existing outputs (load-cache enabled):\n"
+            f"  {q_path}\n  {d_path}"
+            + (f"\n  {c_path}" if cfg.correlate_nor else "")
+        )
+        return 0
+
+    # Stage 2: per-region processing
+    boots_dtype = cfg.boots_dtype
+    values_dtype = cfg.values_dtype
+    index_dtype = cfg.index_dtype
+    quantiles_rows: list[dict[str, object]] = []
+    diffs_rows: list[dict[str, object]] = []
+    corr_rows: list[dict[str, object]] = []
+
+    for region_dir in maybe_tqdm(cfg.progress, region_dirs, "Regions"):
+        folder_label = (
+            region_dir.name.replace("regions-", "")
+            if region_dir.name.startswith("regions-")
+            else region_dir.name
+        )
+        rq, rd, rc = process_region_dir(
+            region_dir,
+            folder_label,
+            cfg,
+            groups_map,
+            q_list,
+            boots_dtype,
+            values_dtype,
+            index_dtype,
+            data,
+            pairs,
+        )
+        quantiles_rows.extend(rq)
+        diffs_rows.extend(rd)
+        corr_rows.extend(rc)
+
+    # Write CSVs consistently
+    write_outputs(quantiles_rows, diffs_rows, corr_rows, outdir)
     return 0
 
 

@@ -135,7 +135,8 @@ The Julien dataset flow now has a stabilized Phase 3 path with a thin CLI wrappe
 
 - Usage Tutorial: `julien_data/USAGE_TUTORIAL.md`
 - Bootstrap Speed CLI Tutorial: `docs/Bootstrap_Speed_CLI_Tutorial.md`
-- Compute/Plot Split Tutorial: `docs/Compute_and_Plot_Tutorial.md`
+- Compute/Plot Split Tutorial (compute CSVs, then plot): `docs/Compute_and_Plot_Tutorial.md`
+- Batch runner: `scripts/run_bootstrap_batches.sh` (compute/plot/list/dry‑run over many subsets)
 
 ## Contributing
 

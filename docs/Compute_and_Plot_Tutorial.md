@@ -1,6 +1,6 @@
 # dFC Speed Bootstrap — Compute and Plot Tutorial
 
-This tutorial splits the workflow into two clean steps: compute CSVs only, then plot from CSVs. It uses two thin scripts that wrap the main CLI.
+This tutorial splits the workflow into two clean steps: compute CSVs only, then plot from CSVs. It uses thin scripts that wrap the central bootstrap kernels.
 
 ## 0) Setup
 
@@ -26,6 +26,7 @@ Purpose: compute per-ROI, per-window (and pooled short/long/all) bootstrap table
 Outputs (under dataset paths):
 - `paths['speed']/<outdir>/speed_bootstrap_quantiles.csv`
 - `paths['speed']/<outdir>/speed_bootstrap_diffs.csv`
+- `paths['speed']/<outdir>/speed_nor_correlations.csv` (when `--correlate-nor`)
 
 Fast example (TR=500, subset `regions500`, parallel windows):
 
@@ -59,12 +60,18 @@ Options overview (compute)
 - `--parallel-scope windows`: current scope; window‑level parallelism.
 - `--progress`: show progress bars.
 - `--load-cache`: reuse existing CSVs if present (skips recompute).
+- `--reuse-group-boots`: reuse per‑group bootstrap replicates across pairs for faster diffs.
+- `--boots-float32` / `--values-float32` / `--index-int32`: memory/perf tuning for large jobs.
 
 Behavior and outputs
 - ROI enforcement: window pools (short/long/all) are computed per ROI (no cross‑ROI mixing).
 - CSVs written to `paths['speed']/<outdir>/`:
-  - `speed_bootstrap_quantiles.csv`: per‑group percentiles + CIs; columns `region, roi, window, group, q, point, lo, hi, n`.
-  - `speed_bootstrap_diffs.csv`: per‑pair percentile diffs + CIs; columns `region, roi, window, A, B, q, diff, lo, hi, significant, n_a, n_b`.
+  - `speed_bootstrap_quantiles.csv`: per‑group percentiles + CIs; columns:
+    - `region, roi, window, group, q, point, lo, hi, n`.
+  - `speed_bootstrap_diffs.csv`: per‑pair percentile diffs + CIs and p‑values; columns:
+    - `region, roi, window, A, B, q, diff, lo, hi, p, p_method, significant, n_a, n_b`.
+  - `speed_nor_correlations.csv` (if `--correlate-nor`): pooled‑window correlations of per‑animal percentiles with a NOR score; columns:
+    - `region, roi, window, q, pearson_r, pearson_p, spearman_rho, spearman_p, n, nor_col`.
 
 ### 1.1) Detailed analysis usage (what the compute step does)
 
@@ -80,7 +87,7 @@ Behavior and outputs
     - `--tau-index -1`: pool across all tau rows first, then bootstrap (increases N; mixes tau distributions).
   - Grouping: builds `groups_map` from cognitive data columns (default `genotype,treatment`).
   - Quantiles: for each group, pools all per‑animal values (NaNs dropped) and bootstraps requested percentiles (`--q`) with `--n-boot` resamples; writes rows to quantiles CSV.
-  - Diffs: for each `(A,B)` pair in `--pairs`, independently bootstraps pooled A and B and computes percentile(A) − percentile(B) with a CI; writes rows to diffs CSV.
+- Diffs: for each `(A,B)` pair in `--pairs`, independently bootstraps pooled A and B and computes percentile(A) − percentile(B) with a CI and an empirical two‑sided p‑value; writes rows to diffs CSV.
   - Missing pairs: if a pair key is not present in `groups_map` for this dataset, it is skipped (no error).
 
 - Pooled windows (short/long/all):
@@ -91,9 +98,11 @@ Behavior and outputs
   - For each pool, concatenates per‑animal arrays across windows, then applies the same quantile/diffs bootstrap as per‑window; writes rows to CSVs with `window=short|long|all`.
 
 - Bootstrap details:
-  - Non‑parametric resampling with replacement over the pooled (per‑group) samples; vectorized in chunks for speed.
+  - Non‑parametric bootstrapping with replacement over pooled samples; vectorized in chunks for speed.
   - `--n-boot` controls the number of resamples; `--ci` sets the CI level.
-  - Diffs resample A and B independently; significance in CSV means the CI excludes 0.
+  - Diffs resample A and B independently; `significant` marks CI excluding 0.
+  - p‑values in diffs: empirical two‑sided bootstrap on percentile differences with +1/(B+1) smoothing.
+  - p‑values in correlations (when `--correlate-nor`): use SciPy (`pearsonr`, `spearmanr`) when available; otherwise, coefficients are reported and p‑values are `NaN`.
 
 - Edge cases and robustness:
   - Very small datasets (few animals) or very small `--n-boot` yield wider CIs or NaNs; rows are still written.
@@ -109,7 +118,7 @@ Behavior and outputs
 
 Script: `scripts/plot_speed_bootstrap.py`
 
-Purpose: draw figures directly from existing CSVs (no compute). Ideal for fast iteration and clean separation of concerns.
+Purpose: draw figures directly from existing CSVs (no compute). The plot script is self‑contained and does not call other CLIs; ideal for fast iteration and clean separation of concerns.
 
 Inputs expected:
 - `paths['speed']/<outdir>/speed_bootstrap_quantiles.csv`
@@ -118,6 +127,8 @@ Inputs expected:
 Figures (under `paths['f_speed']/<outdir>/`):
 - By-window summaries per ROI/pair: `bywin_<roi>_<A>_vs_<B>.<fmt>`
 - Grids per ROI aggregating all pairs: `bywin_grid_<roi>.<fmt>`
+- Pooled diffs (short/long/all), per ROI and pair: `pooled_diffs_<roi>_pool-<pool>_<A>_vs_<B>.<fmt>`
+- Pooled quantiles (short/long/all), per ROI: `pooled_quantiles_<roi>_pool-<pool>.<fmt>`
 
 Example:
 
@@ -131,13 +142,34 @@ Options:
 - `--plot-format png|pdf|svg` (default `png`).
 - `--outdir` optional; defaults to `--subset` if omitted.
 - Use `--append-subset-to-outdir` to suffix when reusing an outdir across subsets.
+- `--plot-diffs-by-win`: per ROI and pair, plot diff(A−B) vs window.
+- `--plot-diffs-bywin-grid`: per ROI, grid aggregating all pairs (by-window).
+- `--plot-pooled-diffs`: per ROI and pair, plot pooled (short/long/all) diffs with CIs.
+- `--plot-pooled-quantiles`: per ROI, plot pooled (short/long/all) per‑group quantiles with CIs.
+  - Legends on pooled diffs include per‑quantile p‑values (from the diffs CSV). Filled markers indicate CI excludes 0.
+- `--progress`: show progress bars (requires tqdm); falls back to plain iteration if not installed.
+
+Correlation plots (from `speed_nor_correlations.csv`)
+
+Script: `scripts/plot_speed_correlations.py`
+
+- What: correlation (Spearman or Pearson) vs window, and pooled (`short|long|all`).
+- Inputs: `paths['speed']/<outdir>/speed_nor_correlations.csv` (enable `--correlate-nor` in compute).
+- Figures:
+  - `cor_bywin_<roi>_<metric>.<fmt>`
+  - `cor_pooled_<roi>_<metric>.<fmt>`
+- Options:
+  - `--metric spearman|pearson` (default `spearman`)
+  - `--alpha 0.05`: significance threshold; filled markers indicate `p <= alpha`
+  - `--plot-by-win`, `--plot-pooled`, `--progress`, `--plot-format`, `--outdir`, `--append-subset-to-outdir`
 
 ## 3) Common Flags and Tips
 
 - ROI handling: scripts infer `roi` from NPZ filenames; pooling is enforced per ROI.
 - CSV schema:
   - Quantiles: `region, roi, window, group, q, point, lo, hi, n`
-  - Diffs: `region, roi, window, A, B, q, diff, lo, hi, significant, n_a, n_b`
+  - Diffs: `region, roi, window, A, B, q, diff, lo, hi, p, p_method, significant, n_a, n_b`
+  - NOR correlations: `region, roi, window, q, pearson_r, pearson_p, spearman_rho, spearman_p, n, nor_col`
 - Plot cosmetics:
   - Per-percentile color is stable and consistent with legends.
   - `bywin_*` plots show filled circles for significant points and open circles for ns.
@@ -163,3 +195,43 @@ python scripts/plot_speed_bootstrap.py \
 - If `plot_speed_bootstrap.py` complains about missing CSVs, run the compute step first (or confirm `--subset`/`--outdir`).
 - If legends/markers look off, re-run plotting with a simpler `--q` (e.g., `--q 5,50,95`) to declutter.
 - Performance: reduce `--n-boot` for exploratory runs; use `--jobs` for window‑level parallelism.
+- Empty groups/pairs: if a group or pair has no samples (e.g., a subset excludes them), the script writes NaNs rather than failing; diffs CIs/p-values still reflect bootstrap where possible.
+
+## 6) Batch Runs
+
+Script: `scripts/run_bootstrap_batches.sh`
+
+- Actions: `both` (default), `compute`, `plot`, `list` (print subsets), `dry-run` (print commands only).
+- Subsets processed by default:
+  - `regions500`
+  - `<name>_<flag>` for `name in {dmn,memory,sal,lat,1st,2nd,3rd,4rd}` and `flag in {within,touching}`.
+
+Examples
+- Run compute+plot for all subsets:
+  - `bash scripts/run_bootstrap_batches.sh both`
+- Preview planned subsets and commands:
+  - `bash scripts/run_bootstrap_batches.sh list`
+  - `bash scripts/run_bootstrap_batches.sh dry-run`
+
+Environment overrides (prefix variables before the command)
+- Syntax: `VAR=value VAR2=value bash scripts/run_bootstrap_batches.sh ACTION`
+- Variables:
+  - `TR` (default 500), `TAU_INDEX` (0), `N_BOOT` (2000), `JOBS` (8), `CHUNK` (256)
+  - `POOL_THRESH` (median or int), `POOL_ALL` (1/0), `REUSE_GROUP_BOOTS` (1/0), `BOOTS_FLOAT32` (1/0)
+  - `LOAD_CACHE` (1/0), `BYWIN_GRID_COLS` (2)
+  - `OUTDIR` (empty = use subset), `APPEND_SUBSET` (1/0 to suffix `__subset-<subset>`)
+
+Examples (overrides)
+- Quick smoke: `N_BOOT=500 JOBS=4 CHUNK=128 LOAD_CACHE=0 bash scripts/run_bootstrap_batches.sh both`
+- Collect in one folder: `OUTDIR=bootstrap_all APPEND_SUBSET=1 bash scripts/run_bootstrap_batches.sh both`
+
+## 6) Bootstrap Kernels and Centralization Phases
+
+- Kernels live in `shared_code.fun_bootstrap` (preferred import path in scripts). Scripts fall back gracefully when central kernels aren’t available.
+
+- Phases to centralize and simplify:
+  - Phase 0 (current): scripts prefer central kernels; local fallbacks exist for compatibility.
+  - Phase 1: standardize all imports in scripts/docs to `shared_code.fun_bootstrap`.
+  - Phase 2: remove duplicated local bootstrap implementations; rely solely on central kernels with tests.
+  - Phase 3: unify performance knobs (dtype/index/chunk), default `--reuse-group-boots`, document thread limits.
+  - Phase 4: stabilize API, doc examples for programmatic use, ensure CI coverage for percentile/diff/p‑value semantics.

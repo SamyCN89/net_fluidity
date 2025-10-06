@@ -170,53 +170,12 @@ def bootstrap_quantiles_1d(x: np.ndarray, q: Iterable[float] = (1, 5, 50, 95, 99
                            n_boot: int = 2000, ci: float = 95.0,
                            random_state: int | None = 0, _chunk: int = 128,
                            early_stop: float = 0.0, boots_float32: bool = False) -> dict[str, np.ndarray | int]:
-    """Bootstrap CIs for multiple percentiles of a 1D array.
-
-    Vectorized in chunks to avoid Python loops; returns dict with keys: 'q', 'point', 'lo', 'hi', 'n'.
-    """
-    x = np.asarray(x, float)
-    x = x[~np.isnan(x)]
     q_arr = np.asarray(list(q), dtype=float)
-    if x.size == 0:
-        nan = np.full_like(q_arr, np.nan, dtype=float)
-        return {"q": q_arr, "point": nan, "lo": nan, "hi": nan, "n": 0}
-
-    point = np.percentile(x, q_arr)
-    rng = np.random.default_rng(random_state)
-    n = x.size
-    if _central_bootstrap_percentiles is not None:
-        point_c, lo_c, hi_c = _central_bootstrap_percentiles(
-            x, q=q_arr, n_boot=n_boot, ci=ci, seed=random_state, chunk=_chunk, early_stop=early_stop, dtype=(np.float32 if boots_float32 else float)
-        )
-        return {"q": q_arr, "point": point_c, "lo": lo_c, "hi": hi_c, "n": int(n)}
-    # Fallback local (kept for robustness)
-    boots = np.empty((n_boot, q_arr.size), float)
-    chunk = max(1, int(_chunk))
-    done = 0
-    check_every = max(1, int(0.1 * n_boot))
-    last_lo = None
-    last_hi = None
-    while done < n_boot:
-        m = min(chunk, n_boot - done)
-        idx = rng.integers(0, n, size=(m, n), endpoint=False)
-        xb = x[idx]
-        boots[done:done + m, :] = np.percentile(xb, q_arr, axis=1).T
-        done += m
-        if early_stop and (done % check_every == 0 or done == n_boot):
-            alpha_tmp = (100.0 - float(ci)) / 2.0
-            lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
-            hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
-            if last_lo is not None and last_hi is not None and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi))):
-                rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
-                rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
-                if rel_lo <= early_stop and rel_hi <= early_stop:
-                    return {"q": q_arr, "point": point, "lo": lo_t, "hi": hi_t, "n": int(n)}
-            last_lo = lo_t
-            last_hi = hi_t
-    alpha = (100.0 - float(ci)) / 2.0
-    lo = np.percentile(boots, alpha, axis=0)
-    hi = np.percentile(boots, 100.0 - alpha, axis=0)
-    return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "n": int(n)}
+    point, lo, hi = _central_bootstrap_percentiles(
+        np.asarray(x, float), q=q_arr, n_boot=n_boot, ci=ci, seed=random_state, chunk=_chunk,
+        early_stop=early_stop, dtype=(np.float32 if boots_float32 else float)
+    )
+    return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "n": int(np.asarray(x).size)}
 
 
 def bootstrap_per_animal(per_animal: list[np.ndarray], n_boot: int = 2000, stat: str = 'median',
