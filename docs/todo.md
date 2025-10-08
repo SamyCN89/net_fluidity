@@ -1,5 +1,17 @@
 # TODO — Next Session
 
+- Cohesion pipeline polish (new CLI + stats)
+  - Makefile: expose unified ROI flags (ROI, ROI_INDICES, ROI_LABELS, ROI_FILE), EMIT, TAG, OVERWRITE, PLOT, ANIMAL, SHOW; wire into cohesion-compute target.
+  - Deprecations: print clear warnings for legacy compute flags (`--roi-scope/--dmn-index/--memory-index`, `--plot-animal/--save-all-binary/--no-show`) and update help strings.
+  - Add `--dfc-preset {default,fast,thorough}` to cohesion_compute (maps ws/lag/tau) with override precedence.
+  - Predefined ROI sets: support `--roi memory-narrow|memory-broad` assembled from label patterns; document included labels.
+  - Group stats: add optional Welch t-test for independent samples; export `pvals_group_ttest_*.csv` + heatmaps.
+  - P-adjust: add `--p-adjust fdr-bh` (Benjamini–Hochberg) alongside existing Bonferroni and Bonferroni-by-age.
+  - Matrix figures: add legend snippet and optional auto vmin/vmax per comparison; cache ROI mapping for speed.
+  - Validation: check ROI indices in unified/custom modes against sorted labels; print helpful diffs on mismatch.
+  - Manifest: include selected ROI labels list; include CLI args and git commit hash if available.
+  - Tests: unit tests for `_bonferroni_by_age_in_columns`, `_infer_roi_order_from_pairs`, `compute_time_ratio_and_binary` shapes.
+
 - Paths & Environment
   - Verify PATHS_ROOT or PATHS_ENV + PROJECT_ROOT_<ENV> configuration; run `python scripts/paths_doctor.py --show --check-write --create`.
   - Optionally call `paths_doctor.py` at the start of `scripts/run_bootstrap_batches.sh` behind a `DOCTOR=1` env gate.
@@ -45,4 +57,3 @@
   - Plot controls: expose alpha for pool-test “inside CI” markers and per-quantile styling.
   - CSV formats: option to emit wide pivoted tables alongside long format.
   - HPC: optional Slurm submission helpers (separate doc), keeping current nohup/tmux path for non-Slurm clusters.
-

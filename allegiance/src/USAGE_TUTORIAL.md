@@ -1,8 +1,20 @@
 # Allegiance Scripts — Usage Guide
 
+## Cheat Sheet (Common Commands)
+- List ROI labels with indices (sorted label space):
+  - `python allegiance/src/cohesion_compute.py --list-rois`
+- Compute cohesion (all ROIs):
+  - `python allegiance/src/cohesion_compute.py --window-size 9 --lag 1 --tau 3 --roi all --emit all`
+- Compute cohesion (DMN subset):
+  - `python allegiance/src/cohesion_compute.py --window-size 9 --lag 1 --tau 3 --roi dmn --emit all`
+- Stats + heatmaps (DMN, Sex×Genotype, Bonferroni by age, with per-comparison matrices):
+  - `python allegiance/src/cohesion_stats_plot.py --window-size 9 --lag 1 --tau 3 --roi-scope dmn --with-stats --stats-mode group --group-compare sex_genotype --p-adjust bonferroni-age --matrix-per-comparison --matrix-mode weighted --matrix-effect cdratio --save-plots --no-show`
+- Quick report (per-animal communities + module counts):
+  - `python allegiance/src/cohesion_report.py --window-size 9 --lag 1 --tau 3 --save-plots --no-show`
+
 ## Overview
 - Scripts under `allegiance/src/` implement a pipeline to compute dynamic FC (DFC), run per-window community detection (“allegiance”), merge results, and perform group-level analyses and plots.
-- Core utils (DFC stream, paths, loaders) live in `shared_code/` and are imported by these scripts.
+- Core utils (DFC stream, paths, loaders) live in `shared_code/` and are imported via the stable API `shared_code.shared_code.*`.
 
 ## Setup
 - Python 3.11. Install local package: `pip install -e shared_code`.
@@ -36,10 +48,11 @@
   - Events/burstiness: add `--compute-events` (extract on/off durations and plot burstiness).
   - Stats: add `--with-stats` plus controls:
     - `--stats-mode {age,group,all}`: age-paired (2m vs 4m within base), group-based (independent), or both.
-    - `--group-compare {sex,genotype,both}`: choose dimensions for group-based.
+    - `--group-compare {sex,genotype,both,sex_genotype}`: choose dimensions for group-based; `sex_genotype` builds Female/Male × wt/dKI intersections within age (and optional cross-age/pool-ages).
     - `--cross-age`: include cross-age comparisons (e.g., Female-2m vs Male-4m).
     - `--pool-ages`: add pooled comparisons over ages (e.g., Female vs Male ignoring age).
     - `--include-phenotype {none,oip,nor,both}`: optionally add OiP/NOR to age-paired stats (default none).
+    - `--p-adjust {none,bonferroni,bonferroni-age}`: multiple testing control. `bonferroni` adjusts across links per comparison; `bonferroni-age` adjusts across comparisons within same age (2m or 4m) per link.
     - Outputs: CSVs and heatmaps saved under `allegiance/out/`.
   - Scope: restrict to DMN with `--dmn-index 0,23,13,22,2,28,34,37,39,8,35`, or all regions with `--dmn-index ""`.
 - Legacy exploratory scripts: `allegiance_per_animal_v2.py`, `plot_modules_stability.py`, `coherence_analysis.py`.
@@ -65,6 +78,8 @@
   - `python allegiance/src/cohesion_report.py --with-stats --stats-mode group --group-compare sex --cross-age --save-plots --no-show`
 - Age-paired within base (2m vs 4m for Sex/Genotype):
   - `python allegiance/src/cohesion_report.py --with-stats --stats-mode age --include-phenotype none --save-plots --no-show`
+ - With Bonferroni across age-specific columns (group mode) and Sex×Genotype intersections:
+   - `python allegiance/src/cohesion_report.py --with-stats --stats-mode group --group-compare sex_genotype --p-adjust bonferroni-age --save-plots --no-show`
 
 ## Notes & Compatibility
 - Logging: set `NET_FLUIDITY_LOGGING=config/logging.yaml` for structured logs.
@@ -90,14 +105,21 @@
 - Headless servers: add `--no-show` to analysis commands and rely on saved figures.
 
 ## Cohesion Compute & Stats (separate scripts)
-- Compute (summaries + events, Parquet):
-  - `python allegiance/src/cohesion_compute.py --window-size 9 --lag 1 --tau 3 --dmn-index "" --min-duration 2`
-  - Saves NPZ + Parquet under `results/<dataset>/allegiance/cohesion_data/`.
-  - Parquet requires `pyarrow` (`pip install pyarrow`); falls back to CSV if missing.
-- Stats + plots:
-  - `python allegiance/src/cohesion_stats_plot.py --with-stats --stats-mode all --group-compare both --dmn-index "" --save-plots --no-show`
+- Compute (summaries + events, Parquet) with unified ROI selection and plotting controls:
+  - All ROIs: `python allegiance/src/cohesion_compute.py --window-size 9 --lag 1 --tau 3 --roi all --emit all`
+  - DMN: `python allegiance/src/cohesion_compute.py --window-size 9 --lag 1 --tau 3 --roi dmn --emit all`
+  - Memory/custom by indices: `python allegiance/src/cohesion_compute.py --roi memory --roi-indices "12,14,18" --emit all`
+  - Memory/custom by labels: `python allegiance/src/cohesion_compute.py --roi memory --roi-labels "Hippocampus,Entorhinal" --emit all`
+  - From a file: `python allegiance/src/cohesion_compute.py --roi custom --roi-file roi_list.txt --emit npz`
+  - List sorted ROI labels: `python allegiance/src/cohesion_compute.py --list-rois`
+  - Save one per-animal binary ATL plot (headless): `python allegiance/src/cohesion_compute.py --roi all --plot one --animal 0 --save-plots`
+  - Notes: outputs under `results/<dataset>/allegiance/cohesion_data/`; add `--tag myrun` to suffix filenames; use `--overwrite` to replace existing outputs.
+- Stats + plots (reads NPZ):
+  - Scope from NPZ: pass `--roi-scope {all,dmn,memory}` to select which NPZ to load.
+  - Example (group mode, Sex×Genotype, Bonferroni by age, matrix figures):
+    - `python allegiance/src/cohesion_stats_plot.py --window-size 9 --lag 1 --tau 3 --roi-scope dmn --with-stats --stats-mode group --group-compare sex_genotype --p-adjust bonferroni-age --matrix-per-comparison --matrix-mode weighted --matrix-effect cdratio --save-plots --no-show`
   - Tables: `results/<dataset>/allegiance/out/`
-  - Figures: `fig/<dataset>/cohesion/stats/`
+  - Figures: `fig/<dataset>/cohesion/stats/` (+ `stats/matrices_*` for per-comparison D×D matrices)
 
 ## Active Scripts and Legacy Cleanup
 - Active (keep):

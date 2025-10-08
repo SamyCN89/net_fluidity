@@ -1,12 +1,26 @@
 # Makefile Tutorial — Pipeline Shortcuts
 
+## Cheat Sheet (Common Make Commands)
+- Full pipeline (prep → dfc → allegiance jobs → merge → cohesion compute → stats):
+  - `make pipeline WS=9 LAG=1 TAU=3`
+- Compute cohesion (all ROIs):
+  - `make cohesion-compute WS=9 LAG=1 TAU=3 DMN=""`
+- Compute cohesion (DMN subset):
+  - `make cohesion-compute WS=9 LAG=1 TAU=3 DMN="0,23,13,22,2,28,34,37,39,8,35"`
+- Stats + heatmaps (all ROIs, Sex×Genotype, within-age):
+  - `make cohesion-stats WS=9 LAG=1 TAU=3 DMN="" STATS_MODE=group GROUP=sex_genotype`
+- Stats + heatmaps (both factors, pooled and cross-age):
+  - `make cohesion-stats WS=9 LAG=1 TAU=3 DMN="" STATS_MODE=group GROUP=both POOL_AGES=1 CROSS_AGE=1`
+- Quick per-animal report (communities + module counts):
+  - `make cohesion-report WS=9 LAG=1 TAU=3`
+
 This guide explains the provided Makefile targets to run the DFC → Allegiance → Cohesion pipeline quickly. Override variables inline, e.g., `make dfc WS=7`.
 
 ## Variables (override with VAR=value)
 - `WS`: window size (default 9)
 - `LAG`: lag between windows (default 1)
 - `TAU`: tau tag in filenames (default 3)
-- `DMN`: region subset in sorted label space; empty string means all regions. Example: `DMN="0,23,13,22,2,28,34,37,39,8,35"`
+- `DMN`: region subset in sorted label space; empty string means all regions. Example: `DMN="0,23,13,22,2,28,34,37,39,8,35"` (Makefile compatibility variable; for direct script usage prefer `--roi ...` flags shown below)
 - `N_JOBS`: parallel jobs for allegiance (default 8)
 - `STATS_MODE`: `age|group|all` for stats
 - `GROUP`: `sex|genotype|both` for group-based stats
@@ -34,12 +48,15 @@ This guide explains the provided Makefile targets to run the DFC → Allegiance 
   - `make allegiance-merge`
 - Compute cohesion (all regions, keep short events):
   - `make cohesion-compute WS=9 LAG=1 TAU=3 DMN=""`
+  - Or directly (new unified ROI flags): `python allegiance/src/cohesion_compute.py --window-size 9 --lag 1 --tau 3 --roi all --emit all`
 - Stats: group-based Sex + Genotype within-age, save heatmaps:
   - `make cohesion-stats WS=9 LAG=1 TAU=3 DMN="" STATS_MODE=group GROUP=both`
+  - Or directly: `python allegiance/src/cohesion_stats_plot.py --window-size 9 --lag 1 --tau 3 --roi-scope all --with-stats --stats-mode group --group-compare both --save-plots --no-show`
 - Stats: pooled over ages for Sex only:
   - `make cohesion-stats WS=9 LAG=1 TAU=3 DMN="" STATS_MODE=group GROUP=sex POOL_AGES=1`
 - Quick report (per-animal):
   - `make cohesion-report WS=9 LAG=1 TAU=3`
+  - Or directly: `python allegiance/src/cohesion_report.py --window-size 9 --lag 1 --tau 3 --save-plots --no-show`
 
 ## Outputs
 - DFC: `results/<dataset>/dfc/dfc_window_size=..._lag=..._tau=..._animals=..._regions=....npz`
@@ -63,4 +80,5 @@ This guide explains the provided Makefile targets to run the DFC → Allegiance 
 - For large-scale allegiance across many windows/animals, consider using `allegiance_jobs.py` as a template for job arrays if your scheduler supports them.
 - Install `pyarrow` for Parquet: `pip install pyarrow` (or Conda equivalent)
 - Use `DMN=""` to include all regions; provide a comma list to restrict
+- For direct scripts, prefer unified ROI flags: `--roi {all,dmn,memory,custom}` plus `--roi-indices/--roi-labels/--roi-file`; use `cohesion_stats_plot.py --roi-scope {all,dmn,memory}` to match the NPZ.
 - Keep `WS`/`LAG` consistent across steps; `TAU` is a label in filenames

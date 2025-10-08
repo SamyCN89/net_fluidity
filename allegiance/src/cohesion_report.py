@@ -26,8 +26,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import ttest_rel, wilcoxon, mannwhitneyu
 
-from shared_code.fun_metaconnectivity import load_merged_allegiance
-from shared_code.fun_paths import get_paths
+from shared_code.shared_code.fun_metaconnectivity import load_merged_allegiance
+from shared_code.shared_code.fun_paths import get_paths
 
 #%%
 
@@ -72,9 +72,9 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--group-compare",
-        choices=["sex", "genotype", "both"],
+        choices=["sex", "genotype", "both", "sex_genotype"],
         default="both",
-        help="which grouping dimensions to compare for group-based stats",
+        help="which grouping dimensions to compare for group-based stats; use 'sex_genotype' to build Female/Male × wt/dKI intersections",
     )
     p.add_argument(
         "--cross-age",
@@ -91,6 +91,12 @@ def parse_args() -> argparse.Namespace:
         choices=["none", "oip", "nor", "both"],
         default="none",
         help="optionally include phenotype (OiP/NOR) in age-paired stats",
+    )
+    p.add_argument(
+        "--p-adjust",
+        choices=["none", "bonferroni", "bonferroni-age"],
+        default="none",
+        help="Multiple-testing correction: 'bonferroni' across links per column; 'bonferroni-age' across columns within same age (2m/4m)",
     )
     return p.parse_args()
 
@@ -193,7 +199,7 @@ def _extract_link_activations_df(binary_ATL: np.ndarray, min_duration: int = 1):
     min_duration: minimum duration (in time points) to keep an event
 
     Returns: DataFrame with columns: animal, link, onset, offset, duration
-    
+
 
     """
     import pandas as pd
@@ -416,7 +422,7 @@ def build_group_comparisons(
     label_variables,
     mask_groups,
     *,
-    factors: list[str],  # 'sex', 'genotype'
+    factors: list[str],  # 'sex', 'genotype', optionally 'sex_genotype'
     cross_age: bool,
     pooled: bool,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -429,6 +435,8 @@ def build_group_comparisons(
     cols_mdiff, cols_cdr = [], []
 
     for key in factors:
+        if key not in factor_map:
+            continue
         title, fidx = factor_map[key]
         F = factor_base_indices(fidx, label_variables, mask_groups)  # base->{2m,4m}
         bases = list(F.keys())
@@ -513,6 +521,98 @@ def build_group_comparisons(
                 cols_mdiff.append(mdiff)
                 cols_cdr.append(cdr)
                 names.append((f"{title}", f"{name_i} vs {name_j}"))
+
+    # Optional: combined Sex×Genotype intersections (8 groups: Female/Male × wt/dKI × 2m/4m)
+    if "sex_genotype" in factors:
+        title = "Sex×Genotype"
+        F_sex = factor_base_indices(3, label_variables, mask_groups)
+        F_geno = factor_base_indices(2, label_variables, mask_groups)
+
+        # Build entries like "Female dKI-2m" with intersected indices
+        entries = []  # (label, idx)
+        for sex_base, agesS in F_sex.items():
+            for geno_base, agesG in F_geno.items():
+                for age in ("2m", "4m"):
+                    idxS = agesS.get(age)
+                    idxG = agesG.get(age)
+                    if idxS is None or idxG is None or len(idxS) == 0 or len(idxG) == 0:
+                        continue
+                    # Intersection of animals that satisfy both sex and genotype at a given age
+                    idx = np.intersect1d(idxS, idxG, assume_unique=False)
+                    if idx.size == 0:
+                        continue
+                    entries.append((f"{sex_base} {geno_base}-{age}", idx))
+
+        # Pooled entries over ages per Sex×Genotype base
+        pooled_entries = []
+        if pooled:
+            for sex_base, agesS in F_sex.items():
+                for geno_base, agesG in F_geno.items():
+                    parts = []
+                    for age in ("2m", "4m"):
+                        idxS = agesS.get(age)
+                        idxG = agesG.get(age)
+                        if idxS is None or idxG is None:
+                            continue
+                        inter = np.intersect1d(idxS, idxG, assume_unique=False)
+                        if inter.size:
+                            parts.append(inter)
+                    if parts:
+                        pooled_idx = np.unique(np.concatenate(parts))
+                        pooled_entries.append((f"{sex_base} {geno_base} (all-ages)", pooled_idx))
+
+        # Pairwise comparisons among entries (respect cross_age flag)
+        for i in range(len(entries)):
+            for j in range(i + 1, len(entries)):
+                name_i, idx_i = entries[i]
+                name_j, idx_j = entries[j]
+                # Within-age only unless cross_age requested
+                if not cross_age:
+                    ai = name_i.split("-")[-1]
+                    aj = name_j.split("-")[-1]
+                    if ai != aj:
+                        continue
+                # Skip comparisons within the exact same base (e.g., Female wt vs Female wt)
+                base_i = name_i.rsplit("-", 1)[0]
+                base_j = name_j.rsplit("-", 1)[0]
+                if base_i == base_j:
+                    continue
+                if len(idx_i) == 0 or len(idx_j) == 0:
+                    continue
+                X = data_T[:, idx_i]
+                Y = data_T[:, idx_j]
+                p = _mwu_rows(X, Y)
+                muX = np.mean(X, axis=1)
+                muY = np.mean(Y, axis=1)
+                mdiff = muY - muX
+                cdr = (muY - muX) / np.maximum(muY + muX, 1e-9)
+                cols_p.append(p)
+                cols_mdiff.append(mdiff)
+                cols_cdr.append(cdr)
+                names.append((title, f"{name_i} vs {name_j}"))
+
+        # Pooled all-ages pairwise comparisons across different Sex×Genotype bases
+        for i in range(len(pooled_entries)):
+            for j in range(i + 1, len(pooled_entries)):
+                name_i, idx_i = pooled_entries[i]
+                name_j, idx_j = pooled_entries[j]
+                base_i = name_i.split(" (all-ages)")[0]
+                base_j = name_j.split(" (all-ages)")[0]
+                if base_i == base_j:
+                    continue
+                if len(idx_i) == 0 or len(idx_j) == 0:
+                    continue
+                X = data_T[:, idx_i]
+                Y = data_T[:, idx_j]
+                p = _mwu_rows(X, Y)
+                muX = np.mean(X, axis=1)
+                muY = np.mean(Y, axis=1)
+                mdiff = muY - muX
+                cdr = (muY - muX) / np.maximum(muY + muX, 1e-9)
+                cols_p.append(p)
+                cols_mdiff.append(mdiff)
+                cols_cdr.append(cdr)
+                names.append((title, f"{name_i} vs {name_j}"))
 
     if not cols_p:
         empty = pd.DataFrame(index=link_labels, columns=pd.MultiIndex.from_tuples([]))
@@ -612,6 +712,30 @@ def plot_weighted_multi(
     return fig
 
 
+def _bonferroni_by_age_in_columns(pvals_df: pd.DataFrame) -> pd.DataFrame:
+    if pvals_df.empty:
+        return pvals_df.copy()
+    cols = list(pvals_df.columns)
+    group_map: dict[str, list[int]] = {"2m": [], "4m": []}
+    for j, col in enumerate(cols):
+        label = str(col[1])
+        try:
+            lhs, rhs = label.split(" vs ")
+            age_l = lhs.split("-")[-1]
+            age_r = rhs.split("-")[-1]
+            if age_l in {"2m", "4m"} and age_l == age_r:
+                group_map[age_l].append(j)
+        except Exception:
+            continue
+    A = np.asarray(pvals_df.values, dtype=float)
+    for age, idxs in group_map.items():
+        if not idxs:
+            continue
+        k = float(len(idxs))
+        A[:, idxs] = np.minimum(1.0, A[:, idxs] * k)
+    return pd.DataFrame(A, index=pvals_df.index, columns=pvals_df.columns)
+
+
 def plot_communities_for_animal(
     dfc_sorted: np.ndarray,
     anat_labels_sorted: np.ndarray,
@@ -682,8 +806,8 @@ def main() -> int:
     logger.info("Loaded allegiance: windows=%d, regions=%d", n_windows, dfc_sorted.shape[2])
 
     # Consistent labels (use first animal/window ordering)
-    anat_labels_sorted = anat_labels[sort_idx[0, 0].astype(int)]
-
+    # anat_labels_sorted = anat_labels[sort_idx[0, 0].astype(int)]
+    anat_labels_sorted = anat_labels
     # Simple metric: number of modules per window
     module_counts = compute_module_counts(dfc_sorted)
     logger.info("Module counts: min=%s max=%s mean=%.2f",
@@ -721,6 +845,7 @@ def main() -> int:
             dmn_index = None
     else:
         dmn_index = None
+    scope = "dmn" if dmn_index is not None else "all"
 
     if args.compute_cohesion or args.compute_events or args.with_stats:
         # Compute cohesion timeseries/probabilities for chosen set (DMN or all regions)
@@ -742,8 +867,9 @@ def main() -> int:
             fig.colorbar(im, ax=ax)
             fig.tight_layout()
             if args.save_plots:
-                fig.savefig(per_animal_dir / f"cohesion_binary_{base}.png", dpi=300, bbox_inches="tight")
-                logger.info("Saved figure: %s", per_animal_dir / f"cohesion_binary_{base}.png")
+                fig_path = per_animal_dir / f"cohesion_binary_{base}_{scope}.png"
+                fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+                logger.info("Saved figure: %s", fig_path)
             if not args.no_show:
                 plt.show()
             else:
@@ -773,8 +899,9 @@ def main() -> int:
             fig.colorbar(im, ax=ax)
             fig.tight_layout()
             if args.save_plots:
-                fig.savefig(per_animal_dir / f"burstiness_{base}.png", dpi=300, bbox_inches="tight")
-                logger.info("Saved figure: %s", per_animal_dir / f"burstiness_{base}.png")
+                fig_path = per_animal_dir / f"burstiness_{base}_{scope}.png"
+                fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+                logger.info("Saved figure: %s", fig_path)
             if not args.no_show:
                 plt.show()
             else:
@@ -795,7 +922,7 @@ def main() -> int:
             out_dir = (paths["allegiance"] / "out").expanduser()
             out_dir.mkdir(parents=True, exist_ok=True)
 
-            tag = f"w{args.window_size}_lag{args.lag}_tau{args.tau}"
+            tag = f"w{args.window_size}_lag{args.lag}_tau{args.tau}_{scope}"
 
             # AGE-PAIRED (2m vs 4m within base)
             if args.stats_mode in {"age", "all"}:
@@ -816,13 +943,24 @@ def main() -> int:
                     value_fn=lambda X, Y: np.mean(Y, axis=1) - np.mean(X, axis=1)
                 )
 
+                # Save raw p-values
                 pvals_wil.to_csv(out_dir / f"pvals_age_wilcoxon_{tag}.csv")
                 pvals_t.to_csv(out_dir / f"pvals_age_ttest_{tag}.csv")
                 effects_age_ratio.to_csv(out_dir / f"effects_age_cdratio_{tag}.csv")
                 effects_age_mdiff.to_csv(out_dir / f"effects_age_mdiff_{tag}.csv")
 
+                # Optional Bonferroni across links per column
+                title_suffix = ""
+                p_wil_plot = pvals_wil
+                if args.p_adjust == "bonferroni":
+                    p_b = np.minimum(1.0, pvals_wil.values * pvals_wil.shape[0])
+                    p_wil_b = pd.DataFrame(p_b, index=pvals_wil.index, columns=pvals_wil.columns)
+                    p_wil_b.to_csv(out_dir / f"pvals_age_wilcoxon_bonferroni_{tag}.csv")
+                    p_wil_plot = p_wil_b
+                    title_suffix = " (Bonferroni)"
+
                 fig1 = plot_sig_pvals_multi(
-                    pvals_wil, alpha=args.alpha, title="Age (2m vs 4m) — Wilcoxon significant only",
+                    p_wil_plot, alpha=args.alpha, title=f"Age (2m vs 4m) — Wilcoxon significant only{title_suffix}",
                     save=args.save_plots, out_path=stats_dir / f"pvals_age_wilcoxon_sig_{tag}.png"
                 )
                 if not args.no_show:
@@ -831,8 +969,8 @@ def main() -> int:
                     plt.close(fig1)
 
                 fig2 = plot_weighted_multi(
-                    pvals_wil, effects_age_ratio, alpha=args.alpha,
-                    title="Age (2m vs 4m) — (1 - p) × cohesion-diff ratio",
+                    p_wil_plot, effects_age_ratio, alpha=args.alpha,
+                    title=f"Age (2m vs 4m) — (1 - p) × cohesion-diff ratio{title_suffix}",
                     vmin=-0.1, vmax=0.1, save=args.save_plots,
                     out_path=stats_dir / f"weighted_age_wilcoxon_cdratio_{tag}.png"
                 )
@@ -848,6 +986,8 @@ def main() -> int:
                     factors.append("sex")
                 if args.group_compare in {"genotype", "both"}:
                     factors.append("genotype")
+                if args.group_compare == "sex_genotype":
+                    factors.append("sex_genotype")
                 pvals_grp, effects_grp_mdiff, effects_grp_cdr = build_group_comparisons(
                     data_T, link_labels, label_variables, mask_groups,
                     factors=factors, cross_age=args.cross_age, pooled=args.pool_ages,
@@ -856,8 +996,22 @@ def main() -> int:
                 effects_grp_mdiff.to_csv(out_dir / f"effects_group_mdiff_{tag}.csv")
                 effects_grp_cdr.to_csv(out_dir / f"effects_group_cdratio_{tag}.csv")
 
+                title_suffix = ""
+                p_grp_plot = pvals_grp
+                if args.p_adjust == "bonferroni":
+                    p_b = np.minimum(1.0, pvals_grp.values * pvals_grp.shape[0])
+                    p_grp_b = pd.DataFrame(p_b, index=pvals_grp.index, columns=pvals_grp.columns)
+                    p_grp_b.to_csv(out_dir / f"pvals_group_mwu_bonferroni_{tag}.csv")
+                    p_grp_plot = p_grp_b
+                    title_suffix = " (Bonferroni)"
+                elif args.p_adjust == "bonferroni-age":
+                    p_grp_ba = _bonferroni_by_age_in_columns(pvals_grp)
+                    p_grp_ba.to_csv(out_dir / f"pvals_group_mwu_bonferroni_age_{tag}.csv")
+                    p_grp_plot = p_grp_ba
+                    title_suffix = " (Bonferroni by age group)"
+
                 figg1 = plot_sig_pvals_multi(
-                    pvals_grp, alpha=args.alpha, title="Group (MWU) — significant only",
+                    p_grp_plot, alpha=args.alpha, title=f"Group (MWU) — significant only{title_suffix}",
                     save=args.save_plots, out_path=stats_dir / f"pvals_group_mwu_sig_{tag}.png"
                 )
                 if not args.no_show:
@@ -866,8 +1020,8 @@ def main() -> int:
                     plt.close(figg1)
 
                 figg2 = plot_weighted_multi(
-                    pvals_grp, effects_grp_mdiff, alpha=args.alpha,
-                    title="Group (MWU) — (1 - p) × mean difference",
+                    p_grp_plot, effects_grp_mdiff, alpha=args.alpha,
+                    title=f"Group (MWU) — (1 - p) × mean difference{title_suffix}",
                     vmin=-0.1, vmax=0.1, save=args.save_plots,
                     out_path=stats_dir / f"weighted_group_mwu_mdiff_{tag}.png"
                 )
@@ -877,8 +1031,8 @@ def main() -> int:
                     plt.close(figg2)
 
                 figg3 = plot_weighted_multi(
-                    pvals_grp, effects_grp_cdr, alpha=args.alpha,
-                    title="Group (MWU) — (1 - p) × cohesion-diff ratio",
+                    p_grp_plot, effects_grp_cdr, alpha=args.alpha,
+                    title=f"Group (MWU) — (1 - p) × cohesion-diff ratio{title_suffix}",
                     vmin=-0.1, vmax=0.1, save=args.save_plots,
                     out_path=stats_dir / f"weighted_group_mwu_cdratio_{tag}.png"
                 )
