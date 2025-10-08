@@ -50,8 +50,10 @@ def bootstrap_percentiles(
             idx = rng.integers(0, n, size=(m, n), endpoint=False, dtype=index_dtype)
         else:
             idx = rng.integers(0, n, size=(m, n), endpoint=False)
-        # xb = x[idx]
-        boots[done : done + m, :] = np.percentile(x[idx], q_arr, axis=1).T
+        xb = x[idx]
+        boots[done : done + m, :] = np.percentile(
+            xb, q_arr, axis=1, overwrite_input=True
+        ).T
         done += m
 
     alpha = (100.0 - float(ci)) / 2.0
@@ -113,9 +115,9 @@ def bootstrap_diff_percentiles(
             idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
         xb = x[idx_x]
         yb = y[idx_y]
-        boots[done : done + m, :] = (
-            np.percentile(xb, q_arr, axis=1) - np.percentile(yb, q_arr, axis=1)
-        ).T
+        pct_x = np.percentile(xb, q_arr, axis=1, overwrite_input=True)
+        pct_y = np.percentile(yb, q_arr, axis=1, overwrite_input=True)
+        boots[done : done + m, :] = (pct_x - pct_y).T
         done += m
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
@@ -180,7 +182,9 @@ def bootstrap_group_from_pool(
         else:
             idx = rng.integers(0, npool, size=(m, nt), endpoint=False)
         xb = pool[idx]
-        boots[done : done + m, :] = np.percentile(xb, q_arr, axis=1).T
+        boots[done : done + m, :] = np.percentile(
+            xb, q_arr, axis=1, overwrite_input=True
+        ).T
         done += m
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
@@ -275,7 +279,7 @@ def bootstrap_groups_boots(
         if n == 0:
             out[g] = boots
             continue
-        rng = np.random.default_rng(seed if seed is not None else 0)
+        rng = np.random.default_rng(seed)
         done = 0
         c = max(1, int(chunk))
         while done < n_boot:
@@ -285,7 +289,9 @@ def bootstrap_groups_boots(
             else:
                 idx = rng.integers(0, n, size=(m, n), endpoint=False)
             xb = x[idx]
-            boots[done : done + m, :] = np.percentile(xb, q_arr, axis=1).T
+            boots[done : done + m, :] = np.percentile(
+                xb, q_arr, axis=1, overwrite_input=True
+            ).T
             done += m
         out[g] = boots
     out['__q__'] = q_arr  # attach once for convenience
