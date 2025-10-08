@@ -29,6 +29,15 @@ REUSE_GROUP_BOOTS="${REUSE_GROUP_BOOTS:-1}"
 BOOTS_FLOAT32="${BOOTS_FLOAT32:-1}"
 LOAD_CACHE="${LOAD_CACHE:-1}"
 BYWIN_GRID_COLS="${BYWIN_GRID_COLS:-2}"
+GROUP_COLS="${GROUP_COLS:-genotype,treatment}"
+POOL_COLS="${POOL_COLS:-genotype}"
+POOL_EXCLUDE_SELF="${POOL_EXCLUDE_SELF:-0}"
+N_ANIMALS="${N_ANIMALS:-48}"
+CORRELATE_NOR="${CORRELATE_NOR:-0}"
+CORRELATE_NOR_BY_GROUPS="${CORRELATE_NOR_BY_GROUPS:-0}"
+PLOT_FORMAT="${PLOT_FORMAT:-png}"
+PLOT_PROGRESS="${PLOT_PROGRESS:-0}"
+PLOT_POOLTEST="${PLOT_POOLTEST:-1}"
 
 # Optional output directory control (empty means default to --subset)
 OUTDIR="${OUTDIR:-}"
@@ -48,6 +57,14 @@ if [[ "${POOL_ALL}" == "1" ]]; then
   pool_flags+=(--pool-all)
 fi
 
+pooltest_flags=()
+if [[ -n "${POOL_COLS}" ]]; then
+  pooltest_flags+=(--bootstrap-pool-cols "${POOL_COLS}")
+fi
+if [[ "${POOL_EXCLUDE_SELF}" == "1" ]]; then
+  pooltest_flags+=(--pool-exclude-self)
+fi
+
 reuse_flag=()
 if [[ "${REUSE_GROUP_BOOTS}" == "1" ]]; then
   reuse_flag=(--reuse-group-boots)
@@ -56,6 +73,14 @@ fi
 boots32_flag=()
 if [[ "${BOOTS_FLOAT32}" == "1" ]]; then
   boots32_flag=(--boots-float32)
+fi
+
+correlate_flags=()
+if [[ "${CORRELATE_NOR}" == "1" ]]; then
+  correlate_flags+=(--correlate-nor)
+  if [[ "${CORRELATE_NOR_BY_GROUPS}" == "1" ]]; then
+    correlate_flags+=(--correlate-nor-by-groups)
+  fi
 fi
 
 # Subsets to process
@@ -78,17 +103,21 @@ run_compute() {
   local subset="$1"
   echo "[compute] subset=${subset}"
   if [[ "${ACTION}" == "dry-run" ]]; then
-    echo python scripts/compute_speed_bootstrap.py \\
-      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \\
-      --tau-index "${TAU_INDEX}" "${pool_flags[@]}" \\
-      --n-boot "${N_BOOT}" --jobs "${JOBS}" --chunk "${CHUNK}" \\
+    echo python scripts/compute_speed_bootstrap.py \
+      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
+      --tau-index "${TAU_INDEX}" "${pool_flags[@]}" \
+      --group-cols "${GROUP_COLS}" "${pooltest_flags[@]}" \
+      --n-boot "${N_BOOT}" --jobs "${JOBS}" --chunk "${CHUNK}" \
+      --n-animals "${N_ANIMALS}" "${correlate_flags[@]}" \
       "${reuse_flag[@]}" "${boots32_flag[@]}" "${cache_flag[@]}"
     return 0
   fi
   python scripts/compute_speed_bootstrap.py \
     --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
     --tau-index "${TAU_INDEX}" "${pool_flags[@]}" \
+    --group-cols "${GROUP_COLS}" "${pooltest_flags[@]}" \
     --n-boot "${N_BOOT}" --jobs "${JOBS}" --chunk "${CHUNK}" \
+    --n-animals "${N_ANIMALS}" "${correlate_flags[@]}" \
     "${reuse_flag[@]}" "${boots32_flag[@]}" "${cache_flag[@]}"
 }
 
@@ -96,20 +125,38 @@ run_plot() {
   local subset="$1"
   echo "[plot] subset=${subset}"
   if [[ "${ACTION}" == "dry-run" ]]; then
-    echo python scripts/plot_speed_bootstrap.py \\
-      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \\
-      --plot-format png \\
-      --plot-diffs-by-win --plot-diffs-bywin-grid --bywin-grid-cols "${BYWIN_GRID_COLS}" \\
-      --plot-pooled-diffs --plot-pooled-quantiles \\
+    echo python scripts/plot_speed_bootstrap.py \
+      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
+      --plot-format "${PLOT_FORMAT}" \
+      --plot-diffs-by-win --plot-diffs-bywin-grid --bywin-grid-cols "${BYWIN_GRID_COLS}" \
+      --plot-pooled-diffs --plot-pooled-quantiles \
       "${cache_flag[@]}"
+    echo python scripts/plot_speed_correlations.py \
+      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
+      --metric both --plot-by-win --plot-pooled --bywin-group-grid --grid-cols 3 $([[ "${PLOT_PROGRESS}" == "1" ]] && echo --progress)
+    if [[ "${PLOT_POOLTEST}" == "1" ]]; then
+      echo python scripts/plot_speed_pooltest.py \
+        --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
+        --plot-format "${PLOT_FORMAT}" --bywin --pooled $([[ "${PLOT_PROGRESS}" == "1" ]] && echo --progress)
+    fi
     return 0
   fi
   python scripts/plot_speed_bootstrap.py \
     --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
-    --plot-format png \
+    --plot-format "${PLOT_FORMAT}" \
     --plot-diffs-by-win --plot-diffs-bywin-grid --bywin-grid-cols "${BYWIN_GRID_COLS}" \
     --plot-pooled-diffs --plot-pooled-quantiles \
     "${cache_flag[@]}"
+  # Correlation plots (by-window, pooled, and grouped grid)
+  python scripts/plot_speed_correlations.py \
+    --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
+    --metric both --plot-by-win --plot-pooled --bywin-group-grid --grid-cols 3 $([[ "${PLOT_PROGRESS}" == "1" ]] && echo --progress)
+  # Pool-test plots (by-window and pooled)
+  if [[ "${PLOT_POOLTEST}" == "1" ]]; then
+    python scripts/plot_speed_pooltest.py \
+      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
+      --plot-format "${PLOT_FORMAT}" --bywin --pooled $([[ "${PLOT_PROGRESS}" == "1" ]] && echo --progress)
+  fi
 }
 
 for subset in "${SUBSETS[@]}"; do

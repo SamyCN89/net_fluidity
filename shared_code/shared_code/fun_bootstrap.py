@@ -50,8 +50,8 @@ def bootstrap_percentiles(
             idx = rng.integers(0, n, size=(m, n), endpoint=False, dtype=index_dtype)
         else:
             idx = rng.integers(0, n, size=(m, n), endpoint=False)
-        xb = x[idx]
-        boots[done : done + m, :] = np.percentile(xb, q_arr, axis=1).T
+        # xb = x[idx]
+        boots[done : done + m, :] = np.percentile(x[idx], q_arr, axis=1).T
         done += m
 
     alpha = (100.0 - float(ci)) / 2.0
@@ -103,9 +103,6 @@ def bootstrap_diff_percentiles(
     boots = np.empty((n_boot, q_arr.size), dtype)
     done = 0
     chunk = max(1, int(chunk))
-    check_every = max(1, int(0.1 * n_boot))
-    last_lo = None
-    last_hi = None
     while done < n_boot:
         m = min(chunk, n_boot - done)
         if index_dtype is not None:
@@ -125,6 +122,87 @@ def bootstrap_diff_percentiles(
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
     sig = (lo > 0) | (hi < 0)
     return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(nx), "n_y": int(ny)}
+
+
+def bootstrap_group_from_pool(
+    target: np.ndarray,
+    pool: np.ndarray,
+    q: Iterable[float] = (1, 5, 50, 95, 99),
+    n_boot: int = 2000,
+    ci: float = 95.0,
+    seed: int | None = 0,
+    chunk: int = 128,
+    dtype: np.dtype = float,
+    val_dtype: np.dtype | None = None,
+    index_dtype: np.dtype | None = None,
+) -> dict:
+    """Bootstrap target-group percentiles against a pooled supergroup.
+
+    - Forms a null by resampling WITH replacement from `pool` with sample size
+      equal to len(target). Computes percentiles for each replicate.
+    - Returns dict with keys:
+      'q', 'target_point', 'pool_point', 'lo', 'hi', 'inside', 'p', 'n_target', 'n_pool'
+      where 'inside' marks whether target_point lies inside [lo, hi], and 'p' is
+      an empirical two-sided p-value based on deviation from pool_point.
+    """
+    target = np.asarray(target, val_dtype or float)
+    pool = np.asarray(pool, val_dtype or float)
+    target = target[~np.isnan(target)]
+    pool = pool[~np.isnan(pool)]
+    q_arr = np.asarray(list(q), float)
+    nt = int(target.size)
+    npool = int(pool.size)
+    if nt == 0 or npool == 0:
+        m = q_arr.size
+        nan = np.full(m, np.nan)
+        return {
+            "q": q_arr,
+            "target_point": nan,
+            "pool_point": nan,
+            "lo": nan,
+            "hi": nan,
+            "inside": np.zeros(m, bool),
+            "p": nan,
+            "n_target": nt,
+            "n_pool": npool,
+        }
+    # Observed
+    target_point = np.percentile(target, q_arr)
+    pool_point = np.percentile(pool, q_arr)
+    rng = np.random.default_rng(seed)
+    boots = np.empty((n_boot, q_arr.size), dtype)
+    done = 0
+    c = max(1, int(chunk))
+    while done < n_boot:
+        m = min(c, n_boot - done)
+        if index_dtype is not None:
+            idx = rng.integers(0, npool, size=(m, nt), endpoint=False, dtype=index_dtype)
+        else:
+            idx = rng.integers(0, npool, size=(m, nt), endpoint=False)
+        xb = pool[idx]
+        boots[done : done + m, :] = np.percentile(xb, q_arr, axis=1).T
+        done += m
+    alpha = (100.0 - float(ci)) / 2.0
+    lo = np.percentile(boots, alpha, axis=0)
+    hi = np.percentile(boots, 100.0 - alpha, axis=0)
+    inside = (target_point >= lo) & (target_point <= hi)
+    # Two-sided p-value relative to pool_point
+    p = np.empty_like(q_arr, dtype=float)
+    for j in range(q_arr.size):
+        dev = abs(target_point[j] - pool_point[j])
+        dev_boot = np.abs(boots[:, j] - pool_point[j])
+        p[j] = (np.count_nonzero(dev_boot >= dev) + 1.0) / (boots.shape[0] + 1.0)
+    return {
+        "q": q_arr,
+        "target_point": target_point,
+        "pool_point": pool_point,
+        "lo": lo,
+        "hi": hi,
+        "inside": inside,
+        "p": p,
+        "n_target": nt,
+        "n_pool": npool,
+    }
 
 
 def pool_per_animal(per_animal: list[np.ndarray], idxs: Iterable[int]) -> np.ndarray:
@@ -157,7 +235,7 @@ def bootstrap_groups_percentiles(
     out: dict = {}
     q_arr = np.asarray(list(q), float)
     for g, idxs in groups.items():
-        pooled = pool_per_animal(per_animal, idxs)
+        pooled = pool_per_animal(per_animal, idxs)  # pool values for this group
         point, lo, hi = bootstrap_percentiles(
             pooled, q=q_arr, n_boot=n_boot, ci=ci, seed=seed,
             chunk=chunk, dtype=dtype,
@@ -186,6 +264,8 @@ def bootstrap_groups_boots(
     """
     q_arr = np.asarray(list(q), float)
     out: dict = {}
+
+    # Iterate groups, pool values, and compute bootstrap replicates
     for g, idxs in groups.items():
         x = pool_per_animal(per_animal, idxs)
         x = np.asarray(x, val_dtype or float)
