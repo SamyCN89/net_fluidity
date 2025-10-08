@@ -10,6 +10,7 @@ until the migration is complete.
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import pickle
 
 import numpy as np
@@ -71,11 +72,20 @@ _SH = _import_shared()
 
 class DFCAnalysis:
     def __init__(self, dataset_name: str = "julien_caillette"):
+        # Allow selecting a paths profile via env (e.g., PATHS_ENV=CLUSTER)
+        env_label = os.getenv("PATHS_ENV", os.getenv("PROJECT_ENV", "LOCAL"))
+        # Optionally control creation and write checks via env
+        create_flag = str(os.getenv("PATHS_CREATE", "1")).lower() in ("1", "true", "yes")
+        check_write_flag = str(os.getenv("PATHS_CHECK_WRITE", "0")).lower() in ("1", "true", "yes")
+
         self.paths = _SH["get_paths"](
             dataset_name=dataset_name,
             timecourse_folder="time_courses_2",
             cognitive_data_file="mice_groups_comp_index_2.xlsx",
             anat_labels_file="all_ROI_coimagine_2.txt",
+            env=env_label,
+            create=create_flag,
+            check_write=check_write_flag,
         )
 
         self.metadata = None
@@ -196,4 +206,3 @@ class DFCAnalysis:
             / f"{prefix}_windows{len(time_window_range)}_tau{np.size(tau_arange)}_animals_{self.n_animals}.npz"
         )
         self.speed_fc = _SH["load_fc2_npz"](file_path)
-

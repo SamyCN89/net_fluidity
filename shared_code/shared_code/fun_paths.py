@@ -2,7 +2,9 @@
 Path helpers for datasets, results, and figures.
 
 Environment variables (can be placed in a local .env):
+- `PATHS_ROOT` (optional): absolute path to project root; overrides everything
 - `PROJECT_ROOT_<ENV>`: absolute path to project root for a given environment (default ENV='LOCAL')
+- `PATHS_ENV` (optional): which `<ENV>` label to use (e.g., `CLUSTER`)
 - `DATASET_NAME` (optional): dataset subfolder name used by `get_paths`
 
 Example:
@@ -22,13 +24,15 @@ load_dotenv()
 # =============================================================================
 # Get Paths folder
 # =============================================================================
-def get_root_path(env="LOCAL") -> Path:
+def get_root_path(env: str = "LOCAL") -> Path:
     """
     Resolve the project root for a given environment label.
 
     Parameters:
     - env: str (default 'LOCAL')
-      Suffix used to read `PROJECT_ROOT_<env>` from the environment.
+      Suffix used to read `PROJECT_ROOT_<env>` from the environment. If set to
+      'AUTO', reads PATHS_ENV and falls back to 'LOCAL'. If PATHS_ROOT is set,
+      it overrides all and is used directly.
 
     Returns:
     - Path: absolute path to the configured project root.
@@ -36,9 +40,22 @@ def get_root_path(env="LOCAL") -> Path:
     Raises:
     - EnvironmentError: if the corresponding environment variable is not set.
     """
-    root = os.getenv(f"PROJECT_ROOT_{env}")
+    # Hard override takes precedence
+    override = os.getenv("PATHS_ROOT")
+    if override:
+        return Path(override)
+
+    # Resolve environment label (supports AUTO via PATHS_ENV)
+    label = env or "LOCAL"
+    if str(label).upper() == "AUTO":
+        label = os.getenv("PATHS_ENV", "LOCAL")
+
+    root = os.getenv(f"PROJECT_ROOT_{label}")
     if not root:
-        raise OSError(f"Environment variable PROJECT_ROOT_{env} is not set.")
+        raise OSError(
+            "Root path not configured. Set PATHS_ROOT, or define "
+            f"PROJECT_ROOT_{label} (optionally set PATHS_ENV to pick label)."
+        )
     return Path(root)
 
 
@@ -140,7 +157,7 @@ def get_paths(
     Parameters mirror `build_paths`. When `create=True`, missing folders are created.
     Use `env` to select which environment variable to read as the root.
     """
-    # Load the root path from environment variable or default to LOCAL
+    # Load the root path from environment variable(s)
     root = get_root_path(env)
 
     # Use dataset_name param or fallback to env
