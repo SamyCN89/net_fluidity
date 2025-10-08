@@ -15,6 +15,10 @@ set -euo pipefail
 #   OUTDIR="" APPEND_SUBSET=1 LOAD_CACHE=1 \
 #   bash scripts/run_bootstrap_batches.sh both
 
+export PATHS_ENV="CLUSTER_FS"
+export DATASET_NAME="julien_caillette"
+
+
 ACTION="${1:-both}"  # compute | plot | both | list | dry-run
 
 # Defaults (override via env vars as needed)
