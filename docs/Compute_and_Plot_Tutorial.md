@@ -10,11 +10,24 @@ pip install -e shared_code
 pip install -r requirements-dev.txt
 ```
 
-Ensure your `.env` has project root:
+Paths are profile‑driven and cluster‑friendly. You can:
+- Set `PATHS_ROOT` (hard override), or
+- Set `PATHS_ENV` and define `PROJECT_ROOT_<ENV>`.
+Also set `DATASET_NAME` to select the dataset subfolder.
 
+Examples
 ```
-PROJECT_ROOT_LOCAL=/absolute/path/to/project/root
-DATASET_NAME=julien_caillette  # optional
+# Simple hard override (recommended on cluster filesystems)
+export PATHS_ROOT=/abs/path/to/project/root
+export DATASET_NAME=julien_caillette
+
+# Or pick a named profile
+export PATHS_ENV=CLUSTER_FS
+export PROJECT_ROOT_CLUSTER_FS=/scratch/$USER/laura_harsan
+export DATASET_NAME=julien_caillette
+
+# Validate resolved roots/paths and write access
+python scripts/paths_doctor.py --show --check-write --create
 ```
 
 ## 1) Compute CSVs (no plotting)
@@ -23,10 +36,11 @@ Script: `scripts/compute_speed_bootstrap.py`
 
 Purpose: compute per-ROI, per-window (and pooled short/long/all) bootstrap tables as CSVs. No figures are generated; you can plot later.
 
-Outputs (under dataset paths):
-- `paths['speed']/<outdir>/speed_bootstrap_quantiles.csv`
-- `paths['speed']/<outdir>/speed_bootstrap_diffs.csv`
-- `paths['speed']/<outdir>/speed_nor_correlations.csv` (when `--correlate-nor`)
+Outputs (under dataset paths, with n‑boot suffixed copies):
+- `paths['speed']/<outdir>/speed_bootstrap_quantiles.csv` and `_nboot-<N>.csv`
+- `paths['speed']/<outdir>/speed_bootstrap_diffs.csv` and `_nboot-<N>.csv`
+- `paths['speed']/<outdir>/speed_nor_correlations.csv` and `_nboot-<N>.csv` (when `--correlate-nor`)
+- Pool‑test (see below): `speed_bootstrap_pooltest.csv` and `_nboot-<N>.csv`
 
 Fast example (TR=500, subset `regions500`, parallel windows):
 
@@ -62,6 +76,11 @@ Options overview (compute)
 - `--load-cache`: reuse existing CSVs if present (skips recompute).
 - `--reuse-group-boots`: reuse per‑group bootstrap replicates across pairs for faster diffs.
 - `--boots-float32` / `--values-float32` / `--index-int32`: memory/perf tuning for large jobs.
+  
+Pool‑test controls
+- `--bootstrap-pool-cols COLS`: build pooled supergroups by matching a subset of `--group-cols` (e.g., `genotype`).
+- `--pool-exclude-self`: when testing a group, drop its own animals from the pooled control.
+- Writes `speed_bootstrap_pooltest(_nboot-<N>).csv` with metadata: `group_label, group_cols, pool_by, pool_match, pool_exclude_self`.
 
 Behavior and outputs
 - ROI enforcement: window pools (short/long/all) are computed per ROI (no cross‑ROI mixing).
@@ -72,6 +91,28 @@ Behavior and outputs
     - `region, roi, window, A, B, q, diff, lo, hi, p, p_method, significant, n_a, n_b`.
   - `speed_nor_correlations.csv` (if `--correlate-nor`): pooled‑window correlations of per‑animal percentiles with a NOR score; columns:
     - `region, roi, window, q, pearson_r, pearson_p, spearman_rho, spearman_p, n, nor_col`.
+
+### 1.1) Pool‑Test (target vs pooled supergroup)
+
+Two ways to generate pool‑tests during compute:
+- Column‑based pooling (most common):
+  - Add `--bootstrap-pool-cols genotype` (or any subset of your `--group-cols`) to construct a pooled control per group by matching only those columns.
+  - Optionally add `--pool-exclude-self` to drop the target group’s own animals from the pool.
+  - Pool‑tests are computed per window and for pooled windows (`short|long|all` when enabled), and saved in `speed_bootstrap_pooltest(_nboot-<N>).csv`.
+
+- Explicit pooling (custom unions):
+  - Use `scripts/compute_speed_pooltest_explicit.py` to define the exact control pool.
+  - Example: test `(Dp1Yey,LCTB92)` and `(WT,VEH)` vs a pool `(WT,VEH)+(Dp1Yey,LCTB92)`:
+    ```bash
+    python scripts/compute_speed_pooltest_explicit.py \
+      --tr 500 --subset dmn_within --tau-index 0 \
+      --group-cols genotype,treatment \
+      --targets "(Dp1Yey,LCTB92);(WT,VEH)" \
+      --pool "(WT,VEH);(Dp1Yey,LCTB92)" \
+      --n-boot 2000 --jobs 8 --progress \
+      --pool-threshold median --pool-all
+    ```
+  - Writes `speed_bootstrap_pooltest_explicit(_nboot-<N>).csv` with the same schema and `pool_by=explicit`.
 
 ### 1.1) Detailed analysis usage (what the compute step does)
 
@@ -163,6 +204,19 @@ Script: `scripts/plot_speed_correlations.py`
   - `--alpha 0.05`: significance threshold; filled markers indicate `p <= alpha`
   - `--plot-by-win`, `--plot-pooled`, `--progress`, `--plot-format`, `--outdir`, `--append-subset-to-outdir`
 
+Pool‑test plots (from `speed_bootstrap_pooltest*.csv`)
+
+Script: `scripts/plot_speed_pooltest.py`
+
+- Inputs (searched in order): `speed_bootstrap_pooltest_explicit_nboot-*.csv`, `speed_bootstrap_pooltest_nboot-*.csv`, then non‑suffixed.
+- What: target percentile vs CI of pooled control, per window and pooled (`short|long|all`).
+- Titles automatically annotate the pooled control (e.g., `vs pool by genotype=WT; exclude self`).
+- Examples:
+  ```bash
+  python scripts/plot_speed_pooltest.py --tr 500 --subset dmn_within --bywin --pooled --progress
+  python scripts/plot_speed_pooltest.py --tr 500 --subset dmn_within --bywin --q 50
+  ```
+
 ## 3) Common Flags and Tips
 
 - ROI handling: scripts infer `roi` from NPZ filenames; pooling is enforced per ROI.
@@ -173,6 +227,8 @@ Script: `scripts/plot_speed_correlations.py`
 - Plot cosmetics:
   - Per-percentile color is stable and consistent with legends.
   - `bywin_*` plots show filled circles for significant points and open circles for ns.
+- Performance on shared nodes: limit BLAS threads to avoid oversubscription.
+  - Compute script auto‑limits threads when `--jobs > 1`; you can also export `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1`.
 
 ## 4) Typical Workflow
 
@@ -216,16 +272,29 @@ Examples
 Environment overrides (prefix variables before the command)
 - Syntax: `VAR=value VAR2=value bash scripts/run_bootstrap_batches.sh ACTION`
 - Variables:
-  - `TR` (default 500), `TAU_INDEX` (0), `N_BOOT` (2000), `JOBS` (8), `CHUNK` (256)
-  - `POOL_THRESH` (median or int), `POOL_ALL` (1/0), `REUSE_GROUP_BOOTS` (1/0), `BOOTS_FLOAT32` (1/0)
-  - `LOAD_CACHE` (1/0), `BYWIN_GRID_COLS` (2)
-  - `OUTDIR` (empty = use subset), `APPEND_SUBSET` (1/0 to suffix `__subset-<subset>`)
+  - Compute: `TR`, `TAU_INDEX`, `N_BOOT`, `JOBS`, `CHUNK`, `GROUP_COLS`
+  - Pools: `POOL_THRESH` (`median` or int), `POOL_ALL` (1/0)
+  - Pool‑test: `POOL_COLS` (subset of group cols, e.g., `genotype`), `POOL_EXCLUDE_SELF` (1/0), `N_ANIMALS`
+  - Caching/Perf: `REUSE_GROUP_BOOTS` (1/0), `BOOTS_FLOAT32` (1/0), `LOAD_CACHE` (1/0)
+  - Correlations: `CORRELATE_NOR` (1/0), `CORRELATE_NOR_BY_GROUPS` (1/0)
+  - Plotting: `BYWIN_GRID_COLS`, `PLOT_FORMAT`, `PLOT_PROGRESS` (1/0), `PLOT_POOLTEST` (1/0)
+  - Output routing: `OUTDIR` (empty → use subset)
 
 Examples (overrides)
 - Quick smoke: `N_BOOT=500 JOBS=4 CHUNK=128 LOAD_CACHE=0 bash scripts/run_bootstrap_batches.sh both`
-- Collect in one folder: `OUTDIR=bootstrap_all APPEND_SUBSET=1 bash scripts/run_bootstrap_batches.sh both`
+- Column‑based pool‑test: `POOL_COLS=genotype POOL_EXCLUDE_SELF=1 bash scripts/run_bootstrap_batches.sh compute`
+- Plot only (incl. pool‑tests): `PLOT_POOLTEST=1 bash scripts/run_bootstrap_batches.sh plot`
 
-## 6) Bootstrap Kernels and Centralization Phases
+## 7) Paths and Cluster Notes
+
+- Configure roots with `PATHS_ROOT` or `PATHS_ENV` + `PROJECT_ROOT_<ENV>`.
+- Validate with `scripts/paths_doctor.py --show --check-write --create`.
+- If raw data are read‑only, you can symlink or mirror them into your root at `dataset/<DATASET_NAME>/...` to keep the layout consistent.
+- Long runs without Slurm:
+  - `tmux new -s boots && bash scripts/run_bootstrap_batches.sh both |& tee boots.log`
+  - or `nohup bash scripts/run_bootstrap_batches.sh both > boots.out 2>&1 & disown`
+
+## 8) Bootstrap Kernels and Centralization Phases
 
 - Kernels live in `shared_code.fun_bootstrap` (preferred import path in scripts). Scripts fall back gracefully when central kernels aren’t available.
 

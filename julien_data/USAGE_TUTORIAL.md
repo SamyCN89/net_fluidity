@@ -6,9 +6,11 @@ This guide reflects the Phase 3 workflow: stable paths via `shared_code.fun_path
 
 - Python 3.11
 - Install shared package: `pip install -e shared_code`
-- Configure root via env (e.g., in `.env`):
-  - `PROJECT_ROOT_LOCAL=/abs/path/to/repo-root`
+- Configure paths via env (profile‑driven):
+  - Simple hard override: `PATHS_ROOT=/abs/path/to/repo-root`
+  - Or profile label: `PATHS_ENV=CLUSTER_FS` and `PROJECT_ROOT_CLUSTER_FS=/abs/path`
   - Optional: `DATASET_NAME=julien_caillette`
+  - Validate: `python scripts/paths_doctor.py --show --check-write --create`
 - Optional logging: copy `config/logging.example.yaml` → `config/logging.yaml` and set `NET_FLUIDITY_LOGGING=config/logging.yaml`.
  - Notebooks: ensure package imports by adding the repo `src` to `sys.path` (so `net_fluidity_julien` is importable):
    - In a notebook cell: `import sys; sys.path.insert(0, 'src')`

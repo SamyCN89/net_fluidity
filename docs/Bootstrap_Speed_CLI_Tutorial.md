@@ -10,11 +10,20 @@ pip install -e shared_code
 pip install -r requirements-dev.txt
 ```
 
-Ensure `.env` has a valid project root:
+Paths are profile‑driven. Either set a hard root or select a profile:
 
 ```
-PROJECT_ROOT_LOCAL=/absolute/path/to/project/root
-DATASET_NAME=julien_caillette  # optional; default in code
+# Hard override (simple)
+export PATHS_ROOT=/abs/path/to/project/root
+export DATASET_NAME=julien_caillette
+
+# Or profile based
+export PATHS_ENV=CLUSTER_FS
+export PROJECT_ROOT_CLUSTER_FS=/scratch/$USER/laura_harsan
+export DATASET_NAME=julien_caillette
+
+# Validate
+python scripts/paths_doctor.py --show --check-write --create
 ```
 
 Verify outputs exist:
@@ -187,6 +196,37 @@ Interpretation tips:
 - If `n` (or `n_a`/`n_b`) is 0, that group/pair had no valid values (e.g., empty tau or filters).
 - A positive `diff` means group A has a higher percentile than group B.
 - `significant=True` indicates the CI excludes zero; always check magnitude and direction.
+
+## 5.1) Pool‑Test (target vs pooled supergroup)
+
+If you want to test a group against a pooled control built from other groups:
+
+- Column‑based pooling (automatic):
+  - Use the compute‑only CLI and add `--bootstrap-pool-cols` (subset of `--group-cols`), plus `--pool-exclude-self` if needed:
+    ```bash
+    python scripts/compute_speed_bootstrap.py \
+      --tr 500 --subset regions500 --tau-index 0 \
+      --bootstrap-pool-cols genotype --pool-exclude-self \
+      --pool-threshold median --pool-all --n-boot 2000 --jobs 8
+    ```
+  - Outputs `speed_bootstrap_pooltest(_nboot-<N>).csv` with metadata columns identifying the pool.
+
+- Explicit pooling (custom unions):
+  - Define the exact pool and targets:
+    ```bash
+    python scripts/compute_speed_pooltest_explicit.py \
+      --tr 500 --subset dmn_within --tau-index 0 \
+      --group-cols genotype,treatment \
+      --targets "(Dp1Yey,LCTB92);(WT,VEH)" \
+      --pool "(WT,VEH);(Dp1Yey,LCTB92)" \
+      --n-boot 2000 --jobs 8 --progress \
+      --pool-threshold median --pool-all
+    ```
+
+Plot pool‑tests directly from CSVs:
+```bash
+python scripts/plot_speed_pooltest.py --tr 500 --subset dmn_within --bywin --pooled --progress
+```
 
 ## 6) Troubleshooting
 

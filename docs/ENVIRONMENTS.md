@@ -10,7 +10,14 @@ Guides for setting up a reliable Python environment for this repo, including a C
 - Analysis/plotting extras: `pandas`, `matplotlib`, `seaborn`, `scikit-learn`, `networkx`, `statsmodels`, `webcolors`, `statannotations`, `openpyxl`
 - Local package: install `shared_code/` in editable mode
 
-Note: Some scripts read environment variables (see `shared_code/shared_code/fun_paths.py`), e.g. `PROJECT_ROOT_LOCAL` and optional `DATASET_NAME`. A `.env` at repo root can set these.
+Note: Path resolution is profile‑driven via `shared_code/shared_code/fun_paths.py`.
+You can either set a hard project root or select a profile label:
+
+Environment variables (any shell or in a `.env`):
+- `PATHS_ROOT` (optional): hard override for the project root.
+- `PATHS_ENV` (optional): profile label used to pick a `PROJECT_ROOT_<ENV>`.
+- `PROJECT_ROOT_<ENV>`: absolute path for a given profile (e.g., `PROJECT_ROOT_LOCAL`, `PROJECT_ROOT_CLUSTER_FS`).
+- `DATASET_NAME` (optional): dataset subfolder name.
 
 ## Conda (recommended)
 
@@ -67,12 +74,20 @@ Numba/NumPy/Scipy are widely distributed as wheels; prefer pinned Python (3.11) 
 
 ## Environment Variables (paths)
 
-`shared_code.fun_paths` reads environment variables for data/results roots. You can set them in your shell or in a `.env` at the project root:
+`shared_code.fun_paths` reads these variables to build canonical dataset/results/fig paths. Examples:
 
 ```bash
-# .env example
-PROJECT_ROOT_LOCAL=/absolute/path/to/project/root
-DATASET_NAME=ines_abdullah
+# Simple: hard override
+export PATHS_ROOT=/abs/path/to/project/root
+export DATASET_NAME=ines_abdullah
+
+# Profile‑based: select a label and provide its root
+export PATHS_ENV=CLUSTER_FS
+export PROJECT_ROOT_CLUSTER_FS=/scratch/$USER/project_root
+export DATASET_NAME=ines_abdullah
+
+# Doctor: inspect + create + check write
+python scripts/paths_doctor.py --show --check-write --create
 ```
 
 ## Basic Checks
@@ -91,6 +106,9 @@ from shared_code.fun_dfcspeed import ts2dfc_stream, dfc_speed
 print("shared_code import OK")
 PY
 
+# Validate path configuration (recommended)
+python scripts/paths_doctor.py --show --check-write --create
+
 # Run minimal tests (pytest if available)
 pytest -q || true
 
@@ -99,3 +117,11 @@ python test_unified_dfc_speed.py
 ```
 
 If `pytest` is not installed or tests are purely script-based, the last command suffices to validate core functionality.
+
+## Cluster Notes (no Slurm)
+
+- Long runs: use `tmux` or `nohup` to keep jobs alive after logout.
+  - `tmux new -s boots && bash scripts/run_bootstrap_batches.sh both |& tee boots.log`
+  - or `nohup bash scripts/run_bootstrap_batches.sh compute > boots.out 2>&1 & disown`
+- Avoid thread oversubscription on shared nodes:
+  - Set `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1` (the compute CLI auto‑caps when `--jobs > 1`).
