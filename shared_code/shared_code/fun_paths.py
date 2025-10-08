@@ -17,8 +17,18 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load environment variables from ../../.env if present
-load_dotenv()
+# Load environment variables from current CWD .env and also try repository root .env
+load_dotenv()  # CWD
+try:
+    here = Path(__file__).resolve()
+    # Walk up a few levels to find repo-level .env
+    for i in range(1, 6):
+        env_file = here.parents[i] / ".env"
+        if env_file.exists():
+            load_dotenv(dotenv_path=env_file, override=False)
+            break
+except Exception:
+    pass
 
 
 # =============================================================================
