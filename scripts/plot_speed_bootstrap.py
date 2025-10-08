@@ -62,22 +62,14 @@ def get_context(tr: int | None = None):
     return data
 
 
-def build_outdir_name(outdir: str | None, subset: str | None, append_subset: bool) -> str:
-    name = outdir if outdir else (subset if subset else "bootstrap")
-    if append_subset and subset and outdir:
-        def _san(s: str) -> str:
-            return (
-                str(s).replace("/", "-").replace(" ", "_").replace(",", "-")
-                .replace("|", "-").replace("(", "").replace(")", "")
-            )
-        name = f"{name}__subset-{_san(subset)}"
-    return name
+def build_outdir_name(outdir: str | None, subset: str | None) -> str:
+    return outdir if outdir else (subset if subset else "bootstrap")
 
 
-def resolve_outdirs(tr: int, subset: str | None, outdir: str | None, append_subset: bool):
+def resolve_outdirs(tr: int, subset: str | None, outdir: str | None):
     data = get_context(tr=tr)
     speed_root = Path(data.paths["speed"])  # type: ignore[index]
-    outdir_name = build_outdir_name(outdir, subset, append_subset)
+    outdir_name = build_outdir_name(outdir, subset)
     csv_root = speed_root / outdir_name
     fig_base = Path(data.paths.get("f_speed", speed_root))  # type: ignore[attr-defined]
     fig_root = fig_base / outdir_name
@@ -171,7 +163,6 @@ def main() -> int:
     ap.add_argument("--tr", type=int, default=500)
     ap.add_argument("--subset", type=str, default=None)
     ap.add_argument("--outdir", type=str, default=None)
-    ap.add_argument("--append-subset-to-outdir", action="store_true")
     ap.add_argument("--plot-format", type=str, default="png", choices=["png", "pdf", "svg"])
     ap.add_argument("--plot-diffs-by-win", action="store_true")
     ap.add_argument("--plot-diffs-bywin-grid", action="store_true")
@@ -183,7 +174,7 @@ def main() -> int:
     args = ap.parse_args()
 
     # Resolve inputs/outputs
-    csv_root, fig_root = resolve_outdirs(args.tr, args.subset, args.outdir, args.append_subset_to_outdir)
+    csv_root, fig_root = resolve_outdirs(args.tr, args.subset, args.outdir)
     diffs_path = csv_root / "speed_bootstrap_diffs.csv"
     if not diffs_path.exists():
         raise FileNotFoundError(f"Missing required diffs CSV: {diffs_path}")

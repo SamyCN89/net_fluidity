@@ -21,33 +21,15 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-# Centralized kernels (prefer shared_code.*; fallback to shared_code.shared_code.*)
-try:  # preferred: shared_code.*
-    from shared_code.fun_bootstrap import (
-        bootstrap_percentiles as _central_bootstrap_percentiles,
-        bootstrap_diff_percentiles as _central_bootstrap_diff_percentiles,
-        bootstrap_groups_percentiles as _central_bootstrap_groups_percentiles,
-        bootstrap_groups_boots as _central_bootstrap_groups_boots,
-        ci_from_boots as _central_ci_from_boots,
-        pool_per_animal as _central_pool_per_animal,
-    )
-except Exception:  # pragma: no cover
-    try:  # fallback: nested package path
-        from shared_code.shared_code.fun_bootstrap import (
-            bootstrap_percentiles as _central_bootstrap_percentiles,
-            bootstrap_diff_percentiles as _central_bootstrap_diff_percentiles,
-            bootstrap_groups_percentiles as _central_bootstrap_groups_percentiles,
-            bootstrap_groups_boots as _central_bootstrap_groups_boots,
-            ci_from_boots as _central_ci_from_boots,
-            pool_per_animal as _central_pool_per_animal,
-        )
-    except Exception:  # final: disable central kernels
-        _central_bootstrap_percentiles = None
-        _central_bootstrap_diff_percentiles = None
-        _central_bootstrap_groups_percentiles = None
-        _central_bootstrap_groups_boots = None
-        _central_ci_from_boots = None
-        _central_pool_per_animal = None
+# Centralized kernels (require shared_code package to be installed)
+from shared_code.fun_bootstrap import (
+    bootstrap_percentiles,
+    bootstrap_diff_percentiles,
+    bootstrap_groups_percentiles,
+    bootstrap_groups_boots,
+    ci_from_boots,
+    pool_per_animal,
+)
 
 
 # ---------------- Context and IO helpers ---------------- #
@@ -137,335 +119,7 @@ def build_groups_from_columns(cog_df: pd.DataFrame, columns: list[str]) -> dict:
     return out
 
 
-# ---------------- Local bootstrap implementations (fallbacks) ---------------- #
-
-
-def bootstrap_quantiles_1d(
-    x: np.ndarray,
-    q: Iterable[float],
-    n_boot: int,
-    ci: float,
-    seed: int,
-    chunk: int = 128,
-    early_stop: float = 0.0,
-    dtype: type | np.dtype = float,
-    val_dtype: type | np.dtype | None = None,
-    index_dtype: type | np.dtype | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if _central_bootstrap_percentiles is not None:
-        return _central_bootstrap_percentiles(
-            x,
-            q=q,
-            n_boot=n_boot,
-            ci=ci,
-            seed=seed,
-            chunk=chunk,
-            early_stop=early_stop,
-            dtype=np.dtype(dtype),
-            val_dtype=(None if val_dtype is None else np.dtype(val_dtype)),
-            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
-        )
-    x = np.asarray(x, val_dtype or float)
-    x = x[~np.isnan(x)]
-    q_arr = np.asarray(list(q), float)
-    if x.size == 0:
-        nan = np.full_like(q_arr, np.nan, float)
-        return nan, nan, nan
-    point = np.percentile(x, q_arr)
-    rng = np.random.default_rng(seed)
-    n = x.size
-    boots = np.empty((n_boot, q_arr.size), dtype)
-    done = 0
-    chunk = max(1, int(chunk))
-    check_every = max(1, int(0.1 * n_boot))
-    last_lo = None
-    last_hi = None
-    while done < n_boot:
-        m = min(chunk, n_boot - done)
-        if index_dtype is not None:
-            idx = rng.integers(0, n, size=(m, n), endpoint=False, dtype=index_dtype)
-        else:
-            idx = rng.integers(0, n, size=(m, n), endpoint=False)
-        xb = x[idx]
-        boots[done : done + m, :] = np.percentile(xb, q_arr, axis=1).T
-        done += m
-        if early_stop and (done % check_every == 0 or done == n_boot):
-            alpha_tmp = (100.0 - float(ci)) / 2.0
-            lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
-            hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
-            if (
-                last_lo is not None
-                and last_hi is not None
-                and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi)))
-            ):
-                rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
-                rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
-                if rel_lo <= early_stop and rel_hi <= early_stop:
-                    return point, lo_t, hi_t
-            last_lo = lo_t
-            last_hi = hi_t
-    alpha = (100.0 - float(ci)) / 2.0
-    lo = np.percentile(boots, alpha, axis=0)
-    hi = np.percentile(boots, 100.0 - alpha, axis=0)
-    return point, lo, hi
-
-
-def bootstrap_quantiles_by_group(
-    per_animal: list[np.ndarray],
-    groups: dict,
-    q: Iterable[float],
-    n_boot: int,
-    ci: float,
-    seed: int,
-    early_stop: float = 0.0,
-    chunk: int = 128,
-    dtype: type | np.dtype = float,
-    val_dtype: type | np.dtype | None = None,
-    index_dtype: type | np.dtype | None = None,
-) -> dict:
-    if _central_bootstrap_groups_percentiles is not None:
-        return _central_bootstrap_groups_percentiles(
-            per_animal,
-            groups,
-            q=q,
-            n_boot=n_boot,
-            ci=ci,
-            seed=seed,
-            early_stop=early_stop,
-            chunk=chunk,
-            dtype=np.dtype(dtype),
-            val_dtype=(None if val_dtype is None else np.dtype(val_dtype)),
-            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
-        )
-    out: dict = {}
-    for g, idxs in groups.items():
-        vals = [per_animal[int(i)] for i in idxs if int(i) < len(per_animal)]
-        pooled = (
-            np.concatenate([v for v in vals if getattr(v, "size", 0) > 0])
-            if vals
-            else np.array([])
-        )
-        point, lo, hi = bootstrap_quantiles_1d(
-            pooled,
-            q=q,
-            n_boot=n_boot,
-            ci=ci,
-            seed=seed,
-            early_stop=early_stop,
-            chunk=chunk,
-            dtype=dtype,
-            val_dtype=val_dtype,
-            index_dtype=index_dtype,
-        )
-        out[g] = {
-            "q": np.asarray(list(q), float),
-            "point": point,
-            "lo": lo,
-            "hi": hi,
-            "n": int(pooled.size),
-        }
-    return out
-
-
-def pooled_from_indices(
-    per_animal: list[np.ndarray], idxs: Iterable[int]
-) -> np.ndarray:
-    if _central_pool_per_animal is not None:
-        return _central_pool_per_animal(per_animal, idxs)
-    vals = [per_animal[int(i)] for i in idxs if int(i) < len(per_animal)]
-    nonempty = [v for v in vals if getattr(v, "size", 0) > 0]
-    return np.concatenate(nonempty) if nonempty else np.array([])
-
-
-def bootstrap_quantile_diffs(
-    x: np.ndarray,
-    y: np.ndarray,
-    q: Iterable[float],
-    n_boot: int,
-    ci: float,
-    seed: int,
-    chunk: int = 128,
-    early_stop: float = 0.0,
-    dtype: type | np.dtype = float,
-    val_dtype: type | np.dtype | None = None,
-    index_dtype: type | np.dtype | None = None,
-) -> dict:
-    if _central_bootstrap_diff_percentiles is not None:
-        return _central_bootstrap_diff_percentiles(
-            x,
-            y,
-            q=q,
-            n_boot=n_boot,
-            ci=ci,
-            seed=seed,
-            chunk=chunk,
-            early_stop=early_stop,
-            dtype=np.dtype(dtype),
-            val_dtype=(None if val_dtype is None else np.dtype(val_dtype)),
-            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
-        )
-    x = np.asarray(x, val_dtype or float)
-    y = np.asarray(y, val_dtype or float)
-    x = x[~np.isnan(x)]
-    y = y[~np.isnan(y)]
-    q_arr = np.asarray(list(q), float)
-    if x.size == 0 or y.size == 0:
-        m = q_arr.size
-        nan = np.full(m, np.nan)
-        return {
-            "q": q_arr,
-            "point": nan,
-            "lo": nan,
-            "hi": nan,
-            "sig": np.zeros(m, bool),
-            "n_x": int(x.size),
-            "n_y": int(y.size),
-        }
-    point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
-    rng = np.random.default_rng(seed)
-    nx, ny = x.size, y.size
-    boots = np.empty((n_boot, q_arr.size), dtype)
-    done = 0
-    chunk = max(1, int(chunk))
-    check_every = max(1, int(0.1 * n_boot))
-    last_lo = None
-    last_hi = None
-    while done < n_boot:
-        m = min(chunk, n_boot - done)
-        if index_dtype is not None:
-            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False, dtype=index_dtype)
-            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False, dtype=index_dtype)
-        else:
-            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
-            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
-        xb = x[idx_x]
-        yb = y[idx_y]
-        boots[done : done + m, :] = (
-            np.percentile(xb, q_arr, axis=1) - np.percentile(yb, q_arr, axis=1)
-        ).T
-        done += m
-        if early_stop and (done % check_every == 0 or done == n_boot):
-            alpha_tmp = (100.0 - float(ci)) / 2.0
-            lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
-            hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
-            if (
-                last_lo is not None
-                and last_hi is not None
-                and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi)))
-            ):
-                rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
-                rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
-                if rel_lo <= early_stop and rel_hi <= early_stop:
-                    sig_t = (lo_t > 0) | (hi_t < 0)
-                    return {
-                        "q": q_arr,
-                        "point": point,
-                        "lo": lo_t,
-                        "hi": hi_t,
-                        "sig": sig_t,
-                        "n_x": int(nx),
-                        "n_y": int(ny),
-                    }
-            last_lo = lo_t
-            last_hi = hi_t
-    alpha = (100.0 - float(ci)) / 2.0
-    lo = np.percentile(boots, alpha, axis=0)
-    hi = np.percentile(boots, 100.0 - alpha, axis=0)
-    sig = (lo > 0) | (hi < 0)
-    # Empirical two-sided p-values per quantile
-    p = np.empty_like(q_arr, dtype=float)
-    for j in range(q_arr.size):
-        p[j] = (np.count_nonzero(np.abs(boots[:, j]) >= abs(point[j])) + 1.0) / (
-            boots.shape[0] + 1.0
-        )
-    return {
-        "q": q_arr,
-        "point": point,
-        "lo": lo,
-        "hi": hi,
-        "sig": sig,
-        "p": p,
-        "n_x": int(nx),
-        "n_y": int(ny),
-    }
-
-
-def _bootstrap_diff_p_only_local(
-    x: np.ndarray,
-    y: np.ndarray,
-    q: Iterable[float],
-    n_boot: int,
-    seed: int,
-    chunk: int = 128,
-    val_dtype: type | np.dtype | None = None,
-    index_dtype: type | np.dtype | None = None,
-) -> np.ndarray:
-    """Compute empirical two-sided p-values for percentile diffs via local bootstrap."""
-    x = np.asarray(x, val_dtype or float)
-    y = np.asarray(y, val_dtype or float)
-    x = x[~np.isnan(x)]
-    y = y[~np.isnan(y)]
-    q_arr = np.asarray(list(q), float)
-    if x.size == 0 or y.size == 0 or q_arr.size == 0:
-        return np.full(q_arr.shape, np.nan, float)
-    point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
-    rng = np.random.default_rng(seed)
-    nx, ny = x.size, y.size
-    boots = np.empty((n_boot, q_arr.size), float)
-    done = 0
-    chunk = max(1, int(chunk))
-    while done < n_boot:
-        m = min(chunk, n_boot - done)
-        if index_dtype is not None:
-            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False, dtype=index_dtype)
-            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False, dtype=index_dtype)
-        else:
-            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
-            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
-        xb = x[idx_x]
-        yb = y[idx_y]
-        boots[done : done + m, :] = (
-            np.percentile(xb, q_arr, axis=1) - np.percentile(yb, q_arr, axis=1)
-        ).T
-        done += m
-    p = np.empty_like(q_arr, dtype=float)
-    for j in range(q_arr.size):
-        p[j] = (np.count_nonzero(np.abs(boots[:, j]) >= abs(point[j])) + 1.0) / (
-            boots.shape[0] + 1.0
-        )
-    return p
-
-
-def bootstrap_quantile_diffs_by_keys(
-    per_animal: list[np.ndarray],
-    groups: dict,
-    key_a,
-    key_b,
-    q: Iterable[float],
-    n_boot: int,
-    ci: float,
-    seed: int,
-    early_stop: float = 0.0,
-    chunk: int = 128,
-    dtype: type | np.dtype = float,
-    val_dtype: type | np.dtype | None = None,
-    index_dtype: type | np.dtype | None = None,
-) -> dict:
-    xa = pooled_from_indices(per_animal, groups[key_a])
-    xb = pooled_from_indices(per_animal, groups[key_b])
-    return bootstrap_quantile_diffs(
-        xa,
-        xb,
-        q=q,
-        n_boot=n_boot,
-        ci=ci,
-        seed=seed,
-        early_stop=early_stop,
-        chunk=chunk,
-        dtype=dtype,
-        val_dtype=val_dtype,
-        index_dtype=index_dtype,
-    )
+"""All bootstrapping is delegated to shared_code.fun_bootstrap (no local impls)."""
 
 
 WIN_RE = re.compile(r"speed_win(\d+)_.*\.npz$")
@@ -489,7 +143,6 @@ class BootstrapConfig:
         "(WT,VEH)-(Dp1Yey,VEH);(WT,LCTB92)-(Dp1Yey,LCTB92)"
     )
     n_boot: int = 2000
-    early_stop: float = 0.0
     seed: int = 0
     ci: float = 95.0
     chunk: int = 128
@@ -501,7 +154,6 @@ class BootstrapConfig:
     jobs: int = 1
     blas_threads: int | None = None
     parallel_scope: str = "windows"
-    append_subset_to_outdir: bool = False
     load_cache: bool = False
     progress: bool = False
     group_cols: str = "genotype,treatment"
@@ -527,7 +179,6 @@ class BootstrapConfig:
             q=args.q,
             pairs=args.pairs,
             n_boot=args.n_boot,
-            early_stop=float(args.early_stop or 0.0),
             seed=args.seed,
             ci=args.ci,
             chunk=args.chunk,
@@ -539,7 +190,6 @@ class BootstrapConfig:
             jobs=args.jobs,
             blas_threads=args.blas_threads,
             parallel_scope=args.parallel_scope,
-            append_subset_to_outdir=bool(args.append_subset_to_outdir),
             load_cache=bool(args.load_cache),
             progress=bool(args.progress),
             group_cols=args.group_cols,
@@ -561,23 +211,12 @@ class BootstrapConfig:
         return cfg
 
     @staticmethod
-    def build_outdir_name(
-        outdir: str | None, subset: str | None, append_subset: bool
-    ) -> str:
-        name = outdir if outdir else (subset if subset else "bootstrap")
-        if append_subset and subset and outdir:
-            def _san(s: str) -> str:
-                return (
-                    str(s)
-                    .replace("/", "-")
-                    .replace(" ", "_")
-                    .replace(",", "-")
-                    .replace("|", "-")
-                    .replace("(", "")
-                    .replace(")", "")
-                )
-            name = f"{name}__subset-{_san(subset)}"
-        return name
+    def build_outdir_name(outdir: str | None, subset: str | None) -> str:
+        """Resolve output directory name under paths['speed'].
+
+        If --outdir is provided, use it; else fallback to --subset; else 'bootstrap'.
+        """
+        return outdir if outdir else (subset if subset else "bootstrap")
 
 
 # ---------------- Utility helpers ---------------- #
@@ -802,9 +441,7 @@ def resolve_paths_and_groups(cfg: BootstrapConfig, data):
         [s.strip() for s in cfg.group_cols.split(",") if s.strip()],
     )
     outputs_root = Path(data.paths["speed"])  # type: ignore[index]
-    outdir_name = BootstrapConfig.build_outdir_name(
-        cfg.outdir, cfg.subset, cfg.append_subset_to_outdir
-    )
+    outdir_name = BootstrapConfig.build_outdir_name(cfg.outdir, cfg.subset)
     outdir = outputs_root / outdir_name
     outdir.mkdir(parents=True, exist_ok=True)
     q_path = outdir / "speed_bootstrap_quantiles.csv"
@@ -829,6 +466,7 @@ def write_outputs(
     d_rows: list[dict[str, object]],
     c_rows: list[dict[str, object]],
     outdir: Path,
+    n_boot: int,
 ):
     q_path = outdir / "speed_bootstrap_quantiles.csv"
     d_path = outdir / "speed_bootstrap_diffs.csv"
@@ -839,6 +477,15 @@ def write_outputs(
             w.writeheader()
             w.writerows(q_rows)
         print(f"Wrote: {q_path}")
+        try:
+            q_path_sfx = outdir / f"speed_bootstrap_quantiles_nboot-{int(n_boot)}.csv"
+            with q_path_sfx.open("w", newline="") as f2:
+                w2 = csv.DictWriter(f2, fieldnames=q_cols)
+                w2.writeheader()
+                w2.writerows(q_rows)
+            print(f"Wrote: {q_path_sfx}")
+        except Exception:
+            pass
     if d_rows:
         d_cols = [
             "region",
@@ -861,6 +508,15 @@ def write_outputs(
             w.writeheader()
             w.writerows(d_rows)
         print(f"Wrote: {d_path}")
+        try:
+            d_path_sfx = outdir / f"speed_bootstrap_diffs_nboot-{int(n_boot)}.csv"
+            with d_path_sfx.open("w", newline="") as f2:
+                w2 = csv.DictWriter(f2, fieldnames=d_cols)
+                w2.writeheader()
+                w2.writerows(d_rows)
+            print(f"Wrote: {d_path_sfx}")
+        except Exception:
+            pass
     if c_rows:
         corr_path = outdir / "speed_nor_correlations.csv"
         c_cols = [
@@ -881,6 +537,15 @@ def write_outputs(
             w.writeheader()
             w.writerows(c_rows)
         print(f"Wrote: {corr_path}")
+        try:
+            corr_path_sfx = outdir / f"speed_nor_correlations_nboot-{int(n_boot)}.csv"
+            with corr_path_sfx.open("w", newline="") as f2:
+                w2 = csv.DictWriter(f2, fieldnames=c_cols)
+                w2.writeheader()
+                w2.writerows(c_rows)
+            print(f"Wrote: {corr_path_sfx}")
+        except Exception:
+            pass
 
 
 # ---------------- Processing ---------------- #
@@ -903,6 +568,15 @@ def process_region_dir(
     data,
     pairs: list,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    """Process one region directory (one ROI label).
+
+    Reads all per-window NPZ files, pools per-animal values, and computes:
+    - Per-group bootstrap percentiles with CIs (quantiles_rows)
+    - Per-pair bootstrap percentile differences with CIs and p-values (diffs_rows)
+    - Optional correlations of per-animal percentiles vs NOR (per-window and pooled) (corr_rows)
+
+    Returns three lists of dict rows ready to be written as CSVs.
+    """
     quantiles_rows: list[dict[str, object]] = []
     diffs_rows: list[dict[str, object]] = []
     corr_rows: list[dict[str, object]] = []
@@ -928,10 +602,8 @@ def process_region_dir(
         )
         if (
             cfg.reuse_group_boots
-            and _central_bootstrap_groups_boots is not None
-            and _central_ci_from_boots is not None
         ):
-            boots_map = _central_bootstrap_groups_boots(
+            boots_map = bootstrap_groups_boots(
                 per_animal,
                 groups_map,
                 q=q_list,
@@ -952,7 +624,7 @@ def process_region_dir(
                 else:
                     point = np.full_like(q_arr, np.nan, dtype=float)
                 boots = boots_map[gk]
-                lo, hi = _central_ci_from_boots(boots, ci=cfg.ci)
+                lo, hi = ci_from_boots(boots, ci=cfg.ci)
                 for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
                     rows_q.append(
                         {
@@ -976,7 +648,7 @@ def process_region_dir(
                     continue
                 n_used = min(boots_A.shape[0], boots_B.shape[0])
                 diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
-                lo, hi = _central_ci_from_boots(diff_boots, ci=cfg.ci)
+                lo, hi = ci_from_boots(diff_boots, ci=cfg.ci)
                 pooled_A = pooled_from_indices(per_animal, groups_map[A])
                 pooled_B = pooled_from_indices(per_animal, groups_map[B])
                 if pooled_A.size and pooled_B.size:
@@ -1013,14 +685,13 @@ def process_region_dir(
                         }
                     )
         else:
-            qa = bootstrap_quantiles_by_group(
+            qa = bootstrap_groups_percentiles(
                 per_animal,
                 groups_map,
                 q=q_list,
                 n_boot=cfg.n_boot,
                 ci=cfg.ci,
                 seed=cfg.seed,
-                early_stop=cfg.early_stop,
                 chunk=cfg.chunk,
                 dtype=np.dtype(boots_dtype),
                 val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
@@ -1082,36 +753,21 @@ def process_region_dir(
             for A, B in pairs:
                 if A not in groups_map or B not in groups_map:
                     continue
-                qd = bootstrap_quantile_diffs_by_keys(
-                    per_animal,
-                    groups_map,
-                    A,
-                    B,
+                xa = pool_per_animal(per_animal, groups_map[A])
+                xb = pool_per_animal(per_animal, groups_map[B])
+                qd = bootstrap_diff_percentiles(
+                    xa,
+                    xb,
                     q=q_list,
                     n_boot=cfg.n_boot,
                     ci=cfg.ci,
                     seed=cfg.seed,
-                    early_stop=cfg.early_stop,
                     chunk=cfg.chunk,
                     dtype=np.dtype(boots_dtype),
                     val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
                     index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
                 )
-                p_arr = qd.get("p")
-                if p_arr is None or (isinstance(p_arr, float) and np.isnan(p_arr)):
-                    xa = pooled_from_indices(per_animal, groups_map[A])
-                    xb = pooled_from_indices(per_animal, groups_map[B])
-                    p_arr = _bootstrap_diff_p_only_local(
-                        xa,
-                        xb,
-                        q_list,
-                        cfg.n_boot,
-                        cfg.seed,
-                        chunk=cfg.chunk,
-                        val_dtype=values_dtype,
-                        index_dtype=index_dtype,
-                    )
-                p_arr = np.asarray(p_arr, float).ravel()
+                p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
                 for qi, pt, lo, hi, sig, p_i in zip(
                     qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
                 ):
@@ -1180,12 +836,8 @@ def process_region_dir(
                     vals = np.asarray(pooled[i], float)
                     if vals.size:
                         mat[i, :] = np.percentile(vals, qs)
-            if (
-                cfg.reuse_group_boots
-                and _central_bootstrap_groups_boots is not None
-                and _central_ci_from_boots is not None
-            ):
-                boots_map = _central_bootstrap_groups_boots(
+            if cfg.reuse_group_boots:
+                boots_map = bootstrap_groups_boots(
                     pooled,
                     groups_map,
                     q=q_list,
@@ -1202,7 +854,7 @@ def process_region_dir(
                         continue
                     pooled_g = pooled_from_indices(pooled, idxs)
                     boots = boots_map[gk]
-                    lo, hi = _central_ci_from_boots(boots, ci=cfg.ci)
+                    lo, hi = ci_from_boots(boots, ci=cfg.ci)
                     if pooled_g.size:
                         point = np.percentile(pooled_g, q_arr)
                     else:
@@ -1230,7 +882,7 @@ def process_region_dir(
                         continue
                     n_used = min(boots_A.shape[0], boots_B.shape[0])
                     diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
-                    lo, hi = _central_ci_from_boots(diff_boots, ci=cfg.ci)
+                    lo, hi = ci_from_boots(diff_boots, ci=cfg.ci)
                     pooled_A = pooled_from_indices(pooled, groups_map[A])
                     pooled_B = pooled_from_indices(pooled, groups_map[B])
                     point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
@@ -1271,7 +923,6 @@ def process_region_dir(
                     n_boot=cfg.n_boot,
                     ci=cfg.ci,
                     seed=cfg.seed,
-                    early_stop=cfg.early_stop,
                     chunk=cfg.chunk,
                     dtype=np.dtype(boots_dtype),
                     val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
@@ -1343,27 +994,12 @@ def process_region_dir(
                         n_boot=cfg.n_boot,
                         ci=cfg.ci,
                         seed=cfg.seed,
-                        early_stop=cfg.early_stop,
                         chunk=cfg.chunk,
                         dtype=np.dtype(boots_dtype),
                         val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
                         index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
                     )
-                    p_arr = qd.get("p")
-                    if p_arr is None or (isinstance(p_arr, float) and np.isnan(p_arr)):
-                        xa = pooled_from_indices(pooled, groups_map[A])
-                        xb = pooled_from_indices(pooled, groups_map[B])
-                        p_arr = _bootstrap_diff_p_only_local(
-                            xa,
-                            xb,
-                            q_list,
-                            cfg.n_boot,
-                            cfg.seed,
-                            chunk=cfg.chunk,
-                            val_dtype=values_dtype,
-                            index_dtype=index_dtype,
-                        )
-                    p_arr = np.asarray(p_arr, float).ravel()
+                    p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
                     for qi, pt, lo, hi, sig, p_i in zip(
                         qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
                     ):
@@ -1447,15 +1083,8 @@ def main() -> int:
         ),
     )
     ap.add_argument("--n-boot", type=int, default=2000, help="Bootstrap replicates per unit.")
-    ap.add_argument(
-        "--early-stop",
-        type=float,
-        default=0.0,
-        help="Relative tol for adaptive CI stability (0 disables).",
-    )
     ap.add_argument("--seed", type=int, default=0, help="Base RNG seed.")
     ap.add_argument("--ci", type=float, default=95.0, help="Confidence level for CIs (percent).")
-    ap.add_argument("--chunk", type=int, default=128, help="Bootstrap chunk size.")
     ap.add_argument("--boots-float32", action="store_true", help="Use float32 boots.")
     ap.add_argument("--values-float32", action="store_true", help="Cast values to float32 before resampling.")
     ap.add_argument("--index-int32", action="store_true", help="Use int32 index arrays for resampling.")
@@ -1474,11 +1103,6 @@ def main() -> int:
         help="Limit BLAS threads per process (default 1 when --jobs > 1).",
     )
     ap.add_argument("--parallel-scope", type=str, default="windows", help="Parallelization scope.")
-    ap.add_argument(
-        "--append-subset-to-outdir",
-        action="store_true",
-        help="Append '__subset-<subset>' suffix to outdir name.",
-    )
     ap.add_argument("--load-cache", action="store_true", help="Reuse existing CSVs if present.")
     ap.add_argument("--progress", action="store_true", help="Show progress bars (requires tqdm).")
     ap.add_argument(
@@ -1514,6 +1138,8 @@ def main() -> int:
         action="store_true",
         help="Also compute correlations within each group (per --group-cols).",
     )
+    # Advanced perf knob: chunk controls vectorized resampling batch size
+    ap.add_argument("--chunk", type=int, default=128, help="Bootstrap chunk size (perf/memory knob).")
 
     args = ap.parse_args()
     cfg = BootstrapConfig.from_args(args)
@@ -1575,8 +1201,8 @@ def main() -> int:
         diffs_rows.extend(rd)
         corr_rows.extend(rc)
 
-    # Write CSVs consistently
-    write_outputs(quantiles_rows, diffs_rows, corr_rows, outdir)
+    # Write CSVs consistently (also write suffixed copies with n_boot)
+    write_outputs(quantiles_rows, diffs_rows, corr_rows, outdir, cfg.n_boot)
     return 0
 
 

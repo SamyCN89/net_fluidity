@@ -32,12 +32,6 @@ BYWIN_GRID_COLS="${BYWIN_GRID_COLS:-2}"
 
 # Optional output directory control (empty means default to --subset)
 OUTDIR="${OUTDIR:-}"
-APPEND_SUBSET="${APPEND_SUBSET:-0}"
-
-append_subset_flag=()
-if [[ -n "${OUTDIR}" && "${APPEND_SUBSET}" == "1" ]]; then
-  append_subset_flag=(--append-subset-to-outdir)
-fi
 
 outdir_flag=()
 if [[ -n "${OUTDIR}" ]]; then
@@ -85,14 +79,14 @@ run_compute() {
   echo "[compute] subset=${subset}"
   if [[ "${ACTION}" == "dry-run" ]]; then
     echo python scripts/compute_speed_bootstrap.py \\
-      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" "${append_subset_flag[@]}" \\
+      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \\
       --tau-index "${TAU_INDEX}" "${pool_flags[@]}" \\
       --n-boot "${N_BOOT}" --jobs "${JOBS}" --chunk "${CHUNK}" \\
       "${reuse_flag[@]}" "${boots32_flag[@]}" "${cache_flag[@]}"
     return 0
   fi
   python scripts/compute_speed_bootstrap.py \
-    --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" "${append_subset_flag[@]}" \
+    --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
     --tau-index "${TAU_INDEX}" "${pool_flags[@]}" \
     --n-boot "${N_BOOT}" --jobs "${JOBS}" --chunk "${CHUNK}" \
     "${reuse_flag[@]}" "${boots32_flag[@]}" "${cache_flag[@]}"
@@ -103,7 +97,7 @@ run_plot() {
   echo "[plot] subset=${subset}"
   if [[ "${ACTION}" == "dry-run" ]]; then
     echo python scripts/plot_speed_bootstrap.py \\
-      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" "${append_subset_flag[@]}" \\
+      --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \\
       --plot-format png \\
       --plot-diffs-by-win --plot-diffs-bywin-grid --bywin-grid-cols "${BYWIN_GRID_COLS}" \\
       --plot-pooled-diffs --plot-pooled-quantiles \\
@@ -111,7 +105,7 @@ run_plot() {
     return 0
   fi
   python scripts/plot_speed_bootstrap.py \
-    --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" "${append_subset_flag[@]}" \
+    --tr "${TR}" --subset "${subset}" "${outdir_flag[@]}" \
     --plot-format png \
     --plot-diffs-by-win --plot-diffs-bywin-grid --bywin-grid-cols "${BYWIN_GRID_COLS}" \
     --plot-pooled-diffs --plot-pooled-quantiles \

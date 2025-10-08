@@ -16,15 +16,18 @@ def bootstrap_percentiles(
     ci: float = 95.0,
     seed: int | None = 0,
     chunk: int = 128,
-    early_stop: float = 0.0,
     dtype: np.dtype = float,
     val_dtype: np.dtype | None = None,
     index_dtype: np.dtype | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Bootstrap CI for percentiles of a 1D array.
+    """Bootstrap CI for percentiles of a 1D sample.
 
-    Returns (point, lo, hi) with shape (len(q),) each.
-    NaNs in x are ignored.
+    - Resamples x with replacement n_boot times, computes percentiles q on each
+      bootstrap replicate, and derives CI bounds by percentile-of-bootstrap.
+    - Returns (point, lo, hi) with shape (len(q),) each.
+    - NaNs in x are ignored.
+    - chunk controls vectorized resampling batch size; dtype controls boots array
+      type to trade precision vs memory; index_dtype controls index array type.
     """
     x = np.asarray(x, val_dtype or float)
     x = x[~np.isnan(x)]
@@ -50,17 +53,7 @@ def bootstrap_percentiles(
         xb = x[idx]
         boots[done : done + m, :] = np.percentile(xb, q_arr, axis=1).T
         done += m
-        if early_stop and (done % check_every == 0 or done == n_boot):
-            alpha_tmp = (100.0 - float(ci)) / 2.0
-            lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
-            hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
-            if last_lo is not None and last_hi is not None and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi))):
-                rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
-                rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
-                if rel_lo <= early_stop and rel_hi <= early_stop:
-                    return point, lo_t, hi_t
-            last_lo = lo_t
-            last_hi = hi_t
+
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
@@ -75,15 +68,17 @@ def bootstrap_diff_percentiles(
     ci: float = 95.0,
     seed: int | None = 0,
     chunk: int = 128,
-    early_stop: float = 0.0,
     dtype: np.dtype = float,
     val_dtype: np.dtype | None = None,
     index_dtype: np.dtype | None = None,
 ) -> dict:
     """Bootstrap CI for percentile differences pct(x) - pct(y).
 
-    Returns dict with keys: 'q', 'point', 'lo', 'hi', 'sig', 'n_x', 'n_y'.
-    NaNs in x and y are ignored.
+    - Resamples x and y independently, computes pct(x_b) - pct(y_b) per replicate,
+      and derives CI bounds by percentile-of-bootstrap.
+    - Returns dict with keys: 'q', 'point', 'lo', 'hi', 'sig', 'n_x', 'n_y'.
+      'sig' marks whether the CI excludes 0.
+    - NaNs in x and y are ignored.
     """
     x = np.asarray(x, val_dtype or float)
     y = np.asarray(y, val_dtype or float)
@@ -125,18 +120,6 @@ def bootstrap_diff_percentiles(
             np.percentile(xb, q_arr, axis=1) - np.percentile(yb, q_arr, axis=1)
         ).T
         done += m
-        if early_stop and (done % check_every == 0 or done == n_boot):
-            alpha_tmp = (100.0 - float(ci)) / 2.0
-            lo_t = np.percentile(boots[:done], alpha_tmp, axis=0)
-            hi_t = np.percentile(boots[:done], 100.0 - alpha_tmp, axis=0)
-            if last_lo is not None and last_hi is not None and not (np.any(np.isnan(last_lo)) or np.any(np.isnan(last_hi))):
-                rel_lo = np.max(np.abs(lo_t - last_lo) / (np.abs(last_lo) + 1e-12))
-                rel_hi = np.max(np.abs(hi_t - last_hi) / (np.abs(last_hi) + 1e-12))
-                if rel_lo <= early_stop and rel_hi <= early_stop:
-                    sig_t = (lo_t > 0) | (hi_t < 0)
-                    return {"q": q_arr, "point": point, "lo": lo_t, "hi": hi_t, "sig": sig_t, "n_x": int(nx), "n_y": int(ny)}
-            last_lo = lo_t
-            last_hi = hi_t
     alpha = (100.0 - float(ci)) / 2.0
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
@@ -145,6 +128,10 @@ def bootstrap_diff_percentiles(
 
 
 def pool_per_animal(per_animal: list[np.ndarray], idxs: Iterable[int]) -> np.ndarray:
+    """Pool selected per-animal arrays into a single 1D array.
+
+    - Filters out empty arrays, concatenates along the sample axis.
+    """
     vals = [per_animal[int(i)] for i in idxs if int(i) < len(per_animal)]
     nonempty = [v for v in vals if getattr(v, "size", 0) > 0]
     return np.concatenate(nonempty) if nonempty else np.array([])
@@ -157,19 +144,23 @@ def bootstrap_groups_percentiles(
     n_boot: int,
     ci: float,
     seed: int,
-    early_stop: float = 0.0,
     chunk: int = 128,
     dtype: np.dtype = float,
     val_dtype: np.dtype | None = None,
     index_dtype: np.dtype | None = None,
 ) -> dict:
+    """Bootstrap percentiles per group using pooled per-animal values.
+
+    - For each group key -> list of animal indices, pools values and calls
+      bootstrap_percentiles; returns a dict keyed by group.
+    """
     out: dict = {}
     q_arr = np.asarray(list(q), float)
     for g, idxs in groups.items():
         pooled = pool_per_animal(per_animal, idxs)
         point, lo, hi = bootstrap_percentiles(
             pooled, q=q_arr, n_boot=n_boot, ci=ci, seed=seed,
-            early_stop=early_stop, chunk=chunk, dtype=dtype,
+            chunk=chunk, dtype=dtype,
             val_dtype=val_dtype, index_dtype=index_dtype,
         )
         out[g] = {"q": q_arr, "point": point, "lo": lo, "hi": hi, "n": int(pooled.size)}
@@ -187,12 +178,11 @@ def bootstrap_groups_boots(
     val_dtype: np.dtype | None = None,
     index_dtype: np.dtype | None = None,
 ) -> dict:
-    """Return per-group bootstrap replicates of percentiles.
+    """Return per-group bootstrap replicates of percentiles (for reuse).
 
     - Returns { group_key: boots } where boots has shape (n_boot, len(q)).
-    - Designed for reuse across many pairs: compute once per group, then derive
-      pairwise diffs as boots[A] - boots[B] followed by CI on axis=0.
-    - Ignores early stopping to ensure consistent shapes across groups.
+    - Designed to compute all groups once, then derive pairwise diffs as
+      boots[A] - boots[B] followed by CI via ci_from_boots.
     """
     q_arr = np.asarray(list(q), float)
     out: dict = {}
