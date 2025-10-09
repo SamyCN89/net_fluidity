@@ -11,25 +11,24 @@ This script reads preprocessed data and merged allegiance results, reorders
 communities consistently, computes simple module-count summaries, and
 optionally generates a couple of standard plots.
 """
-#%%
+# %%
 from __future__ import annotations
 
 import argparse
-import pickle
 import logging
 from pathlib import Path
-from typing import Tuple
+import pickle
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import ttest_rel, wilcoxon, mannwhitneyu
+from scipy.stats import mannwhitneyu, ttest_rel, wilcoxon
 
-from shared_code.shared_code.fun_metaconnectivity import load_merged_allegiance
-from shared_code.shared_code.fun_paths import get_paths
+from shared_code.fun_metaconnectivity import load_merged_allegiance
+from shared_codemport get_paths
 
-#%%
+# %%
 
 logger = logging.getLogger(__name__)
 
@@ -51,19 +50,44 @@ def parse_args() -> argparse.Namespace:
         default="Timecourses_updated_03052024",
         dest="timecourse_folder",
     )
-    p.add_argument("--alpha", type=float, default=0.05, help="significance level (unused, reserved)")
-    p.add_argument("--save-plots", action="store_true", help="save figures under allegiance/fig")
-    p.add_argument("--no-show", action="store_true", help="do not display figures (useful for batch runs)")
-    p.add_argument("--animal", type=int, default=0, help="animal index for example plots")
+    p.add_argument(
+        "--alpha",
+        type=float,
+        default=0.05,
+        help="significance level (unused, reserved)",
+    )
+    p.add_argument(
+        "--save-plots", action="store_true", help="save figures under allegiance/fig"
+    )
+    p.add_argument(
+        "--no-show",
+        action="store_true",
+        help="do not display figures (useful for batch runs)",
+    )
+    p.add_argument(
+        "--animal", type=int, default=0, help="animal index for example plots"
+    )
     p.add_argument(
         "--dmn-index",
         type=str,
         default="0,23,13,22,2,28,34,37,39,8,35",
         help="comma-separated indices (in sorted label space) defining the DMN; use empty string to disable",
     )
-    p.add_argument("--compute-cohesion", action="store_true", help="compute cohesion time series and probabilities")
-    p.add_argument("--compute-events", action="store_true", help="extract link activation events and burstiness")
-    p.add_argument("--with-stats", action="store_true", help="compute stats (age-paired and/or group-based) and plots")
+    p.add_argument(
+        "--compute-cohesion",
+        action="store_true",
+        help="compute cohesion time series and probabilities",
+    )
+    p.add_argument(
+        "--compute-events",
+        action="store_true",
+        help="extract link activation events and burstiness",
+    )
+    p.add_argument(
+        "--with-stats",
+        action="store_true",
+        help="compute stats (age-paired and/or group-based) and plots",
+    )
     p.add_argument(
         "--stats-mode",
         choices=["age", "group", "all"],
@@ -101,7 +125,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def build_paths(timecourse_folder: str) -> Tuple[dict, Path, Path]:
+def build_paths(timecourse_folder: str) -> tuple[dict, Path, Path]:
     """Build and create paths for data and plots.
 
     Returns (paths, per_animal_dir, stats_dir) where per_animal_dir and stats_dir
@@ -115,20 +139,24 @@ def build_paths(timecourse_folder: str) -> Tuple[dict, Path, Path]:
     return paths, per_animal_dir, stats_dir
 
 
-def load_meta(paths: dict) -> Tuple[np.ndarray, np.ndarray]:
+def load_meta(paths: dict) -> tuple[np.ndarray, np.ndarray]:
     data = np.load(paths["preprocessed"] / "ts_and_meta_2m4m.npz", allow_pickle=True)
     ts = data["ts"]
     anat_labels = np.asarray(data["anat_labels"])
     return ts, anat_labels
 
 
-def reorder_communities(paths: dict, window_size: int, lag: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def reorder_communities(
+    paths: dict, window_size: int, lag: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load merged allegiance and apply sorting indices to communities."""
     dfc_communities, sort_allegiances, contingency_matrices = load_merged_allegiance(
         paths, window_size=window_size, lag=lag
     )
     # Vectorized reorder: align community labels per-window using provided sort indices
-    dfc_sorted = np.take_along_axis(dfc_communities, sort_allegiances.astype(int), axis=2)
+    dfc_sorted = np.take_along_axis(
+        dfc_communities, sort_allegiances.astype(int), axis=2
+    )
     return dfc_sorted, sort_allegiances, contingency_matrices
 
 
@@ -168,7 +196,10 @@ def _compute_cohesion_artifacts(
 
     # Build pair labels in selected index space
     pairs_i, pairs_j = _upper_tri_indices(len(idx))
-    pair_labels = [(anat_labels_sorted[idx[i]], anat_labels_sorted[idx[j]]) for i, j in zip(pairs_i, pairs_j)]
+    pair_labels = [
+        (anat_labels_sorted[idx[i]], anat_labels_sorted[idx[j]])
+        for i, j in zip(pairs_i, pairs_j, strict=False)
+    ]
 
     # Cohesion probability per animal
     def _coh_prob_one(comm_2d: np.ndarray) -> np.ndarray:
@@ -192,7 +223,7 @@ def _compute_cohesion_artifacts(
 
 
 def _extract_link_activations_df(binary_ATL: np.ndarray, min_duration: int = 1):
-    """ Extract link activation events from binary ATL array.
+    """Extract link activation events from binary ATL array.
     Returns a DataFrame with columns: animal, link, onset, offset, duration
 
     Input: binary_ATL: (A, T, L) array of 0/1 link activation time series
@@ -211,33 +242,42 @@ def _extract_link_activations_df(binary_ATL: np.ndarray, min_duration: int = 1):
     off_idx = np.argwhere(d == -1)
     on = pd.DataFrame(on_idx, columns=["animal", "time", "link"])
     off = pd.DataFrame(off_idx, columns=["animal", "time", "link"])
-    on["gid"], off["gid"] = on["animal"] * L + on["link"], off["animal"] * L + off["link"]
+    on["gid"], off["gid"] = (
+        on["animal"] * L + on["link"],
+        off["animal"] * L + off["link"],
+    )
     on = on.sort_values(["gid", "time"]).reset_index(drop=True)
     off = off.sort_values(["gid", "time"]).reset_index(drop=True)
     on["idx"], off["idx"] = on.groupby("gid").cumcount(), off.groupby("gid").cumcount()
     events = on.merge(off, on=["gid", "idx"], suffixes=("_on", "_off"))
-    events = events.rename(columns={
-        "animal_on": "animal",
-        "link_on": "link",
-        "time_on": "onset",
-        "time_off": "offset",
-    })[["animal", "link", "onset", "offset"]]
+    events = events.rename(
+        columns={
+            "animal_on": "animal",
+            "link_on": "link",
+            "time_on": "onset",
+            "time_off": "offset",
+        }
+    )[["animal", "link", "onset", "offset"]]
     events["duration"] = events["offset"] - events["onset"]
     return events[events["duration"] >= min_duration]
 
 
-def _mean_duration_matrix(events_df, n_animals: int, n_links: int, fill: float = 0.0) -> np.ndarray:
+def _mean_duration_matrix(
+    events_df, n_animals: int, n_links: int, fill: float = 0.0
+) -> np.ndarray:
     import pandas as pd  # noqa: F401
 
-    m = events_df.groupby(["animal", "link"])['duration'].mean().unstack('link')
+    m = events_df.groupby(["animal", "link"])["duration"].mean().unstack("link")
     m = m.reindex(index=range(n_animals), columns=range(n_links))
     return m.fillna(fill).to_numpy()
 
 
-def _std_duration_matrix(events_df, n_animals: int, n_links: int, fill: float = 0.0) -> np.ndarray:
+def _std_duration_matrix(
+    events_df, n_animals: int, n_links: int, fill: float = 0.0
+) -> np.ndarray:
     import pandas as pd  # noqa: F401
 
-    m = events_df.groupby(["animal", "link"])['duration'].std().unstack('link')
+    m = events_df.groupby(["animal", "link"])["duration"].std().unstack("link")
     m = m.reindex(index=range(n_animals), columns=range(n_links))
     return m.fillna(fill).to_numpy()
 
@@ -286,15 +326,30 @@ def factor_base_indices(
     return bases
 
 
-def _wilcoxon_rows(X: np.ndarray, Y: np.ndarray, zero_method: str = "wilcox") -> np.ndarray:
+def _wilcoxon_rows(
+    X: np.ndarray, Y: np.ndarray, zero_method: str = "wilcox"
+) -> np.ndarray:
     try:
-        res = wilcoxon(X, Y, zero_method=zero_method, alternative="two-sided", axis=1, method="asymptotic")
+        res = wilcoxon(
+            X,
+            Y,
+            zero_method=zero_method,
+            alternative="two-sided",
+            axis=1,
+            method="asymptotic",
+        )
         return np.asarray(res.pvalue)
     except TypeError:
         p = np.empty(X.shape[0], dtype=float)
         for i in range(X.shape[0]):
             try:
-                _, pv = wilcoxon(X[i], Y[i], zero_method=zero_method, alternative="two-sided", method="asymptotic")
+                _, pv = wilcoxon(
+                    X[i],
+                    Y[i],
+                    zero_method=zero_method,
+                    alternative="two-sided",
+                    method="asymptotic",
+                )
             except ValueError:
                 pv = 1.0
             p[i] = pv
@@ -342,7 +397,13 @@ def _cols_single_factor_keys_and_data(
     keys, cols = [], []
     for base, ages in F.items():
         idx2, idx4 = ages.get("2m"), ages.get("4m")
-        if idx2 is None or idx4 is None or len(idx2) == 0 or len(idx4) == 0 or len(idx2) != len(idx4):
+        if (
+            idx2 is None
+            or idx4 is None
+            or len(idx2) == 0
+            or len(idx4) == 0
+            or len(idx2) != len(idx4)
+        ):
             continue
         X = data_T[:, idx2]
         Y = data_T[:, idx4]
@@ -405,7 +466,14 @@ def build_table_from_spec(
         else:
             block, _, fA, fB = item
             keys, cols = _cols_two_factors_keys_and_data(
-                block, fA, fB, data_T, link_labels, label_variables, mask_groups, value_fn
+                block,
+                fA,
+                fB,
+                data_T,
+                link_labels,
+                label_variables,
+                mask_groups,
+                value_fn,
             )
         all_keys += keys
         all_cols += cols
@@ -559,7 +627,9 @@ def build_group_comparisons(
                             parts.append(inter)
                     if parts:
                         pooled_idx = np.unique(np.concatenate(parts))
-                        pooled_entries.append((f"{sex_base} {geno_base} (all-ages)", pooled_idx))
+                        pooled_entries.append(
+                            (f"{sex_base} {geno_base} (all-ages)", pooled_idx)
+                        )
 
         # Pairwise comparisons among entries (respect cross_age flag)
         for i in range(len(entries)):
@@ -654,8 +724,12 @@ def plot_sig_pvals_multi(
     data = pvals_df.values
     mask = np.where(data <= alpha, data, np.nan)
     n_rows, n_cols = mask.shape if mask.size else (0, 0)
-    fig, ax = plt.subplots(figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1))))
-    im = ax.imshow(mask, aspect="auto", interpolation="none", cmap="viridis_r", vmin=0, vmax=alpha)
+    fig, ax = plt.subplots(
+        figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1)))
+    )
+    im = ax.imshow(
+        mask, aspect="auto", interpolation="none", cmap="viridis_r", vmin=0, vmax=alpha
+    )
     fig.colorbar(im, ax=ax).set_label("p-value")
     ax.set_yticks(np.arange(n_rows))
     ax.set_yticklabels(pvals_df.index, fontsize=6)
@@ -691,8 +765,12 @@ def plot_weighted_multi(
     p, w = pvals_df.values, weights_df.values
     Z = np.where(p <= alpha, 1 - p, np.nan) * w
     n_rows, n_cols = Z.shape if Z.size else (0, 0)
-    fig, ax = plt.subplots(figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1))))
-    im = ax.imshow(Z, aspect="auto", interpolation="none", cmap="RdBu", vmin=vmin, vmax=vmax)
+    fig, ax = plt.subplots(
+        figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1)))
+    )
+    im = ax.imshow(
+        Z, aspect="auto", interpolation="none", cmap="RdBu", vmin=vmin, vmax=vmax
+    )
     fig.colorbar(im, ax=ax).set_label("(1 - p) × effect")
     ax.set_yticks(np.arange(n_rows))
     ax.set_yticklabels(pvals_df.index, fontsize=6)
@@ -747,7 +825,9 @@ def plot_communities_for_animal(
     fname: str,
 ) -> None:
     fig, ax = plt.subplots(figsize=(14, 6))
-    im = ax.imshow(dfc_sorted[animal_idx].T, aspect="auto", interpolation="none", cmap="viridis")
+    im = ax.imshow(
+        dfc_sorted[animal_idx].T, aspect="auto", interpolation="none", cmap="viridis"
+    )
     ax.set_title(f"dFC Communities — Animal {animal_idx}")
     ax.set_xlabel(r"Time Windows (TW$_{1}$, TW$_{2}$, ..., TW$_{n}$)")
     ax.set_yticks(np.arange(len(anat_labels_sorted)))
@@ -799,19 +879,29 @@ def main() -> int:
     paths, per_animal_dir, stats_dir = build_paths(args.timecourse_folder)
     ts, anat_labels = load_meta(paths)
     n_animals = len(ts)
-    logger.info("Loaded time series: n_animals=%d, n_regions=%d", n_animals, ts[0].shape[1])
+    logger.info(
+        "Loaded time series: n_animals=%d, n_regions=%d", n_animals, ts[0].shape[1]
+    )
 
-    dfc_sorted, sort_idx, contingency = reorder_communities(paths, args.window_size, args.lag)
+    dfc_sorted, sort_idx, contingency = reorder_communities(
+        paths, args.window_size, args.lag
+    )
     n_windows = dfc_sorted.shape[1]
-    logger.info("Loaded allegiance: windows=%d, regions=%d", n_windows, dfc_sorted.shape[2])
+    logger.info(
+        "Loaded allegiance: windows=%d, regions=%d", n_windows, dfc_sorted.shape[2]
+    )
 
     # Consistent labels (use first animal/window ordering)
     # anat_labels_sorted = anat_labels[sort_idx[0, 0].astype(int)]
     anat_labels_sorted = anat_labels
     # Simple metric: number of modules per window
     module_counts = compute_module_counts(dfc_sorted)
-    logger.info("Module counts: min=%s max=%s mean=%.2f",
-                int(module_counts.min()), int(module_counts.max()), float(module_counts.mean()))
+    logger.info(
+        "Module counts: min=%s max=%s mean=%.2f",
+        int(module_counts.min()),
+        int(module_counts.max()),
+        float(module_counts.mean()),
+    )
 
     # Plots for a representative animal
     animal = int(args.animal)
@@ -839,7 +929,9 @@ def main() -> int:
     dmn_index: list[int] | None
     if args.dmn_index.strip():
         try:
-            dmn_index = [int(x) for x in args.dmn_index.split(",") if str(x).strip() != ""]
+            dmn_index = [
+                int(x) for x in args.dmn_index.split(",") if str(x).strip() != ""
+            ]
         except Exception:
             logger.warning("Invalid --dmn-index; falling back to None (all regions)")
             dmn_index = None
@@ -854,13 +946,22 @@ def main() -> int:
             region_index=dmn_index,
             anat_labels_sorted=anat_labels_sorted,
         )
-        logger.info("Cohesion: pairs=%d windows=%d", coh_ts_triu.shape[1], coh_ts_triu.shape[2])
+        logger.info(
+            "Cohesion: pairs=%d windows=%d", coh_ts_triu.shape[1], coh_ts_triu.shape[2]
+        )
 
         if args.compute_cohesion:
             # Plot binary cohesion (same community) for selected animal
             binary = (coh_ts_triu == 0).astype(int)  # 1 if same module
             fig, ax = plt.subplots(figsize=(12, 6))
-            im = ax.imshow(binary[animal].T, aspect="auto", interpolation="none", cmap="gray_r", vmin=0, vmax=1)
+            im = ax.imshow(
+                binary[animal].T,
+                aspect="auto",
+                interpolation="none",
+                cmap="gray_r",
+                vmin=0,
+                vmax=1,
+            )
             ax.set_title(f"Cohesion (same-module=1) — Animal {animal}")
             ax.set_xlabel(r"Time Windows")
             ax.set_ylabel("Link index (upper-tri)")
@@ -886,13 +987,22 @@ def main() -> int:
             # Aggregate burstiness
             n_animals = binary.shape[0]
             n_links = binary.shape[1]
-            mean_dur = _mean_duration_matrix(events, n_animals=n_animals, n_links=n_links)
+            mean_dur = _mean_duration_matrix(
+                events, n_animals=n_animals, n_links=n_links
+            )
             std_dur = _std_duration_matrix(events, n_animals=n_animals, n_links=n_links)
             burstiness = (std_dur - mean_dur) / np.maximum(std_dur + mean_dur, 1e-9)
             burstiness[mean_dur == 0] = 0
 
             fig, ax = plt.subplots(figsize=(14, 6))
-            im = ax.imshow(burstiness, interpolation="none", aspect="auto", cmap="coolwarm", vmin=-1, vmax=1)
+            im = ax.imshow(
+                burstiness,
+                interpolation="none",
+                aspect="auto",
+                cmap="coolwarm",
+                vmin=-1,
+                vmax=1,
+            )
             ax.set_title("Burstiness per animal × link")
             ax.set_xlabel("Link index (upper-tri)")
             ax.set_ylabel("Animal")
@@ -928,19 +1038,38 @@ def main() -> int:
             if args.stats_mode in {"age", "all"}:
                 spec_age = extend_block_spec_with_phenotype(args.include_phenotype)
                 pvals_wil = build_table_from_spec(
-                    data_T, link_labels, label_variables, mask_groups, block_spec=spec_age, value_fn=_wilcoxon_rows
+                    data_T,
+                    link_labels,
+                    label_variables,
+                    mask_groups,
+                    block_spec=spec_age,
+                    value_fn=_wilcoxon_rows,
                 )
                 effects_age_ratio = build_table_from_spec(
-                    data_T, link_labels, label_variables, mask_groups, block_spec=spec_age, value_fn=_cohesion_diff_rows
+                    data_T,
+                    link_labels,
+                    label_variables,
+                    mask_groups,
+                    block_spec=spec_age,
+                    value_fn=_cohesion_diff_rows,
                 )
                 pvals_t = build_table_from_spec(
-                    data_T, link_labels, label_variables, mask_groups, block_spec=spec_age, value_fn=_ttest_rows
+                    data_T,
+                    link_labels,
+                    label_variables,
+                    mask_groups,
+                    block_spec=spec_age,
+                    value_fn=_ttest_rows,
                 )
                 # Mean-diff effect for age: compute using means of X/Y internally; reuse ratio as above.
                 # For age-paired, we approximate mean-diff via means over animals in each age group.
                 effects_age_mdiff = build_table_from_spec(
-                    data_T, link_labels, label_variables, mask_groups, block_spec=spec_age,
-                    value_fn=lambda X, Y: np.mean(Y, axis=1) - np.mean(X, axis=1)
+                    data_T,
+                    link_labels,
+                    label_variables,
+                    mask_groups,
+                    block_spec=spec_age,
+                    value_fn=lambda X, Y: np.mean(Y, axis=1) - np.mean(X, axis=1),
                 )
 
                 # Save raw p-values
@@ -954,14 +1083,19 @@ def main() -> int:
                 p_wil_plot = pvals_wil
                 if args.p_adjust == "bonferroni":
                     p_b = np.minimum(1.0, pvals_wil.values * pvals_wil.shape[0])
-                    p_wil_b = pd.DataFrame(p_b, index=pvals_wil.index, columns=pvals_wil.columns)
+                    p_wil_b = pd.DataFrame(
+                        p_b, index=pvals_wil.index, columns=pvals_wil.columns
+                    )
                     p_wil_b.to_csv(out_dir / f"pvals_age_wilcoxon_bonferroni_{tag}.csv")
                     p_wil_plot = p_wil_b
                     title_suffix = " (Bonferroni)"
 
                 fig1 = plot_sig_pvals_multi(
-                    p_wil_plot, alpha=args.alpha, title=f"Age (2m vs 4m) — Wilcoxon significant only{title_suffix}",
-                    save=args.save_plots, out_path=stats_dir / f"pvals_age_wilcoxon_sig_{tag}.png"
+                    p_wil_plot,
+                    alpha=args.alpha,
+                    title=f"Age (2m vs 4m) — Wilcoxon significant only{title_suffix}",
+                    save=args.save_plots,
+                    out_path=stats_dir / f"pvals_age_wilcoxon_sig_{tag}.png",
                 )
                 if not args.no_show:
                     plt.show()
@@ -969,10 +1103,14 @@ def main() -> int:
                     plt.close(fig1)
 
                 fig2 = plot_weighted_multi(
-                    p_wil_plot, effects_age_ratio, alpha=args.alpha,
+                    p_wil_plot,
+                    effects_age_ratio,
+                    alpha=args.alpha,
                     title=f"Age (2m vs 4m) — (1 - p) × cohesion-diff ratio{title_suffix}",
-                    vmin=-0.1, vmax=0.1, save=args.save_plots,
-                    out_path=stats_dir / f"weighted_age_wilcoxon_cdratio_{tag}.png"
+                    vmin=-0.1,
+                    vmax=0.1,
+                    save=args.save_plots,
+                    out_path=stats_dir / f"weighted_age_wilcoxon_cdratio_{tag}.png",
                 )
                 if not args.no_show:
                     plt.show()
@@ -989,8 +1127,13 @@ def main() -> int:
                 if args.group_compare == "sex_genotype":
                     factors.append("sex_genotype")
                 pvals_grp, effects_grp_mdiff, effects_grp_cdr = build_group_comparisons(
-                    data_T, link_labels, label_variables, mask_groups,
-                    factors=factors, cross_age=args.cross_age, pooled=args.pool_ages,
+                    data_T,
+                    link_labels,
+                    label_variables,
+                    mask_groups,
+                    factors=factors,
+                    cross_age=args.cross_age,
+                    pooled=args.pool_ages,
                 )
                 pvals_grp.to_csv(out_dir / f"pvals_group_mwu_{tag}.csv")
                 effects_grp_mdiff.to_csv(out_dir / f"effects_group_mdiff_{tag}.csv")
@@ -1000,19 +1143,26 @@ def main() -> int:
                 p_grp_plot = pvals_grp
                 if args.p_adjust == "bonferroni":
                     p_b = np.minimum(1.0, pvals_grp.values * pvals_grp.shape[0])
-                    p_grp_b = pd.DataFrame(p_b, index=pvals_grp.index, columns=pvals_grp.columns)
+                    p_grp_b = pd.DataFrame(
+                        p_b, index=pvals_grp.index, columns=pvals_grp.columns
+                    )
                     p_grp_b.to_csv(out_dir / f"pvals_group_mwu_bonferroni_{tag}.csv")
                     p_grp_plot = p_grp_b
                     title_suffix = " (Bonferroni)"
                 elif args.p_adjust == "bonferroni-age":
                     p_grp_ba = _bonferroni_by_age_in_columns(pvals_grp)
-                    p_grp_ba.to_csv(out_dir / f"pvals_group_mwu_bonferroni_age_{tag}.csv")
+                    p_grp_ba.to_csv(
+                        out_dir / f"pvals_group_mwu_bonferroni_age_{tag}.csv"
+                    )
                     p_grp_plot = p_grp_ba
                     title_suffix = " (Bonferroni by age group)"
 
                 figg1 = plot_sig_pvals_multi(
-                    p_grp_plot, alpha=args.alpha, title=f"Group (MWU) — significant only{title_suffix}",
-                    save=args.save_plots, out_path=stats_dir / f"pvals_group_mwu_sig_{tag}.png"
+                    p_grp_plot,
+                    alpha=args.alpha,
+                    title=f"Group (MWU) — significant only{title_suffix}",
+                    save=args.save_plots,
+                    out_path=stats_dir / f"pvals_group_mwu_sig_{tag}.png",
                 )
                 if not args.no_show:
                     plt.show()
@@ -1020,10 +1170,14 @@ def main() -> int:
                     plt.close(figg1)
 
                 figg2 = plot_weighted_multi(
-                    p_grp_plot, effects_grp_mdiff, alpha=args.alpha,
+                    p_grp_plot,
+                    effects_grp_mdiff,
+                    alpha=args.alpha,
                     title=f"Group (MWU) — (1 - p) × mean difference{title_suffix}",
-                    vmin=-0.1, vmax=0.1, save=args.save_plots,
-                    out_path=stats_dir / f"weighted_group_mwu_mdiff_{tag}.png"
+                    vmin=-0.1,
+                    vmax=0.1,
+                    save=args.save_plots,
+                    out_path=stats_dir / f"weighted_group_mwu_mdiff_{tag}.png",
                 )
                 if not args.no_show:
                     plt.show()
@@ -1031,10 +1185,14 @@ def main() -> int:
                     plt.close(figg2)
 
                 figg3 = plot_weighted_multi(
-                    p_grp_plot, effects_grp_cdr, alpha=args.alpha,
+                    p_grp_plot,
+                    effects_grp_cdr,
+                    alpha=args.alpha,
                     title=f"Group (MWU) — (1 - p) × cohesion-diff ratio{title_suffix}",
-                    vmin=-0.1, vmax=0.1, save=args.save_plots,
-                    out_path=stats_dir / f"weighted_group_mwu_cdratio_{tag}.png"
+                    vmin=-0.1,
+                    vmax=0.1,
+                    save=args.save_plots,
+                    out_path=stats_dir / f"weighted_group_mwu_cdratio_{tag}.png",
                 )
                 if not args.no_show:
                     plt.show()

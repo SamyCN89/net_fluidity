@@ -1,6 +1,6 @@
 import numpy as np
 
-from shared_code.shared_code.fun_metaconnectivity import (
+from shared_code.fun_metaconnectivity import (
     compute_metaconnectivity,
     fun_allegiance_communities,
 )

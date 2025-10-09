@@ -24,14 +24,15 @@ Quick start (in a notebook):
 #%%
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 import re
-from typing import Iterable, Callable
+
 try:
-    from shared_code.shared_code.fun_bootstrap import (
-        bootstrap_percentiles as _central_bootstrap_percentiles,
+    from shared_code.fun_bootstrap import (
         bootstrap_diff_percentiles as _central_bootstrap_diff_percentiles,
         bootstrap_groups_percentiles as _central_bootstrap_groups_percentiles,
+        bootstrap_percentiles as _central_bootstrap_percentiles,
         pool_per_animal as _central_pool_per_animal,
     )
 except Exception:
@@ -40,8 +41,9 @@ except Exception:
     _central_bootstrap_groups_percentiles = None
     _central_pool_per_animal = None
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+
 
 #%%
 def get_context(tr: int | None = None):
@@ -436,7 +438,7 @@ def summarize_significant_quantiles(qdiff_res: dict, min_effect: float | None = 
     hi = np.asarray(qdiff_res["hi"], dtype=float)
     sig = np.asarray(qdiff_res.get("sig", (lo > 0) | (hi < 0)))
     out = []
-    for qi, d, l, h, s in zip(q, point, lo, hi, sig):
+    for qi, d, l, h, s in zip(q, point, lo, hi, sig, strict=False):
         if not bool(s):
             continue
         if min_effect is not None and not (abs(float(d)) >= float(min_effect)):
@@ -1106,7 +1108,7 @@ if __name__ == "__main__":
                 per_animal, groups_treat, key_a, key_b, q=[1, 5, 50, 95, 99], n_boot=1000
             )
             print("Quantile diffs (A-B) by treatment:")
-            for qi, pd, lo, hi, sig in zip(qdiff_treat["q"], qdiff_treat["point"], qdiff_treat["lo"], qdiff_treat["hi"], qdiff_treat["sig"]):
+            for qi, pd, lo, hi, sig in zip(qdiff_treat["q"], qdiff_treat["point"], qdiff_treat["lo"], qdiff_treat["hi"], qdiff_treat["sig"], strict=False):
                 print(f"  q{qi:.0f}: {pd:.4g}  CI[{lo:.4g}, {hi:.4g}]  sig={bool(sig)}")
             ax3 = plot_quantile_diffs(qdiff_treat, title=f"Quantile diffs (treatment {key_a} - {key_b})")
             plt.show()

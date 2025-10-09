@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 import re
 
-
+#%%
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
@@ -163,6 +163,7 @@ class BootstrapConfig:
     pool_threshold: str | None = None
     pool_all: bool = False
     jobs: int = 1
+    region_jobs: int = 1
     blas_threads: int | None = None
     parallel_scope: str = "windows"
     load_cache: bool = False
@@ -185,6 +186,10 @@ class BootstrapConfig:
 
     @classmethod
     def from_args(cls, args) -> "BootstrapConfig":
+        scope = _normalize_parallel_scope(args.parallel_scope)
+        region_jobs = getattr(args, "region_jobs", None)
+        if region_jobs is None or int(region_jobs) <= 0:
+            region_jobs = args.jobs if scope == "regions" else 1
         cfg = cls(
             tr=args.tr,
             subset=args.subset,
@@ -202,8 +207,9 @@ class BootstrapConfig:
             pool_threshold=args.pool_threshold,
             pool_all=bool(args.pool_all),
             jobs=args.jobs,
+            region_jobs=int(region_jobs),
             blas_threads=args.blas_threads,
-            parallel_scope=args.parallel_scope,
+            parallel_scope=scope,
             load_cache=bool(args.load_cache),
             progress=bool(args.progress),
             group_cols=args.group_cols,
@@ -244,6 +250,15 @@ class BootstrapConfig:
         If --outdir is provided, use it; else fallback to --subset; else 'bootstrap'.
         """
         return outdir if outdir else (subset if subset else "bootstrap")
+
+
+def _normalize_parallel_scope(scope: str | None) -> str:
+    value = str(scope).strip().lower() if scope is not None else "windows"
+    if value not in {"windows", "regions", "both"}:
+        raise ValueError(
+            f"Unknown parallel scope '{scope}'. Use 'windows', 'regions', or 'both'."
+        )
+    return value
 
 
 # ---------------- Utility helpers ---------------- #
@@ -990,7 +1005,7 @@ def process_region_dir(
         return rows_q, rows_d, rows_c, rows_p
 
     # ------ Parallel processing per window ------
-    if cfg.jobs and cfg.jobs > 1 and cfg.parallel_scope == "windows":
+    if cfg.jobs and cfg.jobs > 1 and cfg.parallel_scope in {"windows", "both"}:
         print(f"Processing {len(win_files)} windows in parallel with {cfg.jobs} jobs...")
         results = Parallel(n_jobs=cfg.jobs, prefer="processes")(
             delayed(_process_win)(w, p) for (w, p) in win_files
@@ -1415,14 +1430,30 @@ def main() -> int:
         help="Pool windows into short/long by 'median' or integer cutoff.",
     )
     ap.add_argument("--pool-all", action="store_true", help="Also add an 'all' pool combining all windows.")
-    ap.add_argument("--jobs", type=int, default=1, help="Parallel jobs for per-window processing (1 = serial).")
+    ap.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="Parallel jobs for per-window work (used when scope includes windows).",
+    )
+    ap.add_argument(
+        "--region-jobs",
+        type=int,
+        default=None,
+        help="Parallel jobs for per-region work (defaults to --jobs when scope includes regions).",
+    )
     ap.add_argument(
         "--blas-threads",
         type=int,
         default=None,
         help="Limit BLAS threads per process (default 1 when --jobs > 1).",
     )
-    ap.add_argument("--parallel-scope", type=str, default="windows", help="Parallelization scope.")
+    ap.add_argument(
+        "--parallel-scope",
+        type=str,
+        default="windows",
+        help="Parallelization scope: 'windows', 'regions', or 'both'.",
+    )
     ap.add_argument("--load-cache", action="store_true", help="Reuse existing CSVs if present.")
     ap.add_argument("--progress", action="store_true", help="Show progress bars (requires tqdm).")
     ap.add_argument(
@@ -1477,11 +1508,12 @@ def main() -> int:
     args, _ = ap.parse_known_args()
     cfg = BootstrapConfig.from_args(args)
 
-    _blas_threads = (
-        cfg.blas_threads
-        if cfg.blas_threads is not None
-        else (1 if (cfg.jobs and cfg.jobs > 1) else None)
-    )
+    multi_worker = False
+    if cfg.parallel_scope in {"windows", "both"} and cfg.jobs and cfg.jobs > 1:
+        multi_worker = True
+    if cfg.parallel_scope in {"regions", "both"} and cfg.region_jobs and cfg.region_jobs > 1:
+        multi_worker = True
+    _blas_threads = cfg.blas_threads if cfg.blas_threads is not None else (1 if multi_worker else None)
     limit_blas_threads(_blas_threads)
 
     # Load quantiles and pairs
@@ -1515,16 +1547,21 @@ def main() -> int:
     corr_rows: list[dict[str, object]] = []
 
     #
-    for region_dir in maybe_tqdm(cfg.progress, region_dirs, "Regions"):
+    pooltest_rows: list[dict[str, object]] = []
+
+    def _process_region_dir(region_dir: Path) -> tuple[
+        list[dict[str, object]],
+        list[dict[str, object]],
+        list[dict[str, object]],
+        list[dict[str, object]],
+    ]:
         print(region_dir)
-        # Infer folder label
         folder_label = (
             region_dir.name.replace("regions-", "")
             if region_dir.name.startswith("regions-")
             else region_dir.name
         )
-        # Process one region directory
-        rq, rd, rc, rp = process_region_dir(
+        return process_region_dir(
             region_dir,
             folder_label,
             cfg,
@@ -1536,12 +1573,30 @@ def main() -> int:
             data,
             pairs,
         )
-        # Append results, ensuring consistent structure
-        quantiles_rows.extend(rq)
-        diffs_rows.extend(rd)
-        corr_rows.extend(rc)
-        pooltest_rows = [] if 'pooltest_rows' not in locals() else pooltest_rows
-        pooltest_rows.extend(rp)
+
+    if (
+        cfg.parallel_scope in {"regions", "both"}
+        and cfg.region_jobs
+        and cfg.region_jobs > 1
+    ):
+        print(
+            f"Processing {len(region_dirs)} regions in parallel with {cfg.region_jobs} jobs..."
+        )
+        results = Parallel(n_jobs=cfg.region_jobs, prefer="processes")(
+            delayed(_process_region_dir)(region_dir) for region_dir in region_dirs
+        )
+        for rq, rd, rc, rp in results:
+            quantiles_rows.extend(rq)
+            diffs_rows.extend(rd)
+            corr_rows.extend(rc)
+            pooltest_rows.extend(rp)
+    else:
+        for region_dir in maybe_tqdm(cfg.progress, region_dirs, "Regions"):
+            rq, rd, rc, rp = _process_region_dir(region_dir)
+            quantiles_rows.extend(rq)
+            diffs_rows.extend(rd)
+            corr_rows.extend(rc)
+            pooltest_rows.extend(rp)
 
     # Write CSVs consistently (also write suffixed copies with n_boot)
     write_outputs(quantiles_rows, diffs_rows, corr_rows, outdir, cfg.n_boot, p_rows=pooltest_rows)

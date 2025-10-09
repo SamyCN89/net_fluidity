@@ -24,20 +24,19 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Dict
 
 try:
-    from shared_code.shared_code.fun_paths import (
+    from shared_code.fun_paths import (
+        check_write_permissions,
         get_paths,
         get_root_path,
-        check_write_permissions,
     )
 except ModuleNotFoundError:
     # Try package import fallback if installed as 'shared_code'
     from shared_code.fun_paths import (
+        check_write_permissions,
         get_paths,
         get_root_path,
-        check_write_permissions,
     )
 
 
@@ -90,12 +89,36 @@ def dir_writable(p: Path) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Inspect and validate net_fluidity paths configuration")
-    ap.add_argument("--env", type=str, default=None, help="Profile label (e.g., LOCAL, CLUSTER_FS). Defaults to PATHS_ENV or LOCAL.")
-    ap.add_argument("--dataset-name", type=str, default=None, help="Dataset name (defaults to env DATASET_NAME or code default)")
-    ap.add_argument("--create", action="store_true", help="Create missing result/fig directories (no file creation)")
-    ap.add_argument("--check-write", action="store_true", help="Check write access to result/fig directories")
-    ap.add_argument("--show", action="store_true", help="Print all resolved paths grouped by category")
+    ap = argparse.ArgumentParser(
+        description="Inspect and validate net_fluidity paths configuration"
+    )
+    ap.add_argument(
+        "--env",
+        type=str,
+        default=None,
+        help="Profile label (e.g., LOCAL, CLUSTER_FS). Defaults to PATHS_ENV or LOCAL.",
+    )
+    ap.add_argument(
+        "--dataset-name",
+        type=str,
+        default=None,
+        help="Dataset name (defaults to env DATASET_NAME or code default)",
+    )
+    ap.add_argument(
+        "--create",
+        action="store_true",
+        help="Create missing result/fig directories (no file creation)",
+    )
+    ap.add_argument(
+        "--check-write",
+        action="store_true",
+        help="Check write access to result/fig directories",
+    )
+    ap.add_argument(
+        "--show",
+        action="store_true",
+        help="Print all resolved paths grouped by category",
+    )
     args = ap.parse_args()
 
     # Resolve profile and root
@@ -115,7 +138,9 @@ def main() -> int:
         print("! Could not resolve root:", e)
         print("  Suggestions:")
         print("  - export PATHS_ROOT=/abs/path/to/project/root")
-        print("  - or export PATHS_ENV=CLUSTER_FS and set PROJECT_ROOT_CLUSTER_FS=/abs/path")
+        print(
+            "  - or export PATHS_ENV=CLUSTER_FS and set PROJECT_ROOT_CLUSTER_FS=/abs/path"
+        )
         return 2
 
     # Build paths (optionally creating directories)
@@ -132,6 +157,7 @@ def main() -> int:
 
     # Show grouped paths
     if args.show:
+
         def fmt(p: Path) -> str:
             return str(p)
 
@@ -155,9 +181,13 @@ def main() -> int:
         print("- Missing or unreadable dataset entries:")
         for k, p in ds_missing:
             print(f"    {k}: {p}")
-        print("  Fix: mount/copy data or point PATHS_ROOT/PATHS_ENV to a valid dataset root.")
+        print(
+            "  Fix: mount/copy data or point PATHS_ROOT/PATHS_ENV to a valid dataset root."
+        )
     else:
-        print("- Dataset entries are present and readable (root, timeseries, cog_data, labels)")
+        print(
+            "- Dataset entries are present and readable (root, timeseries, cog_data, labels)"
+        )
 
     # Results/figures write checks
     rw_issues = []
@@ -180,7 +210,9 @@ def main() -> int:
         for k, p, msg in rw_issues:
             print(f"    {k}: {p} -> {msg}")
         print("  Suggestions (choose what fits your environment):")
-        print("  - Use a writable root: export PATHS_ROOT=/scratch/$USER/laura_harsan (or set PATHS_ENV+PROJECT_ROOT_<ENV>)")
+        print(
+            "  - Use a writable root: export PATHS_ROOT=/scratch/$USER/laura_harsan (or set PATHS_ENV+PROJECT_ROOT_<ENV>)"
+        )
         print("  - Create and set permissions (example):")
         print("      mkdir -p <dir> && chmod -R u+rwX,g+rwX <dir>")
         print("      # or set ownership if needed: sudo chown -R $USER:$USER <dir>")
@@ -202,4 +234,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

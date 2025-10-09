@@ -12,17 +12,16 @@ from __future__ import annotations
 
 import argparse
 import logging
-import pickle
 from pathlib import Path
+import pickle
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import ttest_rel, wilcoxon, mannwhitneyu
+from scipy.stats import mannwhitneyu, ttest_rel, wilcoxon
 
-from shared_code.shared_code.fun_paths import get_paths
-
+from shared_code.fun_paths import get_paths
 
 logger = logging.getLogger(__name__)
 
@@ -52,20 +51,39 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--roi-scope",
-        choices=["all", "dmn", "memory"],
+        choices=["all", "dmn", "memory", "custom"],
         default="all",
-        help="Scope of ROIs used in the precomputed NPZ: 'all' (default), 'dmn' or 'memory'",
+        help=(
+            "Scope of ROIs used in the precomputed NPZ: 'all' (default), 'dmn', "
+            "'memory', or 'custom' (to load files produced with custom ROI sets)"
+        ),
     )
     p.add_argument("--alpha", type=float, default=0.05)
     p.add_argument("--save-plots", action="store_true")
     p.add_argument("--no-show", action="store_true")
+    p.add_argument(
+        "--emit",
+        choices=["stats", "plots", "both"],
+        default="both",
+        help="Select which artifacts to emit: stats CSVs, plots, or both",
+    )
 
-    p.add_argument("--with-stats", action="store_true", help="run stats and export tables + heatmaps")
+    p.add_argument(
+        "--with-stats",
+        action="store_true",
+        help="run stats and export tables + heatmaps",
+    )
     p.add_argument("--stats-mode", choices=["age", "group", "all"], default="all")
-    p.add_argument("--group-compare", choices=["sex", "genotype", "both", "sex_genotype"], default="both")
+    p.add_argument(
+        "--group-compare",
+        choices=["sex", "genotype", "both", "sex_genotype"],
+        default="both",
+    )
     p.add_argument("--cross-age", action="store_true")
     p.add_argument("--pool-ages", action="store_true")
-    p.add_argument("--include-phenotype", choices=["none", "oip", "nor", "both"], default="none")
+    p.add_argument(
+        "--include-phenotype", choices=["none", "oip", "nor", "both"], default="none"
+    )
     p.add_argument(
         "--p-adjust",
         choices=["none", "bonferroni", "bonferroni-age"],
@@ -94,7 +112,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_npz(paths: dict, ws: int, lag: int, tau: int, scope: str) -> dict:
-    f = paths["allegiance"] / "cohesion_data" / f"cohesion_data_w{ws}_lag{lag}_tau{tau}_{scope}.npz"
+    f = (
+        paths["allegiance"]
+        / "cohesion_data"
+        / f"cohesion_data_w{ws}_lag{lag}_tau{tau}_{scope}.npz"
+    )
     return dict(np.load(f, allow_pickle=True))
 
 
@@ -124,7 +146,9 @@ def _split_base_age(label: str) -> tuple[str, str | None]:
     return label, None
 
 
-def factor_base_indices(factor_idx: int, label_variables, mask_groups) -> dict[str, dict[str, np.ndarray | None]]:
+def factor_base_indices(
+    factor_idx: int, label_variables, mask_groups
+) -> dict[str, dict[str, np.ndarray | None]]:
     bases: dict[str, dict[str, np.ndarray | None]] = {}
     labels = label_variables[factor_idx]
     masks = mask_groups[factor_idx]
@@ -137,15 +161,30 @@ def factor_base_indices(factor_idx: int, label_variables, mask_groups) -> dict[s
     return bases
 
 
-def _wilcoxon_rows(X: np.ndarray, Y: np.ndarray, zero_method: str = "wilcox") -> np.ndarray:
+def _wilcoxon_rows(
+    X: np.ndarray, Y: np.ndarray, zero_method: str = "wilcox"
+) -> np.ndarray:
     try:
-        res = wilcoxon(X, Y, zero_method=zero_method, alternative="two-sided", axis=1, method="asymptotic")
+        res = wilcoxon(
+            X,
+            Y,
+            zero_method=zero_method,
+            alternative="two-sided",
+            axis=1,
+            method="asymptotic",
+        )
         return np.asarray(res.pvalue)
     except TypeError:
         p = np.empty(X.shape[0], dtype=float)
         for i in range(X.shape[0]):
             try:
-                _, pv = wilcoxon(X[i], Y[i], zero_method=zero_method, alternative="two-sided", method="asymptotic")
+                _, pv = wilcoxon(
+                    X[i],
+                    Y[i],
+                    zero_method=zero_method,
+                    alternative="two-sided",
+                    method="asymptotic",
+                )
             except ValueError:
                 pv = 1.0
             p[i] = pv
@@ -174,12 +213,26 @@ def _cohesion_diff_rows(X: np.ndarray, Y: np.ndarray) -> np.ndarray:
     return np.mean((Y - X) / np.maximum(Y + X, eps), axis=1)
 
 
-def _cols_single(block: str, fidx: int, data_T: np.ndarray, link_labels, label_variables, mask_groups, value_fn):
+def _cols_single(
+    block: str,
+    fidx: int,
+    data_T: np.ndarray,
+    link_labels,
+    label_variables,
+    mask_groups,
+    value_fn,
+):
     F = factor_base_indices(fidx, label_variables, mask_groups)
     keys, cols = [], []
     for base, ages in F.items():
         idx2, idx4 = ages.get("2m"), ages.get("4m")
-        if idx2 is None or idx4 is None or len(idx2) == 0 or len(idx4) == 0 or len(idx2) != len(idx4):
+        if (
+            idx2 is None
+            or idx4 is None
+            or len(idx2) == 0
+            or len(idx4) == 0
+            or len(idx2) != len(idx4)
+        ):
             continue
         X = data_T[:, idx2]
         Y = data_T[:, idx4]
@@ -188,7 +241,16 @@ def _cols_single(block: str, fidx: int, data_T: np.ndarray, link_labels, label_v
     return keys, cols
 
 
-def _cols_pair(block: str, fA: int, fB: int, data_T, link_labels, label_variables, mask_groups, value_fn):
+def _cols_pair(
+    block: str,
+    fA: int,
+    fB: int,
+    data_T,
+    link_labels,
+    label_variables,
+    mask_groups,
+    value_fn,
+):
     A = factor_base_indices(fA, label_variables, mask_groups)
     B = factor_base_indices(fB, label_variables, mask_groups)
     keys, cols = [], []
@@ -212,13 +274,32 @@ def _cols_pair(block: str, fA: int, fB: int, data_T, link_labels, label_variable
     return keys, cols
 
 
-def build_table_from_spec(data_T: np.ndarray, link_labels, label_variables, mask_groups, block_spec, value_fn) -> pd.DataFrame:
+def build_table_from_spec(
+    data_T: np.ndarray, link_labels, label_variables, mask_groups, block_spec, value_fn
+) -> pd.DataFrame:
     all_keys, all_cols = [], []
     for item in block_spec:
         if item[1] == "single":
-            k, c = _cols_single(item[0], item[2], data_T, link_labels, label_variables, mask_groups, value_fn)
+            k, c = _cols_single(
+                item[0],
+                item[2],
+                data_T,
+                link_labels,
+                label_variables,
+                mask_groups,
+                value_fn,
+            )
         else:
-            k, c = _cols_pair(item[0], item[2], item[3], data_T, link_labels, label_variables, mask_groups, value_fn)
+            k, c = _cols_pair(
+                item[0],
+                item[2],
+                item[3],
+                data_T,
+                link_labels,
+                label_variables,
+                mask_groups,
+                value_fn,
+            )
         all_keys += k
         all_cols += c
     if not all_cols:
@@ -228,7 +309,16 @@ def build_table_from_spec(data_T: np.ndarray, link_labels, label_variables, mask
     return pd.DataFrame(M, index=link_labels, columns=columns)
 
 
-def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *, factors: list[str], cross_age: bool, pooled: bool):
+def build_group_comparisons(
+    data_T,
+    link_labels,
+    label_variables,
+    mask_groups,
+    *,
+    factors: list[str],
+    cross_age: bool,
+    pooled: bool,
+):
     factor_map = {"sex": ("Sex", 3), "genotype": ("Genotype", 2)}
     cols_p, cols_mdiff, cols_cdr, names = [], [], [], []
     for key in factors:
@@ -255,7 +345,9 @@ def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *
                 if idx4 is not None and len(idx4) > 0:
                     parts.append(idx4)
                 if parts:
-                    pooled_entries.append((f"{b} (all-ages)", np.unique(np.concatenate(parts))))
+                    pooled_entries.append(
+                        (f"{b} (all-ages)", np.unique(np.concatenate(parts)))
+                    )
         # within-age or cross-age pairs
         for i in range(len(entries)):
             for j in range(i + 1, len(entries)):
@@ -271,7 +363,9 @@ def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *
                 muX, muY = np.mean(X, axis=1), np.mean(Y, axis=1)
                 mdiff = muY - muX
                 cdr = (muY - muX) / np.maximum(muY + muX, 1e-9)
-                cols_p.append(p); cols_mdiff.append(mdiff); cols_cdr.append(cdr)
+                cols_p.append(p)
+                cols_mdiff.append(mdiff)
+                cols_cdr.append(cdr)
                 names.append((title, f"{name_i} vs {name_j}"))
         # pooled pairs
         for i in range(len(pooled_entries)):
@@ -285,7 +379,9 @@ def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *
                 muX, muY = np.mean(X, axis=1), np.mean(Y, axis=1)
                 mdiff = muY - muX
                 cdr = (muY - muX) / np.maximum(muY + muX, 1e-9)
-                cols_p.append(p); cols_mdiff.append(mdiff); cols_cdr.append(cdr)
+                cols_p.append(p)
+                cols_mdiff.append(mdiff)
+                cols_cdr.append(cdr)
                 names.append((title, f"{name_i} vs {name_j}"))
 
     # Combined Sex×Genotype intersections (Female/Male × wt/dKI × 2m/4m)
@@ -320,7 +416,12 @@ def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *
                         if inter.size:
                             parts.append(inter)
                     if parts:
-                        pooled_entries.append((f"{sex_base} {geno_base} (all-ages)", np.unique(np.concatenate(parts))))
+                        pooled_entries.append(
+                            (
+                                f"{sex_base} {geno_base} (all-ages)",
+                                np.unique(np.concatenate(parts)),
+                            )
+                        )
 
         for i in range(len(entries)):
             for j in range(i + 1, len(entries)):
@@ -338,7 +439,9 @@ def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *
                 muX, muY = np.mean(X, axis=1), np.mean(Y, axis=1)
                 mdiff = muY - muX
                 cdr = (muY - muX) / np.maximum(muY + muX, 1e-9)
-                cols_p.append(p); cols_mdiff.append(mdiff); cols_cdr.append(cdr)
+                cols_p.append(p)
+                cols_mdiff.append(mdiff)
+                cols_cdr.append(cdr)
                 names.append((title, f"{name_i} vs {name_j}"))
 
         for i in range(len(pooled_entries)):
@@ -354,7 +457,9 @@ def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *
                 muX, muY = np.mean(X, axis=1), np.mean(Y, axis=1)
                 mdiff = muY - muX
                 cdr = (muY - muX) / np.maximum(muY + muX, 1e-9)
-                cols_p.append(p); cols_mdiff.append(mdiff); cols_cdr.append(cdr)
+                cols_p.append(p)
+                cols_mdiff.append(mdiff)
+                cols_cdr.append(cdr)
                 names.append((title, f"{name_i} vs {name_j}"))
     if not cols_p:
         empty = pd.DataFrame(index=link_labels, columns=pd.MultiIndex.from_tuples([]))
@@ -363,7 +468,11 @@ def build_group_comparisons(data_T, link_labels, label_variables, mask_groups, *
     MD = np.column_stack(cols_mdiff)
     CDR = np.column_stack(cols_cdr)
     cols = pd.MultiIndex.from_tuples(names, names=["Block", "Column"])
-    return pd.DataFrame(P, index=link_labels, columns=cols), pd.DataFrame(MD, index=link_labels, columns=cols), pd.DataFrame(CDR, index=link_labels, columns=cols)
+    return (
+        pd.DataFrame(P, index=link_labels, columns=cols),
+        pd.DataFrame(MD, index=link_labels, columns=cols),
+        pd.DataFrame(CDR, index=link_labels, columns=cols),
+    )
 
 
 def separators_from_multiindex(mi: pd.MultiIndex):
@@ -380,12 +489,23 @@ def separators_from_multiindex(mi: pd.MultiIndex):
     return seps
 
 
-def plot_sig_pvals_multi(pvals_df: pd.DataFrame, alpha: float, title: str, *, save: bool, out_path: Path | None):
+def plot_sig_pvals_multi(
+    pvals_df: pd.DataFrame,
+    alpha: float,
+    title: str,
+    *,
+    save: bool,
+    out_path: Path | None,
+):
     data = pvals_df.values
     mask = np.where(data <= alpha, data, np.nan)
     n_rows, n_cols = mask.shape if mask.size else (0, 0)
-    fig, ax = plt.subplots(figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1))))
-    im = ax.imshow(mask, aspect="auto", interpolation="none", cmap="viridis_r", vmin=0, vmax=alpha)
+    fig, ax = plt.subplots(
+        figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1)))
+    )
+    im = ax.imshow(
+        mask, aspect="auto", interpolation="none", cmap="viridis_r", vmin=0, vmax=alpha
+    )
     fig.colorbar(im, ax=ax).set_label("p-value")
     ax.set_yticks(np.arange(n_rows))
     ax.set_yticklabels(pvals_df.index, fontsize=6)
@@ -405,14 +525,26 @@ def plot_sig_pvals_multi(pvals_df: pd.DataFrame, alpha: float, title: str, *, sa
     return fig
 
 
-def plot_weighted_multi(pvals_df: pd.DataFrame, weights_df: pd.DataFrame, alpha: float, title: str, *, save: bool, out_path: Path | None):
+def plot_weighted_multi(
+    pvals_df: pd.DataFrame,
+    weights_df: pd.DataFrame,
+    alpha: float,
+    title: str,
+    *,
+    save: bool,
+    out_path: Path | None,
+):
     assert tuple(pvals_df.columns) == tuple(weights_df.columns)
     assert list(pvals_df.index) == list(weights_df.index)
     p, w = pvals_df.values, weights_df.values
     Z = np.where(p <= alpha, 1 - p, np.nan) * w
     n_rows, n_cols = Z.shape if Z.size else (0, 0)
-    fig, ax = plt.subplots(figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1))))
-    im = ax.imshow(Z, aspect="auto", interpolation="none", cmap="RdBu", vmin=-0.1, vmax=0.1)
+    fig, ax = plt.subplots(
+        figsize=(max(15, 0.22 * n_cols), max(2, 0.16 * max(n_rows, 1)))
+    )
+    im = ax.imshow(
+        Z, aspect="auto", interpolation="none", cmap="RdBu", vmin=-0.1, vmax=0.1
+    )
     fig.colorbar(im, ax=ax).set_label("(1 - p) × effect")
     ax.set_yticks(np.arange(n_rows))
     ax.set_yticklabels(pvals_df.index, fontsize=6)
@@ -433,6 +565,7 @@ def plot_weighted_multi(pvals_df: pd.DataFrame, weights_df: pd.DataFrame, alpha:
 
 
 # -------- Per-comparison matrix helpers --------
+
 
 def _infer_roi_order_from_pairs(pair_labels: np.ndarray) -> list[str]:
     # pair_labels: (L, 2) of strings
@@ -457,7 +590,9 @@ def _infer_roi_order_from_pairs(pair_labels: np.ndarray) -> list[str]:
     return order
 
 
-def _vec_to_sym_matrix(vec: np.ndarray, pair_labels: np.ndarray, roi_order: list[str]) -> np.ndarray:
+def _vec_to_sym_matrix(
+    vec: np.ndarray, pair_labels: np.ndarray, roi_order: list[str]
+) -> np.ndarray:
     D = len(roi_order)
     M = np.full((D, D), np.nan, dtype=float)
     idx_map = {name: i for i, name in enumerate(roi_order)}
@@ -472,6 +607,7 @@ def _vec_to_sym_matrix(vec: np.ndarray, pair_labels: np.ndarray, roi_order: list
 
 def _sanitize_fname(s: str) -> str:
     import re
+
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", s)[:200]
 
 
@@ -495,7 +631,9 @@ def plot_matrices_per_column_group(
         return []
     if mode == "weighted" and effect_df is None:
         raise ValueError("effect_df is required when mode='weighted'")
-    assert list(pvals_df.index) == list(effect_df.index) if effect_df is not None else True
+    assert (
+        list(pvals_df.index) == list(effect_df.index) if effect_df is not None else True
+    )
 
     out_paths = []
     # Group by first level (Block)
@@ -517,14 +655,20 @@ def plot_matrices_per_column_group(
                 _vmax = 1.0 if vmax is None else vmax
                 _cmap = "Greens" if cmap is None else cmap
                 title = f"{block} — {label} (significant)"
-                fname = block_dir / f"{_sanitize_fname(label)}_sig_{_sanitize_fname(tag)}.png"
+                fname = (
+                    block_dir
+                    / f"{_sanitize_fname(label)}_sig_{_sanitize_fname(tag)}.png"
+                )
             else:  # weighted
                 vec = np.where(P[:, k] <= alpha, 1 - P[:, k], np.nan) * W[:, k]
                 _vmin = -0.1 if vmin is None else vmin
                 _vmax = 0.1 if vmax is None else vmax
                 _cmap = "RdBu" if cmap is None else cmap
                 title = f"{block} — {label} ((1-p)×effect)"
-                fname = block_dir / f"{_sanitize_fname(label)}_weighted_{_sanitize_fname(tag)}.png"
+                fname = (
+                    block_dir
+                    / f"{_sanitize_fname(label)}_weighted_{_sanitize_fname(tag)}.png"
+                )
 
             M = _vec_to_sym_matrix(vec, pair_labels, roi_order)
             fig, ax = plt.subplots(figsize=(6, 5))
@@ -592,14 +736,13 @@ def main() -> int:
 
     # Paths
     paths = get_paths(timecourse_folder=args.timecourse_folder)
-    stats_fig_dir = (paths["f_cohesion"] / "stats").expanduser(); stats_fig_dir.mkdir(parents=True, exist_ok=True)
-    out_dir = (paths["allegiance"] / "out").expanduser(); out_dir.mkdir(parents=True, exist_ok=True)
+    stats_fig_dir = (paths["f_cohesion"] / "stats").expanduser()
+    stats_fig_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = (paths["allegiance"] / "out").expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Scope (file suffix)
-    if args.roi_scope in {"dmn", "memory"}:
-        scope = args.roi_scope
-    else:
-        scope = "dmn" if args.dmn_index.strip() else "all"
+    # Scope (file suffix) — respect explicit choice
+    scope = args.roi_scope
     data = load_npz(paths, args.window_size, args.lag, args.tau, scope)
     time_ratio = np.asarray(data["time_ratio"]).astype(float)  # (A, L)
     pair_labels = np.asarray(data["pair_labels"])  # (L, 2)
@@ -616,94 +759,194 @@ def main() -> int:
     with open(paths["preprocessed"] / "grouping_data_oip.pkl", "rb") as f:
         mask_groups, label_variables = pickle.load(f)
 
+    save_stats = args.emit in {"stats", "both"}
+    do_plots = args.emit in {"plots", "both"}
+
     if args.with_stats:
         # Age-paired
         if args.stats_mode in {"age", "all"}:
             spec = extend_block_spec_with_phenotype(args.include_phenotype)
-            p_wil = build_table_from_spec(data_T, link_labels, label_variables, mask_groups, spec, _wilcoxon_rows)
-            p_t = build_table_from_spec(data_T, link_labels, label_variables, mask_groups, spec, _ttest_rows)
-            eff_cdr = build_table_from_spec(data_T, link_labels, label_variables, mask_groups, spec, _cohesion_diff_rows)
-            eff_mdiff = build_table_from_spec(data_T, link_labels, label_variables, mask_groups, spec, lambda X, Y: np.mean(Y, axis=1) - np.mean(X, axis=1))
+            p_wil = build_table_from_spec(
+                data_T, link_labels, label_variables, mask_groups, spec, _wilcoxon_rows
+            )
+            p_t = build_table_from_spec(
+                data_T, link_labels, label_variables, mask_groups, spec, _ttest_rows
+            )
+            eff_cdr = build_table_from_spec(
+                data_T,
+                link_labels,
+                label_variables,
+                mask_groups,
+                spec,
+                _cohesion_diff_rows,
+            )
+            eff_mdiff = build_table_from_spec(
+                data_T,
+                link_labels,
+                label_variables,
+                mask_groups,
+                spec,
+                lambda X, Y: np.mean(Y, axis=1) - np.mean(X, axis=1),
+            )
 
             # Save raw p-values
-            p_wil.to_csv(out_dir / f"pvals_age_wilcoxon_{tag}.csv")
-            p_t.to_csv(out_dir / f"pvals_age_ttest_{tag}.csv")
-            eff_cdr.to_csv(out_dir / f"effects_age_cdratio_{tag}.csv")
-            eff_mdiff.to_csv(out_dir / f"effects_age_mdiff_{tag}.csv")
+            if save_stats:
+                p_wil.to_csv(out_dir / f"pvals_age_wilcoxon_{tag}.csv")
+                p_t.to_csv(out_dir / f"pvals_age_ttest_{tag}.csv")
+                eff_cdr.to_csv(out_dir / f"effects_age_cdratio_{tag}.csv")
+                eff_mdiff.to_csv(out_dir / f"effects_age_mdiff_{tag}.csv")
 
             # Adjusted p-values (optional)
             title_suffix = ""
             p_wil_plot = p_wil
             if args.p_adjust == "bonferroni":
                 p_wil_b = _bonferroni_adjust(p_wil)
-                p_wil_b.to_csv(out_dir / f"pvals_age_wilcoxon_bonferroni_{tag}.csv")
+                if save_stats:
+                    p_wil_b.to_csv(out_dir / f"pvals_age_wilcoxon_bonferroni_{tag}.csv")
                 p_wil_plot = p_wil_b
                 title_suffix = " (Bonferroni)"
 
-            fig1 = plot_sig_pvals_multi(p_wil_plot, args.alpha, f"Age (2m vs 4m) — Wilcoxon significant only{title_suffix}", save=args.save_plots, out_path=stats_fig_dir / f"pvals_age_wilcoxon_sig_{tag}.png")
-            if not args.no_show: plt.show()
-            else: plt.close(fig1)
-            fig2 = plot_weighted_multi(p_wil_plot, eff_cdr, args.alpha, f"Age (2m vs 4m) — (1 - p) × cohesion-diff ratio{title_suffix}", save=args.save_plots, out_path=stats_fig_dir / f"weighted_age_wilcoxon_cdratio_{tag}.png")
-            if not args.no_show: plt.show()
-            else: plt.close(fig2)
+            if do_plots:
+                fig1 = plot_sig_pvals_multi(
+                    p_wil_plot,
+                    args.alpha,
+                    f"Age (2m vs 4m) — Wilcoxon significant only{title_suffix}",
+                    save=args.save_plots,
+                    out_path=stats_fig_dir / f"pvals_age_wilcoxon_sig_{tag}.png",
+                )
+                if not args.no_show:
+                    plt.show()
+                else:
+                    plt.close(fig1)
+                fig2 = plot_weighted_multi(
+                    p_wil_plot,
+                    eff_cdr,
+                    args.alpha,
+                    f"Age (2m vs 4m) — (1 - p) × cohesion-diff ratio{title_suffix}",
+                    save=args.save_plots,
+                    out_path=stats_fig_dir / f"weighted_age_wilcoxon_cdratio_{tag}.png",
+                )
+                if not args.no_show:
+                    plt.show()
+                else:
+                    plt.close(fig2)
 
             # Optional per-comparison matrices for AGE
-            if args.matrix_per_comparison:
+            if do_plots and args.matrix_per_comparison:
                 if args.matrix_mode == "weighted":
-                    eff_choice = eff_cdr if args.matrix_effect == "cdratio" else eff_mdiff
+                    eff_choice = (
+                        eff_cdr if args.matrix_effect == "cdratio" else eff_mdiff
+                    )
                 else:
                     eff_choice = None
                 out_root = stats_fig_dir / f"matrices_{tag}"
                 plot_matrices_per_column_group(
-                    p_wil, alpha=args.alpha, mode=args.matrix_mode, effect_df=eff_choice,
-                    pair_labels=pair_labels, roi_order=roi_order, out_root=out_root, tag_prefix="Age", tag=tag,
+                    p_wil,
+                    alpha=args.alpha,
+                    mode=args.matrix_mode,
+                    effect_df=eff_choice,
+                    pair_labels=pair_labels,
+                    roi_order=roi_order,
+                    out_root=out_root,
+                    tag_prefix="Age",
+                    tag=tag,
                     save=args.save_plots,
                 )
 
         # Group-based (MWU)
         if args.stats_mode in {"group", "all"}:
             dims = []
-            if args.group_compare in {"sex", "both"}: dims.append("sex")
-            if args.group_compare in {"genotype", "both"}: dims.append("genotype")
-            if args.group_compare == "sex_genotype": dims.append("sex_genotype")
-            p_grp, eff_mdiff_g, eff_cdr_g = build_group_comparisons(data_T, link_labels, label_variables, mask_groups, factors=dims, cross_age=args.cross_age, pooled=args.pool_ages)
-            p_grp.to_csv(out_dir / f"pvals_group_mwu_{tag}.csv")
-            eff_mdiff_g.to_csv(out_dir / f"effects_group_mdiff_{tag}.csv")
-            eff_cdr_g.to_csv(out_dir / f"effects_group_cdratio_{tag}.csv")
+            if args.group_compare in {"sex", "both"}:
+                dims.append("sex")
+            if args.group_compare in {"genotype", "both"}:
+                dims.append("genotype")
+            if args.group_compare == "sex_genotype":
+                dims.append("sex_genotype")
+            p_grp, eff_mdiff_g, eff_cdr_g = build_group_comparisons(
+                data_T,
+                link_labels,
+                label_variables,
+                mask_groups,
+                factors=dims,
+                cross_age=args.cross_age,
+                pooled=args.pool_ages,
+            )
+            if save_stats:
+                p_grp.to_csv(out_dir / f"pvals_group_mwu_{tag}.csv")
+                eff_mdiff_g.to_csv(out_dir / f"effects_group_mdiff_{tag}.csv")
+                eff_cdr_g.to_csv(out_dir / f"effects_group_cdratio_{tag}.csv")
 
             title_suffix = ""
             p_grp_plot = p_grp
             if args.p_adjust == "bonferroni":
                 p_grp_b = _bonferroni_adjust(p_grp)
-                p_grp_b.to_csv(out_dir / f"pvals_group_mwu_bonferroni_{tag}.csv")
+                if save_stats:
+                    p_grp_b.to_csv(out_dir / f"pvals_group_mwu_bonferroni_{tag}.csv")
                 p_grp_plot = p_grp_b
                 title_suffix = " (Bonferroni)"
             elif args.p_adjust == "bonferroni-age":
                 p_grp_ba = _bonferroni_by_age_in_columns(p_grp)
-                p_grp_ba.to_csv(out_dir / f"pvals_group_mwu_bonferroni_age_{tag}.csv")
+                if save_stats:
+                    p_grp_ba.to_csv(out_dir / f"pvals_group_mwu_bonferroni_age_{tag}.csv")
                 p_grp_plot = p_grp_ba
                 title_suffix = " (Bonferroni by age group)"
 
-            figg1 = plot_sig_pvals_multi(p_grp_plot, args.alpha, f"Group (MWU) — significant only{title_suffix}", save=args.save_plots, out_path=stats_fig_dir / f"pvals_group_mwu_sig_{tag}.png")
-            if not args.no_show: plt.show()
-            else: plt.close(figg1)
-            figg2 = plot_weighted_multi(p_grp_plot, eff_mdiff_g, args.alpha, f"Group (MWU) — (1 - p) × mean difference{title_suffix}", save=args.save_plots, out_path=stats_fig_dir / f"weighted_group_mwu_mdiff_{tag}.png")
-            if not args.no_show: plt.show()
-            else: plt.close(figg2)
-            figg3 = plot_weighted_multi(p_grp_plot, eff_cdr_g, args.alpha, f"Group (MWU) — (1 - p) × cohesion-diff ratio{title_suffix}", save=args.save_plots, out_path=stats_fig_dir / f"weighted_group_mwu_cdratio_{tag}.png")
-            if not args.no_show: plt.show()
-            else: plt.close(figg3)
+            if do_plots:
+                figg1 = plot_sig_pvals_multi(
+                    p_grp_plot,
+                    args.alpha,
+                    f"Group (MWU) — significant only{title_suffix}",
+                    save=args.save_plots,
+                    out_path=stats_fig_dir / f"pvals_group_mwu_sig_{tag}.png",
+                )
+                if not args.no_show:
+                    plt.show()
+                else:
+                    plt.close(figg1)
+                figg2 = plot_weighted_multi(
+                    p_grp_plot,
+                    eff_mdiff_g,
+                    args.alpha,
+                    f"Group (MWU) — (1 - p) × mean difference{title_suffix}",
+                    save=args.save_plots,
+                    out_path=stats_fig_dir / f"weighted_group_mwu_mdiff_{tag}.png",
+                )
+                if not args.no_show:
+                    plt.show()
+                else:
+                    plt.close(figg2)
+                figg3 = plot_weighted_multi(
+                    p_grp_plot,
+                    eff_cdr_g,
+                    args.alpha,
+                    f"Group (MWU) — (1 - p) × cohesion-diff ratio{title_suffix}",
+                    save=args.save_plots,
+                    out_path=stats_fig_dir / f"weighted_group_mwu_cdratio_{tag}.png",
+                )
+                if not args.no_show:
+                    plt.show()
+                else:
+                    plt.close(figg3)
 
             # Optional per-comparison matrices for GROUP
-            if args.matrix_per_comparison:
+            if do_plots and args.matrix_per_comparison:
                 if args.matrix_mode == "weighted":
-                    eff_choice = eff_cdr_g if args.matrix_effect == "cdratio" else eff_mdiff_g
+                    eff_choice = (
+                        eff_cdr_g if args.matrix_effect == "cdratio" else eff_mdiff_g
+                    )
                 else:
                     eff_choice = None
                 out_root = stats_fig_dir / f"matrices_{tag}"
                 plot_matrices_per_column_group(
-                    p_grp, alpha=args.alpha, mode=args.matrix_mode, effect_df=eff_choice,
-                    pair_labels=pair_labels, roi_order=roi_order, out_root=out_root, tag_prefix="Group", tag=tag,
+                    p_grp,
+                    alpha=args.alpha,
+                    mode=args.matrix_mode,
+                    effect_df=eff_choice,
+                    pair_labels=pair_labels,
+                    roi_order=roi_order,
+                    out_root=out_root,
+                    tag_prefix="Group",
+                    tag=tag,
                     save=args.save_plots,
                 )
 

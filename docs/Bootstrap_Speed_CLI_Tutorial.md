@@ -29,7 +29,7 @@ python scripts/paths_doctor.py --show --check-write --create
 Verify outputs exist:
 
 ```python
-from shared_code.shared_code.fun_paths import get_paths
+from shared_code.fun_paths import get_paths
 paths = get_paths(dataset_name='julien_caillette', create=False, check_write=False)
 paths['speed'], paths['dfc']
 ```

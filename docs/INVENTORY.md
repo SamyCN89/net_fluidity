@@ -163,7 +163,7 @@ graph TD
   SC_boot[shared_code.fun_bootstrap]
   SC_net[shared_code.fun_network]
   SC_paths[shared_code.fun_paths]
-  
+
   %% Allegiance scripts
   A_comp_loc[allegiance.src.compute_allegiance_local]
   A_dfc_local[allegiance.src.2_compute_dfc_local]
@@ -302,16 +302,16 @@ High‑level mapping of analysis scripts to the `shared_code` modules they impor
 - 2_compute_dfc_stream.py: fun_loaddata, fun_dfcspeed (get_tenet4window_range), fun_paths
 - 3_dfc_local_speed_v1.py: fun_loaddata, fun_utils (also uses fun_optimization within functions)
 - 3_dfc_speed_test_v6.py: fun_loaddata, fun_utils (also uses fun_optimization within functions)
-- class_dataanalysis_julien.py: fun_paths, fun_loaddata (also loads via shared_code.shared_code.fun_loaddata)
+- class_dataanalysis_julien.py: fun_paths, fun_loaddata (also loads via shared_code.fun_loaddata)
 - dfc_windows_pooling.py: fun_loaddata, fun_dfcspeed (pool_vel_windows, get_population_wpooling), fun_bootstrap, fun_utils, fun_paths
 - modularity.py: fun_loaddata, fun_utils, fun_dfcspeed (ts2fc, ts2dfc_stream), fun_metaconnectivity
 - plot_cog_data.py: fun_utils, fun_paths
-- plots.py: fun_loaddata, fun_dfcspeed (parallel_dfc_speed_oversampled_series), fun_utils, fun_paths, shared_code.shared_code.fun_dfcspeed (get_tenet4window_range)
+- plots.py: fun_loaddata, fun_dfcspeed (parallel_dfc_speed_oversampled_series), fun_utils, fun_paths, shared_code.fun_dfcspeed (get_tenet4window_range)
 - plts_speed.py: fun_paths, fun_loaddata
 - test_func_speed.py: fun_dfcspeed, fun_optimization (used in tests)
 
 Notes:
-- Some julien_data scripts import via the long path `shared_code.shared_code.*`; this resolves to the same installed package.
+- Some julien_data scripts import via the long path `shared_code.*`; this resolves to the same installed package.
 
 ## Folder Map (Mermaid)
 

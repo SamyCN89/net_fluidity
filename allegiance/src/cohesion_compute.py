@@ -21,8 +21,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from shared_code.shared_code.fun_metaconnectivity import load_merged_allegiance
-from shared_code.shared_code.fun_paths import get_paths
+from shared_code.fun_metaconnectivity import load_merged_allegiance
+from shared_code.fun_paths import get_paths
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--dmn-index",
         type=str,
-        # default="0,1,2,3,5,6,10,27,30,31,32",
-        default="0,23,13,22,2,28,34,37,39,8,35",
+        default="0,1,2,3,5,6,10,27,30,31,32",
+        # default="0,23,13,22,2,28,34,37,39,8,35",
         help="comma-separated indices (sorted label space) for DMN; used when --roi-scope=dmn",
     )
     p.add_argument(
@@ -87,19 +87,66 @@ def parse_args() -> argparse.Namespace:
         "--no-show", action="store_true", help="do not display figures (batch mode)"
     )
     # Unified/simplified options (in addition to legacy ones above)
-    p.add_argument("--roi", choices=["all", "dmn", "memory", "custom"], default="all", help="Unified ROI scope selector")
-    p.add_argument("--roi-indices", type=str, default="", help="Comma-separated indices in sorted label space (for --roi custom/memory)")
-    p.add_argument("--roi-labels", type=str, default="", help="Comma-separated substrings to match ROI labels (sorted space)")
-    p.add_argument("--roi-file", type=str, default="", help="Text file with ROI names or indices, one per line")
-    p.add_argument("--list-rois", action="store_true", help="List sorted ROI labels with indices and exit")
-    p.add_argument("--emit", choices=["all", "npz", "events", "none"], default="all", help="Which artifacts to write")
-    p.add_argument("--tag", type=str, default="", help="Tag to append in output filenames")
-    p.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs if present")
-    p.add_argument("--plot", choices=["none", "one", "all"], default="none", help="Render binary ATL plots (replaces --plot-animal/--save-all-binary)")
+    p.add_argument(
+        "--roi",
+        choices=["all", "dmn", "memory", "custom"],
+        default="all",
+        help="Unified ROI scope selector",
+    )
+    p.add_argument(
+        "--roi-indices",
+        type=str,
+        default="",
+        help="Comma-separated indices in sorted label space (for --roi custom/memory)",
+    )
+    p.add_argument(
+        "--roi-labels",
+        type=str,
+        default="",
+        help="Comma-separated substrings to match ROI labels (sorted space)",
+    )
+    p.add_argument(
+        "--roi-file",
+        type=str,
+        default="",
+        help="Text file with ROI names or indices, one per line",
+    )
+    p.add_argument(
+        "--list-rois",
+        action="store_true",
+        help="List sorted ROI labels with indices and exit",
+    )
+    p.add_argument(
+        "--emit",
+        choices=["all", "npz", "events", "none"],
+        default="all",
+        help="Which artifacts to write",
+    )
+    p.add_argument(
+        "--tag", type=str, default="", help="Tag to append in output filenames"
+    )
+    p.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing outputs if present"
+    )
+    p.add_argument(
+        "--plot",
+        choices=["none", "one", "all"],
+        default="none",
+        help="Render binary ATL plots (replaces --plot-animal/--save-all-binary)",
+    )
     p.add_argument("--animal", type=int, default=0, help="Animal index for --plot one")
-    p.add_argument("--show", action="store_true", help="Display plots (omit to run headless)")
-    p.add_argument("--dry-run", action="store_true", help="Print resolved configuration and exit")
-    p.add_argument("--verbosity", choices=["info", "debug"], default="info", help="Logging verbosity")
+    p.add_argument(
+        "--show", action="store_true", help="Display plots (omit to run headless)"
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="Print resolved configuration and exit"
+    )
+    p.add_argument(
+        "--verbosity",
+        choices=["info", "debug"],
+        default="info",
+        help="Logging verbosity",
+    )
     # return p.parse_args()
     return p.parse_known_args()[0]
 
@@ -210,7 +257,9 @@ def main() -> int:
     ts, anat_labels = load_meta(paths)
     n_animals = len(ts)
     dfc_sorted, sort_idx, _ = reorder_communities(paths, args.window_size, args.lag)
-    anat_labels_sorted = anat_labels[sort_idx[0, 0].astype(int)].astype(str)
+    # anat_labels_sorted = anat_labels[sort_idx[0, 0].astype(int)].astype(str)
+    anat_labels_sorted = anat_labels
+
     T = dfc_sorted.shape[1]
 
     # Option: list ROIs and exit
@@ -257,13 +306,25 @@ def main() -> int:
         return sorted(set(out))
 
     # Default: use legacy roi-scope if unified isn't specified beyond defaults
-    use_unified = (args.roi != "all") or bool(args.roi_indices.strip() or args.roi_labels.strip() or args.roi_file.strip())
+    use_unified = (args.roi != "all") or bool(
+        args.roi_indices.strip() or args.roi_labels.strip() or args.roi_file.strip()
+    )
     if use_unified:
         if args.roi == "all":
-            region_index = list(range(N)); scope = "all"
+            region_index = list(range(N))
+            scope = "all"
         elif args.roi == "dmn":
-            idx = _parse_indices(args.roi_indices) if args.roi_indices.strip() else _parse_indices(args.dmn_index) if args.dmn_index.strip() else _parse_indices("0,23,13,22,2,28,34,37,39,8,35")
-            region_index = idx; scope = "dmn"
+            idx = (
+                _parse_indices(args.roi_indices)
+                if args.roi_indices.strip()
+                else (
+                    _parse_indices(args.dmn_index)
+                    if args.dmn_index.strip()
+                    else _parse_indices("0,23,13,22,2,28,34,37,39,8,35")
+                )
+            )
+            region_index = idx
+            scope = "dmn"
         elif args.roi in {"memory", "custom"}:
             idx: list[int] = []
             if args.roi_indices.strip():
@@ -272,34 +333,60 @@ def main() -> int:
                 idx += _indices_from_labels(args.roi_labels)
             if args.roi_file.strip():
                 idx += _indices_from_file(args.roi_file)
-            region_index = sorted(set(idx)); scope = "memory" if args.roi == "memory" else "custom"
+            region_index = sorted(set(idx))
+            scope = "memory" if args.roi == "memory" else "custom"
             if not region_index:
-                logger.error("%s scope requires ROI indices/labels/file. Use --list-rois to inspect labels.", scope)
+                logger.error(
+                    "%s scope requires ROI indices/labels/file. Use --list-rois to inspect labels.",
+                    scope,
+                )
                 return 2
         else:
-            region_index = list(range(N)); scope = "all"
+            region_index = list(range(N))
+            scope = "all"
     else:
         if args.roi_scope == "all":
-            region_index = list(range(N)); scope = "all"
+            region_index = list(range(N))
+            scope = "all"
         elif args.roi_scope == "dmn":
             if args.dmn_index.strip():
                 region_index = _parse_indices(args.dmn_index)
             else:
-                logger.error("--roi-scope=dmn requires --dmn-index (comma-separated indices)"); return 2
+                logger.error(
+                    "--roi-scope=dmn requires --dmn-index (comma-separated indices)"
+                )
+                return 2
             scope = "dmn"
         else:  # memory
             if args.memory_index.strip():
                 region_index = _parse_indices(args.memory_index)
             else:
-                preview = "\n".join([f"{i:3d}: {lab}" for i, lab in enumerate(anat_labels_sorted)])
-                logger.error("--roi-scope=memory requires --memory-index. Sorted labels with indices:\n%s", preview)
+                preview = "\n".join(
+                    [f"{i:3d}: {lab}" for i, lab in enumerate(anat_labels_sorted)]
+                )
+                logger.error(
+                    "--roi-scope=memory requires --memory-index. Sorted labels with indices:\n%s",
+                    preview,
+                )
                 return 2
             scope = "memory"
 
     # Logging verbosity and dry-run
-    logging.getLogger().setLevel(logging.DEBUG if args.verbosity == "debug" else logging.INFO)
+    logging.getLogger().setLevel(
+        logging.DEBUG if args.verbosity == "debug" else logging.INFO
+    )
     if args.dry_run:
-        logger.info("dry-run: ws/lag/tau=%s/%s/%s, scope=%s D=%s emit=%s tag=%s overwrite=%s", args.window_size, args.lag, args.tau, scope, len(region_index), args.emit, args.tag, args.overwrite)
+        logger.info(
+            "dry-run: ws/lag/tau=%s/%s/%s, scope=%s D=%s emit=%s tag=%s overwrite=%s",
+            args.window_size,
+            args.lag,
+            args.tau,
+            scope,
+            len(region_index),
+            args.emit,
+            args.tag,
+            args.overwrite,
+        )
         return 0
 
     # Compute time ratio and binary ATL
@@ -369,11 +456,15 @@ def main() -> int:
     if args.emit in {"all", "events"}:
         ev_path_parquet = out_dir / f"events_{tag}.parquet"
         if ev_path_parquet.exists() and not args.overwrite:
-            logger.info("Events parquet exists; use --overwrite to replace: %s", ev_path_parquet)
+            logger.info(
+                "Events parquet exists; use --overwrite to replace: %s", ev_path_parquet
+            )
         else:
             try:
                 events.to_parquet(ev_path_parquet, index=False)
-                logger.info("Saved %d events (parquet): %s", events_count, ev_path_parquet)
+                logger.info(
+                    "Saved %d events (parquet): %s", events_count, ev_path_parquet
+                )
             except Exception as e:
                 logger.warning("Parquet unavailable (%s); writing CSV fallback", e)
                 ev_path_csv = out_dir / f"events_{tag}.csv"
@@ -397,10 +488,18 @@ def main() -> int:
         "scope": scope,
         "outputs": {
             "npz": str(npz_path) if (args.emit in {"all", "npz"}) else None,
-            "events_parquet": str(out_dir / f"events_{tag}.parquet") if (args.emit in {"all", "events"}) else None,
+            "events_parquet": (
+                str(out_dir / f"events_{tag}.parquet")
+                if (args.emit in {"all", "events"})
+                else None
+            ),
         },
         "events_count": events_count,
-        "events_count_csv": str(out_dir / f"events_count_{tag}.csv") if (args.emit in {"all", "events"}) else None,
+        "events_count_csv": (
+            str(out_dir / f"events_count_{tag}.csv")
+            if (args.emit in {"all", "events"})
+            else None
+        ),
         "shapes": {
             "time_ratio": list(time_ratio.shape),
             "mean_duration": list(mean_dur.shape),
@@ -416,6 +515,7 @@ def main() -> int:
     try:
         import matplotlib
         import matplotlib.pyplot as plt
+
         if not args.show:
             matplotlib.use("Agg", force=True)
     except Exception as e:  # pragma: no cover
@@ -430,7 +530,9 @@ def main() -> int:
             return
         Z = binary_ATL[animal_idx].T  # (L, T)
         fig, ax = plt.subplots(figsize=(12, 6))
-        im = ax.imshow(Z, aspect="auto", interpolation="none", cmap="gray_r", vmin=0, vmax=1)
+        im = ax.imshow(
+            Z, aspect="auto", interpolation="none", cmap="gray_r", vmin=0, vmax=1
+        )
         ax.set_title(f"Cohesion binary (same-module=1) — Animal {animal_idx}")
         ax.set_xlabel("Time windows")
         ax.set_ylabel("Links (upper-tri)")
@@ -447,8 +549,12 @@ def main() -> int:
 
     # Back-compat mapping of old plotting flags
     if args.plot == "none":
-        if (getattr(args, "plot_animal", -1) is not None and getattr(args, "plot_animal", -1) >= 0):
-            args.plot = "one"; args.animal = int(args.plot_animal)
+        if (
+            getattr(args, "plot_animal", -1) is not None
+            and getattr(args, "plot_animal", -1) >= 0
+        ):
+            args.plot = "one"
+            args.animal = int(args.plot_animal)
         elif getattr(args, "save_all_binary", False):
             args.plot = "all"
 

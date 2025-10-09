@@ -1,6 +1,6 @@
 import numpy as np
 
-from shared_code.shared_code.fun_dfcspeed import ts2dfc_stream, dfc_speed
+from shared_code.fun_dfcspeed import dfc_speed, ts2dfc_stream
 
 
 def test_dfc_speed_synthetic_small():
@@ -15,4 +15,3 @@ def test_dfc_speed_synthetic_small():
 
     assert np.isfinite(med)
     assert speeds.ndim == 1 and speeds.size > 0
-

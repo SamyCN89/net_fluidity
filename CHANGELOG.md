@@ -26,7 +26,7 @@ The format follows Conventional Commits and semantic versioning where practical.
 - docs(julien_data): README documents new plotting flags and usage.
 - feat(pkg): begin Phase 3 — add `src/net_fluidity_julien` package with `context.py` (DFCAnalysis) and `__init__`; update scripts to prefer package imports with fallbacks.
 - docs(julien_data): add Makefile with handy targets (preprocess/dfc/speed/compare/plot) and update README with quick commands.
-- feat(shared_code): add `dfc_speed_multi_tau` to `shared_code.shared_code.fun_dfcspeed` matching legacy multi‑tau semantics.
+- feat(shared_code): add `dfc_speed_multi_tau` to `shared_code.fun_dfcspeed` matching legacy multi‑tau semantics.
 - test: add smoke parity test `tests_smoke/test_multi_tau_parity.py` comparing shared vs legacy on synthetic data (2D and 3D).
 - feat(julien_data): add `--engine {legacy,shared}` to `3_dfc_speed_test_v6.py`; default remains legacy. Shared uses `dfc_speed_multi_tau`.
 - chore(julien_data): extend Makefile with `speed-shared` and `ab-speed` (orig+shared+compare) targets.

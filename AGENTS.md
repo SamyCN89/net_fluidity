@@ -19,8 +19,8 @@
 - Lint: Ruff with rules E/F/W/I/UP/B; isort via Ruff; see `pyproject.toml`.
 - Indentation: 4 spaces; prefer type hints and docstrings for public APIs.
 - Naming: `snake_case` for modules/functions, `PascalCase` for classes, `UPPER_SNAKE` for constants.
-- Imports: prefer stable APIs in `shared_code.shared_code.*`. Pre‑commit forbids some `metaconnectivity` imports. Example:
-  - Good: `from shared_code.shared_code.fun_dfcspeed import ts2dfc_stream`
+- Imports: prefer stable APIs in `shared_code.*`. Pre‑commit forbids some `metaconnectivity` imports. Example:
+  - Good: `from shared_code.fun_dfcspeed import ts2dfc_stream`
   - Avoid: `from metaconnectivity.fun_dfcspeed import ts2dfc_stream`
 
 ## Testing Guidelines

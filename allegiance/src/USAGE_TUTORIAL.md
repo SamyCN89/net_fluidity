@@ -14,7 +14,7 @@
 
 ## Overview
 - Scripts under `allegiance/src/` implement a pipeline to compute dynamic FC (DFC), run per-window community detection (“allegiance”), merge results, and perform group-level analyses and plots.
-- Core utils (DFC stream, paths, loaders) live in `shared_code/` and are imported via the stable API `shared_code.shared_code.*`.
+- Core utils (DFC stream, paths, loaders) live in `shared_code/` and are imported via the stable API `shared_code.*`.
 
 ## Setup
 - Python 3.11. Install local package: `pip install -e shared_code`.
