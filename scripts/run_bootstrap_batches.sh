@@ -92,7 +92,7 @@ fi
 declare -a SUBSETS
 SUBSETS+=("regions500")
 for flag in within touching; do
-  for name in dmn memory sal lat 1st 2nd 3rd 4rd; do
+  for name in dmn mem sal lat 1st 2nd 3rd 4th; do
     SUBSETS+=("${name}_${flag}")
   done
 done
