@@ -32,7 +32,7 @@ from shared_code.fun_bootstrap import (
     pool_per_animal,
     bootstrap_group_from_pool,
 )
-
+#%%
 
 # ---------------- Context and IO helpers ---------------- #
 
@@ -669,7 +669,7 @@ P_METHOD_DESC = (
     "empirical two-sided bootstrap on percentile differences with +1/(B+1) smoothing"
 )
 
-
+#%%
 def process_region_dir(
     region_dir: Path,
     folder_label: str,
@@ -991,6 +991,7 @@ def process_region_dir(
 
     # ------ Parallel processing per window ------
     if cfg.jobs and cfg.jobs > 1 and cfg.parallel_scope == "windows":
+        print(f"Processing {len(win_files)} windows in parallel with {cfg.jobs} jobs...")
         results = Parallel(n_jobs=cfg.jobs, prefer="processes")(
             delayed(_process_win)(w, p) for (w, p) in win_files
         )
@@ -1002,6 +1003,7 @@ def process_region_dir(
                 pooltest_rows.extend(rp)
     #------ Sequential processing per window ------
     else:
+        print(f"Processing {len(win_files)} windows sequentially...")
         for w, p in maybe_tqdm(cfg.progress, win_files, f"{folder_label} windows"):
             rq, rd, rc, rp = _process_win(w, p)
             quantiles_rows.extend(rq)
@@ -1009,7 +1011,7 @@ def process_region_dir(
             corr_rows.extend(rc)
             pooltest_rows.extend(rp)
 
-    # Pools
+    # Pools of windows (e.g. short vs long)
     windows = [w for (w, _) in win_files]
     pools = _pool_windows_indices(windows, cfg.pool_threshold)
     if cfg.pool_all and windows:

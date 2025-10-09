@@ -46,6 +46,7 @@ PLOT_POOLTEST="${PLOT_POOLTEST:-1}"
 # Optional output directory control (empty means default to --subset)
 OUTDIR="${OUTDIR:-}"
 
+# Construct flags based on env vars
 outdir_flag=()
 if [[ -n "${OUTDIR}" ]]; then
   outdir_flag=(--outdir "${OUTDIR}")
@@ -102,7 +103,7 @@ if [[ "${ACTION}" == "list" ]]; then
   for s in "${SUBSETS[@]}"; do echo "  - ${s}"; done
   exit 0
 fi
-
+# Functions to run compute and plot steps
 run_compute() {
   local subset="$1"
   echo "[compute] subset=${subset}"
