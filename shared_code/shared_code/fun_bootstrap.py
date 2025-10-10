@@ -155,6 +155,7 @@ def bootstrap_percentiles(
 #     return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(nx), "n_y": int(ny)}
 
 
+
 def bootstrap_diff_percentiles(
     x: np.ndarray,
     y: np.ndarray,
