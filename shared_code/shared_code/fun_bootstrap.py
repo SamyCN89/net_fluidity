@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from numba import njit, prange
+from numba import njit, prange, set_num_threads
 import numpy as np
+
+set_num_threads(cfg.numba_threads if hasattr(cfg, "numba_threads") else 4)
 
 
 @njit(parallel=True, fastmath=True)
@@ -153,7 +155,6 @@ def bootstrap_percentiles(
 #     hi = np.percentile(boots, 100.0 - alpha, axis=0)
 #     sig = (lo > 0) | (hi < 0)
 #     return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(nx), "n_y": int(ny)}
-
 
 
 def bootstrap_diff_percentiles(
