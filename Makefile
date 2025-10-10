@@ -1,4 +1,5 @@
-.PHONY: check format lint report help-pipeline prep dfc allegiance-jobs allegiance-merge cohesion-compute cohesion-stats cohesion-report
+.PHONY: check format lint report help-pipeline prep dfc allegiance-jobs allegiance-merge cohesion-compute cohesion-stats cohesion-report \
+        help-speed speed-compute speed-plot speed-pooltest speed-cor speed-doctor test-smoke
 
 CHECK_DIRS = shared_code/shared_code metaconnectivity allegiance/src julien_data
 
@@ -83,3 +84,52 @@ cohesion-stats:
 
 cohesion-report:
 	$(PY) allegiance/src/cohesion_report.py --window-size $(WS) --lag $(LAG) --tau $(TAU) --save-plots --no-show
+
+# ---------------- dFC Speed Bootstrap (compute/plot) ----------------
+
+# Defaults (override on the command line)
+TR ?= 500
+SUBSET ?= regions500
+TAU_INDEX ?= 0
+N_BOOT ?= 2000
+JOBS ?= 8
+REGION_JOBS ?= 1
+OUTDIR ?=
+PAIR_SCOPE ?= windows
+Q ?= 1,5,50,95,99
+
+help-speed:
+	@echo "make speed-compute TR=$(TR) SUBSET=$(SUBSET) TAU_INDEX=$(TAU_INDEX) N_BOOT=$(N_BOOT) JOBS=$(JOBS) REGION_JOBS=$(REGION_JOBS)"
+	@echo "make speed-plot TR=$(TR) SUBSET=$(SUBSET)"
+	@echo "make speed-pooltest TR=$(TR) SUBSET=$(SUBSET)  # plot pool-tests if present"
+	@echo "make speed-cor TR=$(TR) SUBSET=$(SUBSET)       # plot correlations if present"
+	@echo "make speed-doctor                             # show/check/create paths; context checks"
+	@echo "make test-smoke                                # run smoke tests if available"
+
+speed-compute:
+	$(PY) scripts/compute_speed_bootstrap.py \
+	  --tr $(TR) --subset $(SUBSET) --tau-index $(TAU_INDEX) \
+	  --n-boot $(N_BOOT) --q $(Q) \
+	  --pool-threshold median --pool-all \
+	  --jobs $(JOBS) --region-jobs $(REGION_JOBS) --parallel-scope $(PAIR_SCOPE) \
+	  $(if $(OUTDIR),--outdir $(OUTDIR),) \
+	  --progress
+
+speed-plot:
+	$(PY) scripts/plot_speed_bootstrap.py \
+	  --tr $(TR) --subset $(SUBSET) \
+	  --plot-diffs-by-win --plot-diffs-bywin-grid --bywin-grid-cols 2
+
+speed-pooltest:
+	$(PY) scripts/plot_speed_pooltest.py \
+	  --tr $(TR) --subset $(SUBSET) --bywin --pooled --progress
+
+speed-cor:
+	$(PY) scripts/plot_speed_correlations.py \
+	  --tr $(TR) --subset $(SUBSET) --plot-by-win --plot-pooled --progress
+
+speed-doctor:
+	$(PY) scripts/paths_doctor.py --show --check-write --create --check-context
+
+test-smoke:
+	pytest -q || true

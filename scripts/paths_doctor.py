@@ -115,6 +115,23 @@ def main() -> int:
         help="Check write access to result/fig directories",
     )
     ap.add_argument(
+        "--check-context",
+        action="store_true",
+        help="Validate availability of preprocessed cognitive data CSV and required columns",
+    )
+    ap.add_argument(
+        "--group-cols",
+        type=str,
+        default="genotype,treatment",
+        help="Comma-separated group columns to validate in cognitive CSV",
+    )
+    ap.add_argument(
+        "--nor-col",
+        type=str,
+        default=None,
+        help="Optional explicit NOR column name to validate (auto-detect if omitted)",
+    )
+    ap.add_argument(
         "--show",
         action="store_true",
         help="Print all resolved paths grouped by category",
@@ -227,6 +244,44 @@ def main() -> int:
             print("- check_write_permissions: OK")
         except Exception as e:
             print("- check_write_permissions: FAILED ->", e)
+
+    # Context/cognitive CSV checks
+    if args.check_context:
+        try:
+            preproc = paths.get("preprocessed")
+            if preproc is None:
+                raise RuntimeError("paths['preprocessed'] is missing")
+            import pandas as pd
+            from pathlib import Path as _P
+            candidates = sorted(_P(preproc).glob("cog_data_filtered_animals_*_tr_*.csv"))
+            if not candidates:
+                print("- Context: no preprocessed cognitive CSV found under:", preproc)
+            else:
+                csv_path = candidates[0]
+                df = pd.read_csv(csv_path, nrows=5)
+                req_cols = [c.strip() for c in args.group_cols.split(',') if c.strip()]
+                missing = [c for c in req_cols if c not in df.columns]
+                if missing:
+                    print("- Context: missing group columns in cognitive CSV:", ", ".join(missing))
+                else:
+                    print("- Context: group columns present:", ", ".join(req_cols))
+                # NOR detection/validation
+                if args.nor_col:
+                    if args.nor_col in df.columns:
+                        print("- Context: NOR column present:", args.nor_col)
+                    else:
+                        print("- Context: NOR column NOT found:", args.nor_col)
+                else:
+                    nor_like = [c for c in df.columns if 'nor' in str(c).lower()]
+                    if len(nor_like) == 1:
+                        print("- Context: auto-detected NOR column:", nor_like[0])
+                    elif len(nor_like) > 1:
+                        print("- Context: multiple NOR-like columns found:", ", ".join(nor_like))
+                        print("           Pass --nor-col to choose one explicitly.")
+                    else:
+                        print("- Context: no NOR-like columns detected in cognitive CSV.")
+        except Exception as e:
+            print("- Context check failed:", e)
 
     print("\nDone.")
     return 0

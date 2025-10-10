@@ -52,6 +52,15 @@
   - Ensure terminology consistency (`bywin` vs `by-window`) across docs.
   - Add `.env.sample` with PATHS_ROOT / PATHS_ENV / PROJECT_ROOT_<ENV> / DATASET_NAME.
 
+- Data Tuning for Preprocessing
+  - Standardize raw cognitive file naming: provide `dataset/<DATASET_NAME>/cog_data/ROIs.xlsx` (or update `fun_paths`/`DFCAnalysis` to a single filename) to avoid doctor warnings.
+  - Document minimum schemas:
+    - Preprocessed cognitive CSV: `genotype`, `treatment`, and `index_NOR` (or chosen `--nor-col`).
+    - Metadata pickle keys (`mouse_metadata`, `region_labels`, `n_animals`, `regions`, `total_tr`, `lag`, `tau`, `window_range`).
+  - Add a small conversion script/notebook to build the preprocessed cognitive CSV from raw Excel (column selection, renaming, filtering), and write alongside metadata.
+  - Extend `paths_doctor.py` to recognize alternative raw filenames and report which one DFCAnalysis expects; downgrade warnings when preprocessed CSV is present.
+  - Provide a sample dataset scaffold generator for tests/demos (folders + tiny CSV/NPZ) and document how to plug a custom dataset via `PATHS_ROOT`.
+
 - Stretch Goals
   - Pooling rule variants: support include/exclude lists in addition to column-based matching.
   - Plot controls: expose alpha for pool-test “inside CI” markers and per-quantile styling.

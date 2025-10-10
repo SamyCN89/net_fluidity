@@ -112,6 +112,11 @@ export DATASET_NAME=ines_abdullah
 # Doctor: inspect + create + check write
 python scripts/paths_doctor.py --show --check-write --create
 ```
+Context checks
+- Validate cognitive CSV presence and columns (including NOR column) when planning to use correlations:
+```bash
+python scripts/paths_doctor.py --check-context
+```
 
 ## Basic Checks
 
