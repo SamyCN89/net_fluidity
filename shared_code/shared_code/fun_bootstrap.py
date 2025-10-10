@@ -93,71 +93,6 @@ def bootstrap_percentiles(
     return point, lo, hi
 
 
-<<<<<<< HEAD
-# def bootstrap_diff_percentiles(
-#     x: np.ndarray,
-#     y: np.ndarray,
-#     q: Iterable[float] = (1, 5, 50, 95, 99),
-#     n_boot: int = 2000,
-#     ci: float = 95.0,
-#     seed: int | None = 0,
-#     chunk: int = 128,
-#     dtype: np.dtype = float,
-#     val_dtype: np.dtype | None = None,
-#     index_dtype: np.dtype | None = None,
-# ) -> dict:
-#     """Bootstrap CI for percentile differences pct(x) - pct(y).
-
-#     - Resamples x and y independently, computes pct(x_b) - pct(y_b) per replicate,
-#       and derives CI bounds by percentile-of-bootstrap.
-#     - Returns dict with keys: 'q', 'point', 'lo', 'hi', 'sig', 'n_x', 'n_y'.
-#       'sig' marks whether the CI excludes 0.
-#     - NaNs in x and y are ignored.
-#     """
-#     x = np.asarray(x, val_dtype or float)
-#     y = np.asarray(y, val_dtype or float)
-#     x = x[~np.isnan(x)]
-#     y = y[~np.isnan(y)]
-#     q_arr = np.asarray(list(q), float)
-#     if x.size == 0 or y.size == 0:
-#         m = q_arr.size
-#         nan = np.full(m, np.nan)
-#         return {
-#             "q": q_arr,
-#             "point": nan,
-#             "lo": nan,
-#             "hi": nan,
-#             "sig": np.zeros(m, bool),
-#             "n_x": int(x.size),
-#             "n_y": int(y.size),
-#         }
-#     point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
-#     rng = np.random.default_rng(seed)
-#     nx, ny = x.size, y.size
-#     boots = np.empty((n_boot, q_arr.size), dtype)
-#     done = 0
-#     chunk = max(1, int(chunk))
-#     while done < n_boot:
-#         m = min(chunk, n_boot - done)
-#         if index_dtype is not None:
-#             idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False, dtype=index_dtype)
-#             idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False, dtype=index_dtype)
-#         else:
-#             idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
-#             idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
-#         xb = x[idx_x]
-#         yb = y[idx_y]
-#         pct_x = np.percentile(xb, q_arr, axis=1, overwrite_input=True)
-#         pct_y = np.percentile(yb, q_arr, axis=1, overwrite_input=True)
-#         boots[done : done + m, :] = (pct_x - pct_y).T
-#         done += m
-#     alpha = (100.0 - float(ci)) / 2.0
-#     lo = np.percentile(boots, alpha, axis=0)
-#     hi = np.percentile(boots, 100.0 - alpha, axis=0)
-#     sig = (lo > 0) | (hi < 0)
-#     return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(nx), "n_y": int(ny)}
-
-
 =======
 >>>>>>> 3c1c59b (Refactor bootstrap functions to remove unused Numba implementation and streamline percentile calculations)
 def bootstrap_diff_percentiles(
@@ -198,6 +133,7 @@ def bootstrap_diff_percentiles(
 =======
     point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
     nx, ny = x.size, y.size
+    nx, ny = x.size, y.size
     rng = np.random.default_rng(seed)
     boots = np.empty((n_boot, q_arr.size), dtype)
     done = 0
@@ -220,7 +156,6 @@ def bootstrap_diff_percentiles(
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
     sig = (lo > 0) | (hi < 0)
->>>>>>> 3c1c59b (Refactor bootstrap functions to remove unused Numba implementation and streamline percentile calculations)
     point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
 
     # Parallel bootstrap using numba-compiled kernel
