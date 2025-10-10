@@ -16,7 +16,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from tqdm import tqdm  
+from tqdm import tqdm
 from joblib import Parallel, delayed
 
 # %%
@@ -338,7 +338,7 @@ def _concat_per_animal(per_animals: list[list[np.ndarray]]) -> list[np.ndarray]:
 
 # ---------------- Small compute helpers (dedupe) ---------------- #
 
-
+# helper for p-value method description
 def _compute_group_quantiles(
     per_animal: list[np.ndarray],
     groups_map: dict,
@@ -355,6 +355,13 @@ def _compute_group_quantiles(
     region_label: str | None = None,
     window_label: int | str | None = None,
 ) -> tuple[list[dict[str, object]], dict | None]:
+
+    """ Compute per-group quantiles (with CIs) from per-animal data.
+
+    Returns:
+        rows_q: List of dictionaries containing the computed quantiles and CIs.
+    """
+
     rows_q: list[dict[str, object]] = []
     if boots_map is None:
         qa = bootstrap_groups_percentiles(
@@ -369,6 +376,7 @@ def _compute_group_quantiles(
             val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
             index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
         )
+
         for gk, res in qa.items():
             for qi, pt, lo, hi in zip(
                 res["q"], res["point"], res["lo"], res["hi"], strict=False
@@ -387,12 +395,13 @@ def _compute_group_quantiles(
                     }
                 )
         return rows_q, None
+
     # With provided boots_map, compute points from pooled values and CIs from boots
     q_arr = boots_map.get("__q__", np.asarray(q_list, float))
     for gk, idxs in groups_map.items():
         if gk == "__q__":
             continue
-        pooled_g = pool_per_animal(per_animal, idxs)
+        pooled_g = pool_per_animal(per_animal, idxs)  # pooled values for this group
         if pooled_g.size:
             point = np.percentile(pooled_g, q_arr)
         else:
@@ -416,6 +425,7 @@ def _compute_group_quantiles(
     return rows_q, boots_map
 
 
+# Helper for p-value method description
 def _compute_pair_diffs(
     per_animal: list[np.ndarray],
     groups_map: dict,
@@ -433,6 +443,9 @@ def _compute_pair_diffs(
     region_label: str | None = None,
     window_label: int | str | None = None,
 ) -> list[dict[str, object]]:
+
+    """ Compute per-pair percentile differences (with CIs and p-values) from per-animal data."""
+
     rows_d: list[dict[str, object]] = []
     if boots_map is None:
         for A, B in pairs:
@@ -491,13 +504,15 @@ def _compute_pair_diffs(
         lo, hi = ci_from_boots(diff_boots, ci=ci)
         pooled_A = pool_per_animal(per_animal, groups_map[A])
         pooled_B = pool_per_animal(per_animal, groups_map[B])
+        # Empirical two-sided p-values
         if pooled_A.size and pooled_B.size:
             point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
         else:
             point = np.full_like(q_arr, np.nan, dtype=float)
+        # Empirical two-sided p-values (with +1 correction)
         p_vals = [
             float(
-                (np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0)
+                (np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j]))  + 1.0)
                 / (diff_boots.shape[0] + 1.0)
             )
             for j in range(diff_boots.shape[1])
@@ -1069,46 +1084,7 @@ def process_region_dir(
                                 group_label=str(gk),
                             )
                         )
-        # # ------ Per-pair percentile differences Bootstrap with CIs and p-values
-        # for A, B in pairs:
-        #     if A not in groups_map or B not in groups_map:
-        #         continue
-        #     xa = pool_per_animal(per_animal, groups_map[A])
-        #     xb = pool_per_animal(per_animal, groups_map[B])
-        #     qd = bootstrap_diff_percentiles(
-        #         xa,
-        #         xb,
-        #         q=q_list,
-        #         n_boot=cfg.n_boot,
-        #         ci=cfg.ci,
-        #         seed=cfg.seed,
-        #         chunk=cfg.chunk,
-        #         dtype=np.dtype(boots_dtype),
-        #         val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-        #         index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
-        #     )
-        #     p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
-        #     for qi, pt, lo, hi, sig, p_i in zip(
-        #         qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
-        #     ):
-        #         rows_d.append(
-        #             {
-        #                 "region": roi,
-        #                 "roi": roi,
-        #                 "window": int(win),
-        #                 "A": A,
-        #                 "B": B,
-        #                 "q": float(qi),
-        #                 "diff": float(pt),
-        #                 "lo": float(lo),
-        #                 "hi": float(hi),
-        #                 "p": float(p_i),
-        #                 "p_method": P_METHOD_DESC,
-        #                 "significant": bool(sig),
-        #                 "n_a": int(qd.get("n_x", 0)),
-        #                 "n_b": int(qd.get("n_y", 0)),
-        #             }
-        #         )
+
         # Pool-test rows (per-window) if pooling supergroups are defined
         if pool_groups_map:
             for gk, idxs in groups_map.items():
@@ -1212,6 +1188,7 @@ def process_region_dir(
         pools["all"] = windows
     # Create pools based on window length
     if pools:
+        print(f"Processing {len(pools)} pools of windows...")
         by_win = {w: p for (w, p) in win_files}
         # Process each pool of windows
         for pool_name, pool_windows in pools.items():
@@ -1564,7 +1541,7 @@ def main() -> int:
         formatter_class=HelpFormatter,
         epilog=(
             "Example:\n"
-            "  python scripts/compute_speed_bootstrap.py \\\n+              --tr 400 --subset regions400 --tau-index 0 --n-boot 500 \\\n+              --reuse-group-boots --chunk 256 --progress\n"
+            "  python scripts/compute_speed_bootstrap.py \\\n              --tr 400 --subset regions400 --tau-index 0 --n-boot 500 \\\n              --reuse-group-boots --chunk 256 --progress\n"
         ),
     )
     ap.add_argument(
