@@ -3,9 +3,12 @@ Bootstrap kernels and helpers for dFC speed analyses.
 
 Centralized, vectorized implementations to be reused by CLIs and notebooks.
 """
+
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
+
+from numba import njit, prange
 import numpy as np
 
 
@@ -62,6 +65,29 @@ def bootstrap_percentiles(
     return point, lo, hi
 
 
+@njit(parallel=True, fastmath=True)
+def _bootstrap_diff_percentiles_numba(x, y, q_arr, n_boot, ci, seed):
+    rng = np.random.default_rng(seed)
+    nx, ny = x.size, y.size
+    nq = q_arr.size
+    boots = np.empty((n_boot, nq), np.float32)
+    for b in prange(n_boot):
+        idx_x = rng.integers(0, nx, nx)
+        idx_y = rng.integers(0, ny, ny)
+        xb = x[idx_x]
+        yb = y[idx_y]
+        for i in range(nq):
+            q = q_arr[i]
+            px = np.percentile(xb, q)
+            py = np.percentile(yb, q)
+            boots[b, i] = px - py
+    alpha = (100.0 - ci) / 2.0
+    lo = np.percentile(boots, alpha, axis=0)
+    hi = np.percentile(boots, 100.0 - alpha, axis=0)
+    sig = (lo > 0) | (hi < 0)
+    return lo, hi, sig
+
+
 def bootstrap_diff_percentiles(
     x: np.ndarray,
     y: np.ndarray,
@@ -102,28 +128,39 @@ def bootstrap_diff_percentiles(
     point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
     rng = np.random.default_rng(seed)
     nx, ny = x.size, y.size
-    boots = np.empty((n_boot, q_arr.size), dtype)
-    done = 0
-    chunk = max(1, int(chunk))
-    while done < n_boot:
-        m = min(chunk, n_boot - done)
-        if index_dtype is not None:
-            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False, dtype=index_dtype)
-            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False, dtype=index_dtype)
-        else:
-            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
-            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
-        xb = x[idx_x]
-        yb = y[idx_y]
-        pct_x = np.percentile(xb, q_arr, axis=1, overwrite_input=True)
-        pct_y = np.percentile(yb, q_arr, axis=1, overwrite_input=True)
-        boots[done : done + m, :] = (pct_x - pct_y).T
-        done += m
-    alpha = (100.0 - float(ci)) / 2.0
-    lo = np.percentile(boots, alpha, axis=0)
-    hi = np.percentile(boots, 100.0 - alpha, axis=0)
-    sig = (lo > 0) | (hi < 0)
-    return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(nx), "n_y": int(ny)}
+    # boots = np.empty((n_boot, q_arr.size), dtype)
+    # done = 0
+    # chunk = max(1, int(chunk))
+    # while done < n_boot:
+    #     m = min(chunk, n_boot - done)
+    #     if index_dtype is not None:
+    #         idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False, dtype=index_dtype)
+    #         idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False, dtype=index_dtype)
+    #     else:
+    #         idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
+    #         idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
+    #     xb = x[idx_x]
+    #     yb = y[idx_y]
+    #     pct_x = np.percentile(xb, q_arr, axis=1, overwrite_input=True)
+    #     pct_y = np.percentile(yb, q_arr, axis=1, overwrite_input=True)
+    #     boots[done : done + m, :] = (pct_x - pct_y).T
+    #     done += m
+    # alpha = (100.0 - float(ci)) / 2.0
+    # lo = np.percentile(boots, alpha, axis=0)
+    # hi = np.percentile(boots, 100.0 - alpha, axis=0)
+    # sig = (lo > 0) | (hi < 0)
+
+    lo, hi, sig = _bootstrap_diff_percentiles_numba(x, y, q_arr, n_boot, ci, seed)
+    point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
+    return {
+        "q": q_arr,
+        "point": point,
+        "lo": lo,
+        "hi": hi,
+        "sig": sig,
+        "n_x": int(nx),
+        "n_y": int(ny),
+    }
 
 
 def bootstrap_group_from_pool(
@@ -178,7 +215,9 @@ def bootstrap_group_from_pool(
     while done < n_boot:
         m = min(c, n_boot - done)
         if index_dtype is not None:
-            idx = rng.integers(0, npool, size=(m, nt), endpoint=False, dtype=index_dtype)
+            idx = rng.integers(
+                0, npool, size=(m, nt), endpoint=False, dtype=index_dtype
+            )
         else:
             idx = rng.integers(0, npool, size=(m, nt), endpoint=False)
         xb = pool[idx]
@@ -241,9 +280,15 @@ def bootstrap_groups_percentiles(
     for g, idxs in groups.items():
         pooled = pool_per_animal(per_animal, idxs)  # pool values for this group
         point, lo, hi = bootstrap_percentiles(
-            pooled, q=q_arr, n_boot=n_boot, ci=ci, seed=seed,
-            chunk=chunk, dtype=dtype,
-            val_dtype=val_dtype, index_dtype=index_dtype,
+            pooled,
+            q=q_arr,
+            n_boot=n_boot,
+            ci=ci,
+            seed=seed,
+            chunk=chunk,
+            dtype=dtype,
+            val_dtype=val_dtype,
+            index_dtype=index_dtype,
         )
         out[g] = {"q": q_arr, "point": point, "lo": lo, "hi": hi, "n": int(pooled.size)}
     return out
@@ -294,7 +339,7 @@ def bootstrap_groups_boots(
             ).T
             done += m
         out[g] = boots
-    out['__q__'] = q_arr  # attach once for convenience
+    out["__q__"] = q_arr  # attach once for convenience
     return out
 
 

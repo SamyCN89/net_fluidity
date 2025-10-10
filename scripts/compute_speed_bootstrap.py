@@ -6,34 +6,34 @@ Reads per-window NPZ speed files, bootstraps per-group percentiles and per-pair
 percentile differences (with empirical two-sided p-values), optionally pools
 windows and correlates pooled per-animal percentiles with a NOR score.
 """
-#%%
+# %%
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable
 import csv
 from dataclasses import dataclass, field
+import logging
 import os
 from pathlib import Path
 import re
-import logging
+from tqdm import tqdm  
+from joblib import Parallel, delayed
 
-#%%
+# %%
 import numpy as np
 import pandas as pd
-from joblib import Parallel, delayed
 
 # Centralized kernels (require shared_code package to be installed)
 from shared_code.fun_bootstrap import (
-    bootstrap_percentiles,
     bootstrap_diff_percentiles,
-    bootstrap_groups_percentiles,
+    bootstrap_group_from_pool,
     bootstrap_groups_boots,
+    bootstrap_groups_percentiles,
     ci_from_boots,
     pool_per_animal,
-    bootstrap_group_from_pool,
 )
-#%%
+
+# %%
 
 # ---------------- Context and IO helpers ---------------- #
 
@@ -48,6 +48,7 @@ def get_context(tr: int | None = None):
     except ModuleNotFoundError:
         # Retry with src/ on sys.path
         import sys
+
         here = Path(__file__).resolve()
         repo_root = here.parents[1]
         src_path = repo_root / "src"
@@ -88,7 +89,11 @@ def load_per_animal_from_npz(
         raise KeyError(f"NPZ file missing 'speeds' key: {npz_path}")
     speeds = z["speeds"]  # object array len=n_animals; each is 2D (n_tau, T_w)
     out: list[np.ndarray] = []
-    count = len(speeds) if (n_animals is None or n_animals <= 0) else min(int(n_animals), len(speeds))
+    count = (
+        len(speeds)
+        if (n_animals is None or n_animals <= 0)
+        else min(int(n_animals), len(speeds))
+    )
     for a in range(count):
         arr = np.asarray(speeds[a], float)
         if arr.ndim != 2:
@@ -172,7 +177,7 @@ class BootstrapConfig:
     index_dtype: np.dtype | None = None
 
     @classmethod
-    def from_args(cls, args) -> "BootstrapConfig":
+    def from_args(cls, args) -> BootstrapConfig:
         scope = _normalize_parallel_scope(args.parallel_scope)
         region_jobs = getattr(args, "region_jobs", None)
         if region_jobs is None or int(region_jobs) <= 0:
@@ -206,7 +211,7 @@ class BootstrapConfig:
             correlate_nor_by_groups=bool(args.correlate_nor_by_groups),
             n_animals=int(args.n_animals),
             bootstrap_pool_cols=args.bootstrap_pool_cols,
-            pool_exclude_self=bool(getattr(args, 'pool_exclude_self', False)),
+            pool_exclude_self=bool(getattr(args, "pool_exclude_self", False)),
         )
         # Flip defaults to memory-friendly unless user opts out
         if hasattr(args, "no_boots_float32") and bool(args.no_boots_float32):
@@ -220,13 +225,18 @@ class BootstrapConfig:
             cfg.index_int32 = True
         if ";" in str(cfg.q):
             cfg.q_list = [
-                float(s) for s in str(cfg.q).split(";") for s in s.split(",") if s.strip()
+                float(s)
+                for s in str(cfg.q).split(";")
+                for s in s.split(",")
+                if s.strip()
             ]
         else:
             cfg.q_list = [float(s) for s in str(cfg.q).split(",") if s.strip()]
         # Validate pair arity against group-cols length
         try:
-            arity = len([s.strip() for s in str(cfg.group_cols).split(',') if s.strip()])
+            arity = len(
+                [s.strip() for s in str(cfg.group_cols).split(",") if s.strip()]
+            )
         except Exception:
             arity = None
         cfg.pairs_list = _parse_pairs(cfg.pairs, arity=arity)
@@ -278,7 +288,11 @@ def _list_window_files(region_dir: Path) -> list[tuple[int, Path]]:
 
 def _find_region_folders(speed_root: Path) -> list[Path]:
     prefixed = sorted(
-        [p for p in speed_root.iterdir() if p.is_dir() and p.name.startswith("regions-")]
+        [
+            p
+            for p in speed_root.iterdir()
+            if p.is_dir() and p.name.startswith("regions-")
+        ]
     )
     if prefixed:
         return prefixed
@@ -302,7 +316,10 @@ def _pool_windows_indices(
         cut = int(np.median(vals))
     else:
         cut = int(threshold)
-    return {"short": [w for w in vals if w <= cut], "long": [w for w in vals if w > cut]}
+    return {
+        "short": [w for w in vals if w <= cut],
+        "long": [w for w in vals if w > cut],
+    }
 
 
 def _concat_per_animal(per_animals: list[list[np.ndarray]]) -> list[np.ndarray]:
@@ -353,7 +370,9 @@ def _compute_group_quantiles(
             index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
         )
         for gk, res in qa.items():
-            for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
+            for qi, pt, lo, hi in zip(
+                res["q"], res["point"], res["lo"], res["hi"], strict=False
+            ):
                 rows_q.append(
                     {
                         "region": region_label,
@@ -433,7 +452,9 @@ def _compute_pair_diffs(
                 val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
                 index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
             )
-            p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
+            p_arr = np.asarray(
+                qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float
+            ).ravel()
             for qi, pt, lo, hi, sig, p_i in zip(
                 qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
             ):
@@ -475,11 +496,16 @@ def _compute_pair_diffs(
         else:
             point = np.full_like(q_arr, np.nan, dtype=float)
         p_vals = [
-            float((np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0) / (diff_boots.shape[0] + 1.0))
+            float(
+                (np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0)
+                / (diff_boots.shape[0] + 1.0)
+            )
             for j in range(diff_boots.shape[1])
         ]
         sig = (lo > 0) | (hi < 0)
-        for qi, pt, lo_i, hi_i, p_i, s in zip(q_arr, point, lo, hi, p_vals, sig, strict=False):
+        for qi, pt, lo_i, hi_i, p_i, s in zip(
+            q_arr, point, lo, hi, p_vals, sig, strict=False
+        ):
             rows_d.append(
                 {
                     "region": region_label,
@@ -501,7 +527,9 @@ def _compute_pair_diffs(
     return rows_d
 
 
-def _parse_pairs(pairs_arg: str, *, arity: int | None = None) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+def _parse_pairs(
+    pairs_arg: str, *, arity: int | None = None
+) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
     """Parse pairs specification into a list of tuple pairs with optional arity validation.
 
     Format: '(a1,a2,...)-(b1,b2,...)' separated by ';'.
@@ -540,7 +568,9 @@ def _detect_nor_column(cog_df: pd.DataFrame, nor_col_opt: str | None) -> str | N
 def _format_group_label(group_cols: list[str], gk: tuple) -> str:
     try:
         vals = list(gk)
-        return ",".join(f"{c}={vals[i]}" for i, c in enumerate(group_cols) if i < len(vals))
+        return ",".join(
+            f"{c}={vals[i]}" for i, c in enumerate(group_cols) if i < len(vals)
+        )
     except Exception:
         return str(gk)
 
@@ -591,7 +621,10 @@ def _compute_nor_correlation_rows(
 
     # Optional SciPy for correlation p-values (falls back to NaN when unavailable)
     try:
-        from scipy.stats import pearsonr as _pearsonr, spearmanr as _spearmanr  # type: ignore
+        from scipy.stats import (  # type: ignore
+            pearsonr as _pearsonr,
+            spearmanr as _spearmanr,
+        )
     except Exception:  # pragma: no cover
         _pearsonr = None  # type: ignore
         _spearmanr = None  # type: ignore
@@ -699,7 +732,9 @@ def resolve_paths_and_groups(cfg: BootstrapConfig, data):
     return region_dirs, groups_map, outdir, q_path, d_path, c_path
 
 
-def _build_pool_groups(groups_map: dict, group_cols: list[str], pool_cols_opt: str | None) -> dict | None:
+def _build_pool_groups(
+    groups_map: dict, group_cols: list[str], pool_cols_opt: str | None
+) -> dict | None:
     """Build mapping group_key -> pooled supergroup indices from a subset of columns.
 
     - When pool_cols_opt is None, returns None (no pooling for bootstrap-from-pool tests).
@@ -852,7 +887,9 @@ def write_outputs(
             w.writerows(p_rows)
         print(f"Wrote: {ptest_path}")
         try:
-            ptest_path_sfx = outdir / f"speed_bootstrap_pooltest_nboot-{int(n_boot)}.csv"
+            ptest_path_sfx = (
+                outdir / f"speed_bootstrap_pooltest_nboot-{int(n_boot)}.csv"
+            )
             with ptest_path_sfx.open("w", newline="") as f2:
                 w2 = csv.DictWriter(f2, fieldnames=p_cols)
                 w2.writeheader()
@@ -870,7 +907,8 @@ P_METHOD_DESC = (
     "empirical two-sided bootstrap on percentile differences with +1/(B+1) smoothing"
 )
 
-#%%
+
+# %%
 def process_region_dir(
     region_dir: Path,
     folder_label: str,
@@ -908,8 +946,14 @@ def process_region_dir(
 
     # Build pooled-supergroup mapping if requested
     group_cols_list = [s.strip() for s in str(cfg.group_cols).split(",") if s.strip()]
-    pool_cols_list = [s.strip() for s in str(cfg.bootstrap_pool_cols).split(",") if s.strip()] if cfg.bootstrap_pool_cols else []
-    pool_groups_map = _build_pool_groups(groups_map, group_cols_list, cfg.bootstrap_pool_cols)
+    pool_cols_list = (
+        [s.strip() for s in str(cfg.bootstrap_pool_cols).split(",") if s.strip()]
+        if cfg.bootstrap_pool_cols
+        else []
+    )
+    pool_groups_map = _build_pool_groups(
+        groups_map, group_cols_list, cfg.bootstrap_pool_cols
+    )
     pos_map = {c: i for i, c in enumerate(group_cols_list)}
 
     # ------ Per-window processing ------
@@ -917,7 +961,12 @@ def process_region_dir(
         win: int,
         npz: Path,
         folder_label: str = folder_label,
-    ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    ) -> tuple[
+        list[dict[str, object]],
+        list[dict[str, object]],
+        list[dict[str, object]],
+        list[dict[str, object]],
+    ]:
 
         # Initialize per-window result rows
         rows_q: list[dict[str, object]] = []
@@ -984,82 +1033,82 @@ def process_region_dir(
             window_label=int(win),
         )
         rows_d.extend(drows)
-            # Per-window correlations with NOR, if requested
-            if cfg.correlate_nor and isinstance(data.cog_data_filtered, pd.DataFrame):
-                nor_col = _detect_nor_column(data.cog_data_filtered, cfg.nor_col)
-                if nor_col:
-                    # Overall (all animals)
-                    rows_c.extend(
-                        _compute_nor_correlation_rows(
-                            per_animal,
-                            q_list,
-                            data.cog_data_filtered,
-                            nor_col,
-                            roi,
-                            int(win),
-                            mat=None,
-                            indices=None,
-                            group_label="__ALL__",
-                        )
+        # Per-window correlations with NOR, if requested
+        if cfg.correlate_nor and isinstance(data.cog_data_filtered, pd.DataFrame):
+            nor_col = _detect_nor_column(data.cog_data_filtered, cfg.nor_col)
+            if nor_col:
+                # Overall (all animals)
+                rows_c.extend(
+                    _compute_nor_correlation_rows(
+                        per_animal,
+                        q_list,
+                        data.cog_data_filtered,
+                        nor_col,
+                        roi,
+                        int(win),
+                        mat=None,
+                        indices=None,
+                        group_label="__ALL__",
                     )
-                    # Per-group correlations
-                    if cfg.correlate_nor_by_groups:
-                        for gk, idxs in groups_map.items():
-                            if gk == "__q__":
-                                continue
-                            rows_c.extend(
-                                _compute_nor_correlation_rows(
-                                    per_animal,
-                                    q_list,
-                                    data.cog_data_filtered,
-                                    nor_col,
-                                    roi,
-                                    int(win),
-                                    mat=None,
-                                    indices=[int(i) for i in idxs],
-                                    group_label=str(gk),
-                                )
-                            )
-            # ------ Per-pair percentile differences Bootstrap with CIs and p-values
-            for A, B in pairs:
-                if A not in groups_map or B not in groups_map:
-                    continue
-                xa = pool_per_animal(per_animal, groups_map[A])
-                xb = pool_per_animal(per_animal, groups_map[B])
-                qd = bootstrap_diff_percentiles(
-                    xa,
-                    xb,
-                    q=q_list,
-                    n_boot=cfg.n_boot,
-                    ci=cfg.ci,
-                    seed=cfg.seed,
-                    chunk=cfg.chunk,
-                    dtype=np.dtype(boots_dtype),
-                    val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                    index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
                 )
-                p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
-                for qi, pt, lo, hi, sig, p_i in zip(
-                    qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
-                ):
-                    rows_d.append(
-                        {
-                            "region": roi,
-                            "roi": roi,
-                            "window": int(win),
-                            "A": A,
-                            "B": B,
-                            "q": float(qi),
-                            "diff": float(pt),
-                            "lo": float(lo),
-                            "hi": float(hi),
-                            "p": float(p_i),
-                            "p_method": P_METHOD_DESC,
-                            "significant": bool(sig),
-                            "n_a": int(qd.get("n_x", 0)),
-                            "n_b": int(qd.get("n_y", 0)),
-                        }
-                    )
+                # Per-group correlations
+                if cfg.correlate_nor_by_groups:
+                    for gk, idxs in groups_map.items():
+                        if gk == "__q__":
+                            continue
+                        rows_c.extend(
+                            _compute_nor_correlation_rows(
+                                per_animal,
+                                q_list,
+                                data.cog_data_filtered,
+                                nor_col,
+                                roi,
+                                int(win),
+                                mat=None,
+                                indices=[int(i) for i in idxs],
+                                group_label=str(gk),
+                            )
+                        )
+        # # ------ Per-pair percentile differences Bootstrap with CIs and p-values
+        # for A, B in pairs:
+        #     if A not in groups_map or B not in groups_map:
+        #         continue
+        #     xa = pool_per_animal(per_animal, groups_map[A])
+        #     xb = pool_per_animal(per_animal, groups_map[B])
+        #     qd = bootstrap_diff_percentiles(
+        #         xa,
+        #         xb,
+        #         q=q_list,
+        #         n_boot=cfg.n_boot,
+        #         ci=cfg.ci,
+        #         seed=cfg.seed,
+        #         chunk=cfg.chunk,
+        #         dtype=np.dtype(boots_dtype),
+        #         val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+        #         index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+        #     )
+        #     p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
+        #     for qi, pt, lo, hi, sig, p_i in zip(
+        #         qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
+        #     ):
+        #         rows_d.append(
+        #             {
+        #                 "region": roi,
+        #                 "roi": roi,
+        #                 "window": int(win),
+        #                 "A": A,
+        #                 "B": B,
+        #                 "q": float(qi),
+        #                 "diff": float(pt),
+        #                 "lo": float(lo),
+        #                 "hi": float(hi),
+        #                 "p": float(p_i),
+        #                 "p_method": P_METHOD_DESC,
+        #                 "significant": bool(sig),
+        #                 "n_a": int(qd.get("n_x", 0)),
+        #                 "n_b": int(qd.get("n_y", 0)),
+        #             }
+        #         )
         # Pool-test rows (per-window) if pooling supergroups are defined
         if pool_groups_map:
             for gk, idxs in groups_map.items():
@@ -1080,10 +1129,16 @@ def process_region_dir(
                     seed=cfg.seed,
                     chunk=cfg.chunk,
                     dtype=np.dtype(boots_dtype),
-                    val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                    index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                    val_dtype=(
+                        None if values_dtype is None else np.dtype(values_dtype)
+                    ),
+                    index_dtype=(
+                        None if index_dtype is None else np.dtype(index_dtype)
+                    ),
                 )
-                p_arr = np.asarray(res.get("p", np.full(len(res.get("q", [])), np.nan)), float).ravel()
+                p_arr = np.asarray(
+                    res.get("p", np.full(len(res.get("q", [])), np.nan)), float
+                ).ravel()
                 for qi, tpt, ppt, lo_i, hi_i, inside_i, p_i in zip(
                     res["q"],
                     res["target_point"],
@@ -1103,7 +1158,9 @@ def process_region_dir(
                             "group_label": _format_group_label(group_cols_list, gk),
                             "group_cols": ",".join(group_cols_list),
                             "pool_by": ",".join(pool_cols_list),
-                            "pool_match": _format_pool_match(pool_cols_list, pos_map, gk),
+                            "pool_match": _format_pool_match(
+                                pool_cols_list, pos_map, gk
+                            ),
                             "pool_exclude_self": bool(cfg.pool_exclude_self),
                             "q": float(qi),
                             "target_point": float(tpt),
@@ -1121,9 +1178,16 @@ def process_region_dir(
 
     # ------ Parallel processing per window ------
     if cfg.jobs and cfg.jobs > 1 and cfg.parallel_scope in {"windows", "both"}:
-        print(f"Processing {len(win_files)} windows in parallel with {cfg.jobs} jobs...")
+        print(
+            f"Processing {len(win_files)} windows in parallel with {cfg.jobs} jobs..."
+        )
+        from tqdm import tqdm  # type: ignore
+
+        iterator = win_files
+        if cfg.progress:
+            iterator = tqdm(win_files, desc=f"{folder_label} windows", unit="win")
         results = Parallel(n_jobs=cfg.jobs, prefer="processes")(
-            delayed(_process_win)(w, p) for (w, p) in win_files
+            delayed(_process_win)(w, p) for (w, p) in iterator
         )
         if results:
             for rq, rd, rc, rp in results:
@@ -1131,7 +1195,7 @@ def process_region_dir(
                 diffs_rows.extend(rd)
                 corr_rows.extend(rc)
                 pooltest_rows.extend(rp)
-    #------ Sequential processing per window ------
+    # ------ Sequential processing per window ------
     else:
         print(f"Processing {len(win_files)} windows sequentially...")
         for w, p in maybe_tqdm(cfg.progress, win_files, f"{folder_label} windows"):
@@ -1154,13 +1218,13 @@ def process_region_dir(
             if not pool_windows:
                 continue
             per_animals = [
-            load_per_animal_from_npz(
-                by_win[w],
-                tau_index=None if cfg.tau_index < 0 else cfg.tau_index,
-                n_animals=cfg.n_animals,
-            )
-            for w in pool_windows
-            if w in by_win
+                load_per_animal_from_npz(
+                    by_win[w],
+                    tau_index=None if cfg.tau_index < 0 else cfg.tau_index,
+                    n_animals=cfg.n_animals,
+                )
+                for w in pool_windows
+                if w in by_win
             ]
             # Pool per-animal values across all windows in the pool
             pooled = _concat_per_animal(per_animals)
@@ -1183,8 +1247,12 @@ def process_region_dir(
                     seed=cfg.seed,
                     chunk=cfg.chunk,
                     dtype=np.dtype(boots_dtype),
-                    val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                    index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                    val_dtype=(
+                        None if values_dtype is None else np.dtype(values_dtype)
+                    ),
+                    index_dtype=(
+                        None if index_dtype is None else np.dtype(index_dtype)
+                    ),
                 )
             qrows, _ = _compute_group_quantiles(
                 pooled,
@@ -1219,7 +1287,7 @@ def process_region_dir(
                 window_label=pool_name,
             )
             diffs_rows.extend(drows)
-                # Pool-test against pooled supergroups (pooled windows), reuse boots not needed
+            # Pool-test against pooled supergroups (pooled windows), reuse boots not needed
             if pool_groups_map:
                 for gk, idxs in groups_map.items():
                     if gk == "__q__":
@@ -1239,10 +1307,16 @@ def process_region_dir(
                         seed=cfg.seed,
                         chunk=cfg.chunk,
                         dtype=np.dtype(boots_dtype),
-                        val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                        index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                        val_dtype=(
+                            None if values_dtype is None else np.dtype(values_dtype)
+                        ),
+                        index_dtype=(
+                            None if index_dtype is None else np.dtype(index_dtype)
+                        ),
                     )
-                    p_arr = np.asarray(res.get("p", np.full(len(res.get("q", [])), np.nan)), float).ravel()
+                    p_arr = np.asarray(
+                        res.get("p", np.full(len(res.get("q", [])), np.nan)), float
+                    ).ravel()
                     for qi, tpt, ppt, lo_i, hi_i, inside_i, p_i in zip(
                         res["q"],
                         res["target_point"],
@@ -1254,27 +1328,29 @@ def process_region_dir(
                         strict=False,
                     ):
                         pooltest_rows.append(
-                                {
-                                    "region": folder_label,
-                                    "roi": folder_label,
-                                    "window": pool_name,
-                                    "group": gk,
-                                    "group_label": _format_group_label(group_cols_list, gk),
-                                    "group_cols": ",".join(group_cols_list),
-                                    "pool_by": ",".join(pool_cols_list),
-                                    "pool_match": _format_pool_match(pool_cols_list, pos_map, gk),
-                                    "pool_exclude_self": bool(cfg.pool_exclude_self),
-                                    "q": float(qi),
-                                    "target_point": float(tpt),
-                                    "pool_point": float(ppt),
-                                    "lo": float(lo_i),
-                                    "hi": float(hi_i),
-                                    "inside": bool(inside_i),
-                                    "p": float(p_i),
-                                    "n_target": int(res.get("n_target", 0)),
-                                    "n_pool": int(res.get("n_pool", 0)),
-                                }
-                            )
+                            {
+                                "region": folder_label,
+                                "roi": folder_label,
+                                "window": pool_name,
+                                "group": gk,
+                                "group_label": _format_group_label(group_cols_list, gk),
+                                "group_cols": ",".join(group_cols_list),
+                                "pool_by": ",".join(pool_cols_list),
+                                "pool_match": _format_pool_match(
+                                    pool_cols_list, pos_map, gk
+                                ),
+                                "pool_exclude_self": bool(cfg.pool_exclude_self),
+                                "q": float(qi),
+                                "target_point": float(tpt),
+                                "pool_point": float(ppt),
+                                "lo": float(lo_i),
+                                "hi": float(hi_i),
+                                "inside": bool(inside_i),
+                                "p": float(p_i),
+                                "n_target": int(res.get("n_target", 0)),
+                                "n_pool": int(res.get("n_pool", 0)),
+                            }
+                        )
             else:
                 qa = bootstrap_groups_percentiles(
                     pooled,
@@ -1283,11 +1359,15 @@ def process_region_dir(
                     n_boot=cfg.n_boot,
                     ci=cfg.ci,
                     seed=cfg.seed,
-                    early_stop=0.0,
+                    # early_stop=0.0,
                     chunk=cfg.chunk,
                     dtype=np.dtype(boots_dtype),
-                    val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                    index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                    val_dtype=(
+                        None if values_dtype is None else np.dtype(values_dtype)
+                    ),
+                    index_dtype=(
+                        None if index_dtype is None else np.dtype(index_dtype)
+                    ),
                 )
                 for gk, res in qa.items():
                     for qi, pt, lo, hi in zip(
@@ -1357,12 +1437,24 @@ def process_region_dir(
                         seed=cfg.seed,
                         chunk=cfg.chunk,
                         dtype=np.dtype(boots_dtype),
-                        val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                        index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                        val_dtype=(
+                            None if values_dtype is None else np.dtype(values_dtype)
+                        ),
+                        index_dtype=(
+                            None if index_dtype is None else np.dtype(index_dtype)
+                        ),
                     )
-                    p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
+                    p_arr = np.asarray(
+                        qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float
+                    ).ravel()
                     for qi, pt, lo, hi, sig, p_i in zip(
-                        qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
+                        qd["q"],
+                        qd["point"],
+                        qd["lo"],
+                        qd["hi"],
+                        qd["sig"],
+                        p_arr,
+                        strict=False,
                     ):
                         diffs_rows.append(
                             {
@@ -1391,7 +1483,9 @@ def process_region_dir(
                         pool_idxs = list(pool_groups_map.get(gk, []))
                         if cfg.pool_exclude_self:
                             s_self = set(int(i) for i in idxs)
-                            pool_idxs = [int(i) for i in pool_idxs if int(i) not in s_self]
+                            pool_idxs = [
+                                int(i) for i in pool_idxs if int(i) not in s_self
+                            ]
                         pool_vals = pool_per_animal(pooled, pool_idxs)
                         res = bootstrap_group_from_pool(
                             target_vals,
@@ -1402,10 +1496,16 @@ def process_region_dir(
                             seed=cfg.seed,
                             chunk=cfg.chunk,
                             dtype=np.dtype(boots_dtype),
-                            val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+                            val_dtype=(
+                                None if values_dtype is None else np.dtype(values_dtype)
+                            ),
+                            index_dtype=(
+                                None if index_dtype is None else np.dtype(index_dtype)
+                            ),
                         )
-                        p_arr = np.asarray(res.get("p", np.full(len(res.get("q", [])), np.nan)), float).ravel()
+                        p_arr = np.asarray(
+                            res.get("p", np.full(len(res.get("q", [])), np.nan)), float
+                        ).ravel()
                         for qi, tpt, ppt, lo_i, hi_i, inside_i, p_i in zip(
                             res["q"],
                             res["target_point"],
@@ -1422,10 +1522,14 @@ def process_region_dir(
                                     "roi": folder_label,
                                     "window": pool_name,
                                     "group": gk,
-                                    "group_label": _format_group_label(group_cols_list, gk),
+                                    "group_label": _format_group_label(
+                                        group_cols_list, gk
+                                    ),
                                     "group_cols": ",".join(group_cols_list),
                                     "pool_by": ",".join(pool_cols_list),
-                                    "pool_match": _format_pool_match(pool_cols_list, pos_map, gk),
+                                    "pool_match": _format_pool_match(
+                                        pool_cols_list, pos_map, gk
+                                    ),
                                     "pool_exclude_self": bool(cfg.pool_exclude_self),
                                     "q": float(qi),
                                     "target_point": float(tpt),
@@ -1442,7 +1546,8 @@ def process_region_dir(
 
 
 # ---------------- CLI ---------------- #
-#%%
+# %%
+
 
 def main() -> int:
     class HelpFormatter(
@@ -1462,7 +1567,9 @@ def main() -> int:
             "  python scripts/compute_speed_bootstrap.py \\\n+              --tr 400 --subset regions400 --tau-index 0 --n-boot 500 \\\n+              --reuse-group-boots --chunk 256 --progress\n"
         ),
     )
-    ap.add_argument("--tr", type=int, default=500, help="Total TR used to select metadata.")
+    ap.add_argument(
+        "--tr", type=int, default=500, help="Total TR used to select metadata."
+    )
     ap.add_argument(
         "--subset",
         type=str,
@@ -1499,22 +1606,50 @@ def main() -> int:
             "Arity must match --group-cols."
         ),
     )
-    ap.add_argument("--n-boot", type=int, default=2000, help="Bootstrap replicates per unit.")
+    ap.add_argument(
+        "--n-boot", type=int, default=2000, help="Bootstrap replicates per unit."
+    )
     ap.add_argument("--seed", type=int, default=0, help="Base RNG seed.")
-    ap.add_argument("--ci", type=float, default=95.0, help="Confidence level for CIs (percent).")
+    ap.add_argument(
+        "--ci", type=float, default=95.0, help="Confidence level for CIs (percent)."
+    )
     # Memory-friendly defaults; opt out with --no-* flags
-    ap.add_argument("--boots-float32", action="store_true", help="(Deprecated) Use float32 boots (now default).")
-    ap.add_argument("--values-float32", action="store_true", help="Cast values to float32 before resampling.")
-    ap.add_argument("--index-int32", action="store_true", help="(Deprecated) Use int32 indices (now default).")
-    ap.add_argument("--no-boots-float32", action="store_true", help="Store boots in float64 (opt out of default float32).")
-    ap.add_argument("--no-index-int32", action="store_true", help="Use platform default index dtype (opt out of int32).")
+    ap.add_argument(
+        "--boots-float32",
+        action="store_true",
+        help="(Deprecated) Use float32 boots (now default).",
+    )
+    ap.add_argument(
+        "--values-float32",
+        action="store_true",
+        help="Cast values to float32 before resampling.",
+    )
+    ap.add_argument(
+        "--index-int32",
+        action="store_true",
+        help="(Deprecated) Use int32 indices (now default).",
+    )
+    ap.add_argument(
+        "--no-boots-float32",
+        action="store_true",
+        help="Store boots in float64 (opt out of default float32).",
+    )
+    ap.add_argument(
+        "--no-index-int32",
+        action="store_true",
+        help="Use platform default index dtype (opt out of int32).",
+    )
     ap.add_argument(
         "--pool-threshold",
         type=str,
         default=None,
         help="Pool windows into short/long by 'median' or integer cutoff.",
     )
-    ap.add_argument("--pool-all", action="store_true", help="Also add an 'all' pool combining all windows.")
+    ap.add_argument(
+        "--pool-all",
+        action="store_true",
+        help="Also add an 'all' pool combining all windows.",
+    )
     ap.add_argument(
         "--jobs",
         type=int,
@@ -1539,8 +1674,12 @@ def main() -> int:
         default="windows",
         help="Parallelization scope: 'windows', 'regions', or 'both'.",
     )
-    ap.add_argument("--load-cache", action="store_true", help="Reuse existing CSVs if present.")
-    ap.add_argument("--progress", action="store_true", help="Show progress bars (requires tqdm).")
+    ap.add_argument(
+        "--load-cache", action="store_true", help="Reuse existing CSVs if present."
+    )
+    ap.add_argument(
+        "--progress", action="store_true", help="Show progress bars (requires tqdm)."
+    )
     ap.add_argument(
         "--group-cols",
         type=str,
@@ -1574,7 +1713,12 @@ def main() -> int:
         action="store_true",
         help="Also compute correlations within each group (per --group-cols).",
     )
-    ap.add_argument("--n-animals", type=int, default=0, help="Limit number of animals loaded per file (0 = all).")
+    ap.add_argument(
+        "--n-animals",
+        type=int,
+        default=0,
+        help="Limit number of animals loaded per file (0 = all).",
+    )
     ap.add_argument(
         "--bootstrap-pool-cols",
         type=str,
@@ -1587,7 +1731,12 @@ def main() -> int:
         help="When pool-testing a group, exclude its own indices from the pooled supergroup.",
     )
     # Advanced perf knob: chunk controls vectorized resampling batch size
-    ap.add_argument("--chunk", type=int, default=128, help="Bootstrap chunk size (perf/memory knob).")
+    ap.add_argument(
+        "--chunk",
+        type=int,
+        default=128,
+        help="Bootstrap chunk size (perf/memory knob).",
+    )
 
     # args = ap.parse_args()
     args, _ = ap.parse_known_args()
@@ -1596,12 +1745,22 @@ def main() -> int:
     multi_worker = False
     if cfg.parallel_scope in {"windows", "both"} and cfg.jobs and cfg.jobs > 1:
         multi_worker = True
-    if cfg.parallel_scope in {"regions", "both"} and cfg.region_jobs and cfg.region_jobs > 1:
+    if (
+        cfg.parallel_scope in {"regions", "both"}
+        and cfg.region_jobs
+        and cfg.region_jobs > 1
+    ):
         multi_worker = True
-    _blas_threads = cfg.blas_threads if cfg.blas_threads is not None else (1 if multi_worker else None)
+    _blas_threads = (
+        cfg.blas_threads
+        if cfg.blas_threads is not None
+        else (1 if multi_worker else None)
+    )
     limit_blas_threads(_blas_threads)
     # Warn if regions scope is requested without region parallelism
-    if cfg.parallel_scope in {"regions", "both"} and (not cfg.region_jobs or int(cfg.region_jobs) <= 1):
+    if cfg.parallel_scope in {"regions", "both"} and (
+        not cfg.region_jobs or int(cfg.region_jobs) <= 1
+    ):
         logging.warning(
             "parallel-scope includes regions but --region-jobs is 1; set --region-jobs > 1 to parallelize regions."
         )
@@ -1619,17 +1778,19 @@ def main() -> int:
     data = get_context(tr=cfg.tr)
     region_dirs, groups_map, outdir, q_path, d_path, c_path = resolve_paths_and_groups(
         cfg, data
-    ) # region_dirs: list of Path, groups_map: dict, outdir: Path, q_path: Path, d_path: diffs_path, c_path: correaltion Path
+    )  # region_dirs: list of Path, groups_map: dict, outdir: Path, q_path: Path, d_path: diffs_path, c_path: correaltion Path
 
     # --------- Load-cache behavior --------- #
     # Load-cache behavior: skip recomputation if outputs exist
-    if cfg.load_cache and q_path.exists() and d_path.exists() and (
-        not cfg.correlate_nor or c_path.exists()
+    if (
+        cfg.load_cache
+        and q_path.exists()
+        and d_path.exists()
+        and (not cfg.correlate_nor or c_path.exists())
     ):
         print(
             "Found existing outputs (load-cache enabled):\n"
-            f"  {q_path}\n  {d_path}"
-            + (f"\n  {c_path}" if cfg.correlate_nor else "")
+            f"  {q_path}\n  {d_path}" + (f"\n  {c_path}" if cfg.correlate_nor else "")
         )
         return 0
 
@@ -1686,7 +1847,18 @@ def main() -> int:
             corr_rows.extend(rc)
             pooltest_rows.extend(rp)
     else:
-        for region_dir in maybe_tqdm(cfg.progress, region_dirs, "Regions"):
+        if cfg.progress:
+            region_iter = tqdm(region_dirs, desc="Regions", unit="region")
+        else:
+            region_iter = region_dirs
+
+        for i, region_dir in enumerate(region_iter, 1):
+            folder_label = (
+                region_dir.name.replace("regions-", "")
+                if region_dir.name.startswith("regions-")
+                else region_dir.name
+            )
+            print(f"\n▶️  [{i}/{len(region_dirs)}] Processing region: {folder_label}")
             rq, rd, rc, rp = _process_region_dir(region_dir)
             quantiles_rows.extend(rq)
             diffs_rows.extend(rd)
@@ -1694,7 +1866,9 @@ def main() -> int:
             pooltest_rows.extend(rp)
 
     # Write CSVs consistently (also write suffixed copies with n_boot)
-    write_outputs(quantiles_rows, diffs_rows, corr_rows, outdir, cfg.n_boot, p_rows=pooltest_rows)
+    write_outputs(
+        quantiles_rows, diffs_rows, corr_rows, outdir, cfg.n_boot, p_rows=pooltest_rows
+    )
     return 0
 
 
