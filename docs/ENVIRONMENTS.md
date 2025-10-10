@@ -1,5 +1,28 @@
 # Environments
 
+## Dev Setup (TL;DR)
+
+```bash
+# 1) Create env (Conda recommended)
+conda create -n funcog python=3.11 -y && conda activate funcog
+conda install -y -c conda-forge numpy scipy numba numexpr joblib tqdm pandas matplotlib seaborn scikit-learn networkx statsmodels openpyxl python-dotenv
+pip install duecredit webcolors statannotations "git+https://github.com/fiuneuro/brainconn.git"
+
+# 2) Install local package (needed by allegiance/src)
+pip install -e shared_code
+
+# 3) Configure paths (env vars or .env)
+export DATASET_NAME=ines_abdullah
+# optional: PATHS_ROOT or PATHS_ENV/PROJECT_ROOT_*
+
+# 4) Quick sanity
+python - <<'PY'
+from shared_code.fun_paths import get_paths
+print('paths OK:', sorted(get_paths().keys())[:5])
+PY
+```
+
+
 Guides for setting up a reliable Python environment for this repo, including a Conda workflow (recommended) and a pip/venv alternative. Targets Python 3.11.
 
 ## Overview

@@ -37,6 +37,9 @@ Applies to both human developers and automated agents (e.g., Codex, Copilot Work
 5. **Sync Docs** → if code layout or APIs change, update `shared_code/README.md` and `docs/architecture.md` in the same PR.
 6. **Review** → ensure all changes are reviewed by a human before merging to `main`.
 
+Scientific invariants over implementation
+- When optimizing numerics, preserve the scientific definition and verify equivalence on representative data. For example, `allegiance/src/cohesion_compute.py` now uses a vectorized diff-based event extraction (pairing rising/falling edges) instead of a Python scan loop; this was validated to produce identical onsets/offsets/durations across randomized tests and multiple `min_duration` thresholds. Prefer such transparent optimizations that do not alter results.
+
 ---
 
 ## 4. Workflow & Quality Gates
@@ -108,6 +111,5 @@ Applies to both human developers and automated agents (e.g., Codex, Copilot Work
 - Roadmap: `docs/ROADMAP.md`
 - Tests: `pytest.ini`, `tests_smoke/`
 - Lint config: `pyproject.toml`
-
 
 

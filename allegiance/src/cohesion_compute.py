@@ -200,27 +200,39 @@ def compute_time_ratio_and_binary(
 def extract_events_from_binary(
     binary_ATL: np.ndarray, min_duration: int = 1
 ) -> pd.DataFrame:
-    """Binary ATL (A×T×L) → events DataFrame with onset/offset/duration per burst (scan-based)."""
+    """Vectorized diff-based event extraction.
+
+    Binary ATL (A×T×L) → events DataFrame with onset/offset/duration per burst.
+    Matches the scan-based semantics: onset inclusive, offset exclusive, duration = offset - onset.
+    """
     A, T, L = binary_ATL.shape
-    rows = []
-    for a in range(A):
-        for l in range(L):
-            z = binary_ATL[a, :, l]
-            t = 0
-            while t < T:
-                if z[t] == 1:
-                    s = t
-                    while t < T and z[t] == 1:
-                        t += 1
-                    e = t
-                    dur = e - s
-                    if dur >= int(min_duration):
-                        rows.append((a, l, s, e, dur))
-                else:
-                    t += 1
-    return pd.DataFrame(
-        rows, columns=["animal", "link", "onset", "offset", "duration"]
-    ).reset_index(drop=True)
+    X = binary_ATL.astype(np.int8, copy=False)
+    z = np.zeros((A, 1, L), dtype=np.int8)
+    d = np.diff(np.concatenate((z, X, z), axis=1), axis=1)
+    on_idx = np.argwhere(d == 1)
+    off_idx = np.argwhere(d == -1)
+
+    on = pd.DataFrame(on_idx, columns=["animal", "time", "link"]).sort_values(
+        ["animal", "link", "time"]
+    )
+    off = pd.DataFrame(off_idx, columns=["animal", "time", "link"]).sort_values(
+        ["animal", "link", "time"]
+    )
+    # Pair on/off per (animal, link)
+    on["idx"] = on.groupby(["animal", "link"]).cumcount()
+    off["idx"] = off.groupby(["animal", "link"]).cumcount()
+    ev = (
+        on.merge(off, on=["animal", "link", "idx"], suffixes=("_on", "_off"))[
+            ["animal", "link", "time_on", "time_off"]
+        ]
+        .rename(columns={"time_on": "onset", "time_off": "offset"})
+        .sort_values(["animal", "link", "onset"])  # stable ordering
+        .reset_index(drop=True)
+    )
+    ev["duration"] = (ev["offset"] - ev["onset"]).astype(int)
+    if min_duration > 1:
+        ev = ev[ev["duration"] >= int(min_duration)].reset_index(drop=True)
+    return ev
 
 
 def duration_summaries(

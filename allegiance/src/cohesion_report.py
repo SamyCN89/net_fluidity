@@ -26,7 +26,7 @@ import pandas as pd
 from scipy.stats import mannwhitneyu, ttest_rel, wilcoxon
 
 from shared_code.fun_metaconnectivity import load_merged_allegiance
-from shared_codemport get_paths
+from shared_code.fun_paths import get_paths
 
 # %%
 
