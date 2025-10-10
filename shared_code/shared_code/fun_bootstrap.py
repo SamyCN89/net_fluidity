@@ -7,8 +7,11 @@ Centralized, vectorized implementations to be reused by CLIs and notebooks.
 from __future__ import annotations
 
 from collections.abc import Iterable
+<<<<<<< HEAD
 
 from numba import njit, prange, set_num_threads
+=======
+>>>>>>> 3c1c59b (Refactor bootstrap functions to remove unused Numba implementation and streamline percentile calculations)
 import numpy as np
 
 set_num_threads(cfg.numba_threads if hasattr(cfg, "numba_threads") else 4)
@@ -72,9 +75,6 @@ def bootstrap_percentiles(
     boots = np.empty((n_boot, q_arr.size), dtype)
     done = 0
     chunk = max(1, int(chunk))
-    check_every = max(1, int(0.1 * n_boot))
-    last_lo = None
-    last_hi = None
     while done < n_boot:
         m = min(chunk, n_boot - done)
         if index_dtype is not None:
@@ -93,6 +93,7 @@ def bootstrap_percentiles(
     return point, lo, hi
 
 
+<<<<<<< HEAD
 # def bootstrap_diff_percentiles(
 #     x: np.ndarray,
 #     y: np.ndarray,
@@ -157,6 +158,8 @@ def bootstrap_percentiles(
 #     return {"q": q_arr, "point": point, "lo": lo, "hi": hi, "sig": sig, "n_x": int(nx), "n_y": int(ny)}
 
 
+=======
+>>>>>>> 3c1c59b (Refactor bootstrap functions to remove unused Numba implementation and streamline percentile calculations)
 def bootstrap_diff_percentiles(
     x: np.ndarray,
     y: np.ndarray,
@@ -189,8 +192,35 @@ def bootstrap_diff_percentiles(
             "n_x": int(nx),
             "n_y": int(ny),
         }
+<<<<<<< HEAD
 
     # Observed percentile difference
+=======
+    point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
+    nx, ny = x.size, y.size
+    rng = np.random.default_rng(seed)
+    boots = np.empty((n_boot, q_arr.size), dtype)
+    done = 0
+    chunk = max(1, int(chunk))
+    while done < n_boot:
+        m = min(chunk, n_boot - done)
+        if index_dtype is not None:
+            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False, dtype=index_dtype)
+            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False, dtype=index_dtype)
+        else:
+            idx_x = rng.integers(0, nx, size=(m, nx), endpoint=False)
+            idx_y = rng.integers(0, ny, size=(m, ny), endpoint=False)
+        xb = x[idx_x]
+        yb = y[idx_y]
+        pct_x = np.percentile(xb, q_arr, axis=1, overwrite_input=True)
+        pct_y = np.percentile(yb, q_arr, axis=1, overwrite_input=True)
+        boots[done : done + m, :] = (pct_x - pct_y).T
+        done += m
+    alpha = (100.0 - float(ci)) / 2.0
+    lo = np.percentile(boots, alpha, axis=0)
+    hi = np.percentile(boots, 100.0 - alpha, axis=0)
+    sig = (lo > 0) | (hi < 0)
+>>>>>>> 3c1c59b (Refactor bootstrap functions to remove unused Numba implementation and streamline percentile calculations)
     point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
 
     # Parallel bootstrap using numba-compiled kernel
