@@ -37,9 +37,9 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
   - Supports within-base paired tests (Wilcoxon) and group-based unpaired tests (Mann–Whitney U), with optional multiple-testing corrections.
   - Emits CSV tables of p-values and effect sizes under `fig/<dataset>/cohesion/stats/` and saves figures.
 
-- `cohesion_link_curves.py`
+- `plot_cohesion_curves.py`
   - Convenience plotting for a few selected links (matched by ROI name substrings).
-  - Draws per-link 2m vs 4m curves with optional grouping by Sex/Genotype and adds significance annotations from in-script tests or CSVs.
+  - Draws per-link 2m vs 4m curves with optional grouping by Sex/Genotype (and Sex×Genotype) and adds significance annotations from in-script tests or CSVs.
   - Saves to `fig/<dataset>/cohesion/link_curves/`.
 
 - Other files
@@ -68,7 +68,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 
 4) Cohesion summaries → stats and figures
    - `cohesion_stats_plot.py` loads the NPZ and grouping masks to compute stats tables and plots.
-   - `cohesion_link_curves.py` renders focused link-level curves with optional significance bars.
+  - `plot_cohesion_curves.py` renders focused link-level curves with optional significance bars.
 
 ---
 
@@ -94,7 +94,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
   - `python allegiance/src/cohesion_stats_plot.py --window-size 9 --lag 1 --tau 3 --roi-scope dmn --save-plots --no-show`
 
 - Plot selected link curves with annotations:
-  - `python allegiance/src/cohesion_link_curves.py --window-size 9 --lag 1 --tau 3 --roi-scope dmn --roi-substrings "d HIP,v HIP,RSP" --save-plots --no-show`
+  - `python allegiance/src/plot_cohesion_curves.py --window-size 9 --lag 1 --tau 3 --roi-scope dmn --roi-substrings "d HIP,v HIP,RSP" --save-plots --no-show`
 
 All scripts honor the figures root from `get_paths()` and support headless execution.
 
@@ -106,6 +106,17 @@ All scripts honor the figures root from `get_paths()` and support headless execu
 - Reordering communities per window using `sort_allegiances` is essential before pairwise cohesion calculations.
 - Upper-triangle link ordering is consistent across modules via the same index convention.
 - Keep new environment variables documented here and in `shared_code/README.md` when APIs/paths evolve.
+
+Docstrings & typing
+- Public functions and CLIs expose complete type hints for arguments and return values.
+- Use short, focused docstrings: 1–2 lines describing purpose; include parameter meaning when non-obvious and specify array shapes when applicable.
+- For statistical helpers, state test and tails; for plotting helpers, state coordinate systems (data vs axes) and units.
+
+Link curves — color-by modes
+- `--color-by age`: one trace (2m vs 4m); no live p-values; overall bars omitted unless provided by CSV.
+- `--color-by sex`: two traces (Female, Male); per-sex 2m vs 4m bars; within-age pairwise comparisons (Female vs Male) at 2m and 4m.
+- `--color-by genotype` or `both`: two traces (wt, dKI); per-genotype 2m vs 4m bars; within-age pairwise comparisons (wt vs dKI).
+- `--color-by sex_genotype`: four traces (Female wt, Female dKI, Male wt, Male dKI); per-trace 2m vs 4m bars; within-age pairwise comparisons across all cohorts (e.g., Female wt 2m vs Female dKI 2m, Male wt 2m, Male dKI 2m; likewise at 4m).
 
 Scientific note — event extraction:
 - Cohesion “events” are contiguous runs where a link is active (same-module=1). We now extract events using a vectorized diff method (pad→diff→pair onsets/offsets) rather than a Python scan loop. This preserves scientific semantics (onset inclusive, offset exclusive, duration=offset−onset) and was verified to produce identical results across randomized tests. The change improves performance without altering outputs.

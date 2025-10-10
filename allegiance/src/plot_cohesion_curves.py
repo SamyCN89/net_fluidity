@@ -13,19 +13,32 @@ Figures are saved under fig/<dataset>/cohesion/link_curves/.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import logging
 import re
-from dataclasses import dataclass
-from typing import Iterable
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.transforms import blended_transform_factory
-from scipy.stats import mannwhitneyu
 
-from shared_code.fun_paths import get_paths
+# Support both installed package and in-repo execution without install
+try:
+    from shared_code.fun_paths import get_paths  # type: ignore
+    from shared_code.fun_plot import (  # type: ignore
+        add_sig_bar_axes,
+        annotate_inset,
+        compute_pvalue,
+        errbar,
+    )
+except Exception:  # pragma: no cover - dev fallback
+    from shared_code.shared_code.fun_paths import get_paths  # type: ignore
+    from shared_code.shared_code.fun_plot import (  # type: ignore
+        add_sig_bar_axes,
+        annotate_inset,
+        compute_pvalue,
+        errbar,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -47,89 +60,6 @@ class GroupSeries:
 # ---------------------------------------------------------------------------
 
 
-def _add_sig_bar_axes(
-    ax: matplotlib.axes.Axes,
-    x1: float,
-    x2: float,
-    y_axes: float,
-    text: str,
-    *,
-    h_axes: float = 0.02,
-    lw: float = 1.0,
-    fontsize: int = 8,
-) -> None:
-    """
-    Draw a significance bar using data coordinates for x and axes coordinates for y.
-
-    If ``h_axes`` is negative the bar points downward and the label is drawn above it.
-    """
-
-    trans = blended_transform_factory(ax.transData, ax.transAxes)
-
-    # color label red if p<0.05
-    match = re.search(r"p\s*=\s*([0-9]*\.?[0-9]+(?:e-?\d+)?)", text, re.I)
-    p_value = float(match.group(1)) if match else None
-    label_color = "red" if (p_value is not None and p_value < 0.05) else "black"
-
-    y0, y1 = y_axes, y_axes + h_axes
-    ax.plot(
-        [x1, x1, x2, x2],
-        [y0, y1, y1, y0],
-        transform=trans,
-        color="black",
-        lw=lw,
-        clip_on=False,
-    )
-
-    va = "bottom" if h_axes >= 0 else "top"
-    ax.text(
-        (x1 + x2) * 0.5,
-        y1,
-        text,
-        transform=trans,
-        ha="center",
-        va=va,
-        fontsize=fontsize,
-        color=label_color,
-        clip_on=False,
-    )
-
-
-def _errbar(values: np.ndarray, mode: str) -> float:
-    """Return the requested dispersion metric for ``values``."""
-
-    n = int(values.size)
-    if n == 0:
-        return np.nan
-    if n == 1:
-        return 0.0
-    if mode == "sd":
-        return float(np.std(values, ddof=1))
-    if mode == "sem":
-        return float(np.std(values, ddof=1) / np.sqrt(n))
-    return float(np.var(values, ddof=1))
-
-
-def _annotate_inset(ax: matplotlib.axes.Axes, lines: Iterable[str]) -> None:
-    """Draw a small text box with ``lines`` in the lower-right corner."""
-
-    txt = "\n".join([line for line in lines if line])
-    if not txt:
-        return
-    ax.text(
-        0.98,
-        0.02,
-        txt,
-        transform=ax.transAxes,
-        ha="right",
-        va="bottom",
-        fontsize=8,
-        bbox=dict(
-            boxstyle="round,pad=0.3", facecolor="white", alpha=0.7, edgecolor="none"
-        ),
-    )
-
-
 def _compile_patterns(spec: str) -> list[re.Pattern[str]]:
     tokens = [token.strip() for token in spec.split(",") if token.strip()]
     return [re.compile(re.escape(token), flags=re.IGNORECASE) for token in tokens]
@@ -138,26 +68,6 @@ def _compile_patterns(spec: str) -> list[re.Pattern[str]]:
 def _link_matches(pair: tuple[str, str], patterns: list[re.Pattern[str]]) -> bool:
     a, b = pair
     return any(pattern.search(str(a)) or pattern.search(str(b)) for pattern in patterns)
-
-
-def _compute_pvalue(v_left: np.ndarray, v_right: np.ndarray, paired: bool) -> float:
-    """Return the appropriate p-value (Wilcoxon or Mann–Whitney)."""
-
-    if v_left.size == 0 or v_right.size == 0:
-        return np.nan
-
-    try:
-        if paired:
-            from scipy.stats import wilcoxon
-
-            return float(
-                wilcoxon(
-                    v_left, v_right, zero_method="wilcox", alternative="two-sided"
-                ).pvalue
-            )
-        return float(mannwhitneyu(v_left, v_right, alternative="two-sided").pvalue)
-    except Exception:
-        return np.nan
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--roi-substrings",
         type=str,
-        default="d HIP,v HIP,RSP",
+        default="d HIP,v HIP,RSP,PIR",
         help="Comma-separated substrings to match in ROI labels (case-insensitive)",
     )
     parser.add_argument(
@@ -234,6 +144,13 @@ def parse_args() -> argparse.Namespace:
         choices=["none", "age", "group", "both"],
         default="none",
         help="Annotate significance from stats CSVs: age (Wilcoxon), group (MWU), or both",
+    )
+    parser.add_argument(
+        "--bars-from-csv",
+        action="store_true",
+        help=(
+            "When available, use group CSV p-values for within-age bars in 'sex' and 'genotype' modes"
+        ),
     )
     parser.add_argument(
         "--save-plots", action="store_true", help="Save figures to disk"
@@ -348,8 +265,8 @@ def _plot_group_series(
         np.mean(series.values_4m) if series.values_4m.size else np.nan,
     ]
     errors = [
-        _errbar(series.values_2m, error_mode) if series.values_2m.size else np.nan,
-        _errbar(series.values_4m, error_mode) if series.values_4m.size else np.nan,
+        errbar(series.values_2m, error_mode) if series.values_2m.size else np.nan,
+        errbar(series.values_4m, error_mode) if series.values_4m.size else np.nan,
     ]
     ax.errorbar(
         [series.x2, series.x4],
@@ -403,7 +320,7 @@ def _finalize_sig_bars(
         return
     y_here = start
     for x1, x2, label in comparisons:
-        _add_sig_bar_axes(ax, x1, x2, y_here, text=label, h_axes=tick)
+        add_sig_bar_axes(ax, x1, x2, y_here, text=label, h_axes=tick)
         y_here -= gap
 
 
@@ -512,12 +429,8 @@ def main() -> int:
             v4_all = time_ratio[idx4, link_idx]
 
         def add_overall_age_bar() -> None:
-            if args.no_stats:
-                return
-            p_overall = _compute_pvalue(v2_all, v4_all, args.paired_age)
-            if np.isnan(p_overall):
-                return
-            comparisons.append((0.0, 1.0, f"p={p_overall:.3g}"))
+            # Do not compute p-values live; no overall age bar without CSV source
+            return
 
         same_age_groups: dict[str, list[tuple[GroupSeries, np.ndarray, float]]] = {
             "2m": [],
@@ -539,8 +452,8 @@ def main() -> int:
                 np.mean(v4_all) if v4_all.size else np.nan,
             ]
             errors = [
-                _errbar(v2_all, args.errorbar) if v2_all.size else np.nan,
-                _errbar(v4_all, args.errorbar) if v4_all.size else np.nan,
+                errbar(v2_all, args.errorbar) if v2_all.size else np.nan,
+                errbar(v4_all, args.errorbar) if v4_all.size else np.nan,
             ]
             ax.errorbar(
                 [0.0, 1.0],
@@ -618,10 +531,13 @@ def main() -> int:
                 )
                 _register_group(series)
 
-                if not args.no_stats:
-                    p_value = _compute_pvalue(v2_sex, v4_sex, args.paired_age)
-                    if not np.isnan(p_value):
-                        comparisons.append((series.x2, series.x4, f"p={p_value:.3g}"))
+                if not args.no_stats and age_pvals is not None:
+                    link_label = f"{roi_a}\u2013{roi_b}"
+                    try:
+                        pv = float(age_pvals.loc[link_label, ("Sex", sex_label)])
+                        comparisons.append((series.x2, series.x4, f"p={pv:.3g}"))
+                    except Exception:
+                        pass
 
         # -------------------------- SEX × GENOTYPE --------------------------
         elif args.color_by == "sex_genotype":
@@ -677,10 +593,14 @@ def main() -> int:
                 )
                 _register_group(series)
 
-                if not args.no_stats:
-                    p_value = _compute_pvalue(v2_combo, v4_combo, args.paired_age)
-                    if not np.isnan(p_value):
-                        comparisons.append((series.x2, series.x4, f"p={p_value:.3g}"))
+                if not args.no_stats and age_pvals is not None:
+                    link_label = f"{roi_a}\u2013{roi_b}"
+                    col = f"{sex_label}\u00b7{geno_key}"
+                    try:
+                        pv = float(age_pvals.loc[link_label, ("Sex×Genotype", col)])
+                        comparisons.append((series.x2, series.x4, f"p={pv:.3g}"))
+                    except Exception:
+                        pass
 
         # ---------------------- GENOTYPE / BOTH ------------------------------
         else:  # genotype or both
@@ -732,20 +652,64 @@ def main() -> int:
                 )
                 _register_group(series)
 
-                if not args.no_stats:
-                    p_value = _compute_pvalue(v2_geno, v4_geno, args.paired_age)
-                    if not np.isnan(p_value):
-                        comparisons.append((series.x2, series.x4, f"p={p_value:.3g}"))
+                if not args.no_stats and age_pvals is not None:
+                    link_label = f"{roi_a}\u2013{roi_b}"
+                    try:
+                        pv = float(age_pvals.loc[link_label, ("Genotype", geno_key)])
+                        comparisons.append((series.x2, series.x4, f"p={pv:.3g}"))
+                    except Exception:
+                        pass
 
-        # Between-group comparisons at each age (only when exactly two cohorts are available)
+        # Between-group comparisons at each age (pairwise across all cohorts at that age)
         if args.color_by != "age" and not args.no_stats:
             for age_label, entries in same_age_groups.items():
-                if len(entries) != 2:
+                n = len(entries)
+                if n < 2:
                     continue
-                (_, values_a, x_a), (_, values_b, x_b) = entries
-                p_val = _compute_pvalue(values_a, values_b, paired=False)
-                if not np.isnan(p_val):
-                    comparisons.append((x_a, x_b, f"{age_label}: p={p_val:.3g}"))
+                # If exactly two cohorts and CSV available, use CSV-derived p-value for sex/genotype modes
+                if (
+                    args.bars_from_csv
+                    and group_pvals is not None
+                    and n == 2
+                    and args.color_by in {"sex", "genotype", "both"}
+                ):
+                    block = "Sex" if args.color_by == "sex" else "Genotype"
+                    left_lab = "Female" if block == "Sex" else "wt"
+                    right_lab = "Male" if block == "Sex" else "dKI"
+                    link_label = f"{roi_a}\u2013{roi_b}"
+                    p_csv = _lookup_group_p(
+                        group_pvals,
+                        block,
+                        f"{left_lab}-{age_label}",
+                        f"{right_lab}-{age_label}",
+                        link_label=link_label,
+                    )
+                    if p_csv is not None and not np.isnan(p_csv):
+                        comparisons.append((entries[0][2], entries[1][2], f"{age_label}: p={p_csv:.3g}"))
+                        continue
+                # If sex_genotype mode and CSV available, try pooled sex×genotype block lookups per pair
+                if args.bars_from_csv and group_pvals is not None and args.color_by == "sex_genotype":
+                    used_csv = False
+                    link_label = f"{roi_a}\u2013{roi_b}"
+                    for i in range(n - 1):
+                        for j in range(i + 1, n):
+                            s_i, _, x_i = entries[i]
+                            s_j, _, x_j = entries[j]
+                            left = f"{s_i.label}-{age_label}"
+                            right = f"{s_j.label}-{age_label}"
+                            p_csv = _lookup_group_p(
+                                group_pvals,
+                                "Sex×Genotype (pooled)",
+                                left,
+                                right,
+                                link_label=link_label,
+                            )
+                            if p_csv is not None and not np.isnan(p_csv):
+                                comparisons.append((x_i, x_j, f"{age_label}: p={p_csv:.3g}"))
+                                used_csv = True
+                    if used_csv:
+                        continue
+                # Do not compute p-values live; if CSV is missing, skip
 
         # ------------------------------------------------------------------
         # Plot traces
@@ -768,9 +732,7 @@ def main() -> int:
             link_label = f"{roi_a}\u2013{roi_b}"
             try:
                 pv = float(age_pvals.loc[link_label, ("Age", "2m vs 4m")])
-                inset_lines.append(
-                    f"CSV Age test: p={pv:.3g}{' *' if pv <= args.alpha else ''}"
-                )
+                inset_lines.append(f"p={pv:.3g}{' *' if pv <= args.alpha else ''}")
             except Exception:
                 pass
 
@@ -782,33 +744,25 @@ def main() -> int:
                 group_pvals, "Sex", "Female-2m", "Male-2m", link_label=link_label
             )
             if p_val is not None:
-                sex_lines.append(
-                    f"Sex 2m: p={p_val:.3g}{' *' if p_val <= args.alpha else ''}"
-                )
+                sex_lines.append(f"p={p_val:.3g}{' *' if p_val <= args.alpha else ''}")
             p_val = _lookup_group_p(
                 group_pvals, "Sex", "Female-4m", "Male-4m", link_label=link_label
             )
             if p_val is not None:
-                sex_lines.append(
-                    f"Sex 4m: p={p_val:.3g}{' *' if p_val <= args.alpha else ''}"
-                )
+                sex_lines.append(f"p={p_val:.3g}{' *' if p_val <= args.alpha else ''}")
             p_val = _lookup_group_p(
                 group_pvals, "Genotype", "wt-2m", "dKI-2m", link_label=link_label
             )
             if p_val is not None:
-                geno_lines.append(
-                    f"Genotype 2m: p={p_val:.3g}{' *' if p_val <= args.alpha else ''}"
-                )
+                geno_lines.append(f"p={p_val:.3g}{' *' if p_val <= args.alpha else ''}")
             p_val = _lookup_group_p(
                 group_pvals, "Genotype", "wt-4m", "dKI-4m", link_label=link_label
             )
             if p_val is not None:
-                geno_lines.append(
-                    f"Genotype 4m: p={p_val:.3g}{' *' if p_val <= args.alpha else ''}"
-                )
+                geno_lines.append(f"p={p_val:.3g}{' *' if p_val <= args.alpha else ''}")
             inset_lines.extend(sex_lines + geno_lines)
 
-        _annotate_inset(ax, inset_lines)
+        annotate_inset(ax, inset_lines)
         _finalize_sig_bars(ax, comparisons)
         fig.tight_layout()
 
