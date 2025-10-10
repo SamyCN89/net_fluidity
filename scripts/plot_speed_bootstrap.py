@@ -21,33 +21,23 @@ import matplotlib.pyplot as plt
 
 
 def get_context(tr: int | None = None):
-    """Return a dataset context with paths and metadata loaded (robust import)."""
-    DFC = None
+    """Return dataset context via the single source of truth (SoT)."""
     try:
-        from net_fluidity_julien.context import DFCAnalysis as DFC  # type: ignore
+        from net_fluidity_julien.context import DFCAnalysis  # type: ignore
     except ModuleNotFoundError:
+        import sys
+        here = Path(__file__).resolve()
+        repo_root = here.parents[1]
+        src_path = repo_root / "src"
+        if src_path.exists() and str(src_path) not in sys.path:
+            sys.path.insert(0, str(src_path))
         try:
-            import sys
-            here = Path(__file__).resolve()
-            repo_root = here.parents[1]
-            src_path = repo_root / "src"
-            if src_path.exists() and str(src_path) not in sys.path:
-                sys.path.insert(0, str(src_path))
-            from net_fluidity_julien.context import DFCAnalysis as DFC  # type: ignore
-        except Exception:
-            DFC = None
-    if DFC is None:
-        try:
-            from class_dataanalysis_julien import DFCAnalysis as DFC  # type: ignore
-        except ModuleNotFoundError:
-            import sys
-            here = Path(__file__).resolve()
-            repo_root = here.parents[1]
-            jd_path = repo_root / "julien_data"
-            if jd_path.exists() and str(jd_path) not in sys.path:
-                sys.path.insert(0, str(jd_path))
-            from class_dataanalysis_julien import DFCAnalysis as DFC  # type: ignore
-    data = DFC()
+            from net_fluidity_julien.context import DFCAnalysis  # type: ignore
+        except Exception as e:
+            raise RuntimeError(
+                "DFCAnalysis not available. Ensure 'src/net_fluidity_julien/context.py' exists and is importable."
+            ) from e
+    data = DFCAnalysis()
     if tr is None:
         data.get_metadata()
     else:

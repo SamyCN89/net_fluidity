@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 import os
 from pathlib import Path
 import re
+import logging
 
 #%%
 import numpy as np
@@ -38,41 +39,27 @@ from shared_code.fun_bootstrap import (
 
 
 def get_context(tr: int | None = None):
-    """Return a dataset context with paths and metadata loaded.
+    """Return dataset context via the single source of truth (SoT).
 
-    Prefers the packaged context under src/net_fluidity_julien; if missing,
-    falls back to julien_data/class_dataanalysis_julien.py by adding the
-    julien_data folder to sys.path.
+    Enforces SoT: only src/net_fluidity_julien/context.py is supported.
     """
-    DFC = None
-    # Try package import; if it fails, add src/ to sys.path and retry
     try:
-        from net_fluidity_julien.context import DFCAnalysis as DFC  # type: ignore
+        from net_fluidity_julien.context import DFCAnalysis  # type: ignore
     except ModuleNotFoundError:
+        # Retry with src/ on sys.path
+        import sys
+        here = Path(__file__).resolve()
+        repo_root = here.parents[1]
+        src_path = repo_root / "src"
+        if src_path.exists() and str(src_path) not in sys.path:
+            sys.path.insert(0, str(src_path))
         try:
-            import sys
-            here = Path(__file__).resolve()
-            repo_root = here.parents[1]
-            src_path = repo_root / "src"
-            if src_path.exists() and str(src_path) not in sys.path:
-                sys.path.insert(0, str(src_path))
-            from net_fluidity_julien.context import DFCAnalysis as DFC  # type: ignore
-        except Exception:
-            DFC = None
-    # Fallback to julien_data module file
-    if DFC is None:
-        try:
-            from class_dataanalysis_julien import DFCAnalysis as DFC  # type: ignore
-        except ModuleNotFoundError:
-            import sys
-            here = Path(__file__).resolve()
-            repo_root = here.parents[1]
-            jd_path = repo_root / "julien_data"
-            if jd_path.exists() and str(jd_path) not in sys.path:
-                sys.path.insert(0, str(jd_path))
-            from class_dataanalysis_julien import DFCAnalysis as DFC  # type: ignore
-
-    data = DFC()
+            from net_fluidity_julien.context import DFCAnalysis  # type: ignore
+        except Exception as e:
+            raise RuntimeError(
+                "DFCAnalysis not available. Ensure 'src/net_fluidity_julien/context.py' exists and is importable."
+            ) from e
+    data = DFCAnalysis()
     if tr is None:
         data.get_metadata()
     else:
@@ -237,7 +224,12 @@ class BootstrapConfig:
             ]
         else:
             cfg.q_list = [float(s) for s in str(cfg.q).split(",") if s.strip()]
-        cfg.pairs_list = _parse_pairs(cfg.pairs)
+        # Validate pair arity against group-cols length
+        try:
+            arity = len([s.strip() for s in str(cfg.group_cols).split(',') if s.strip()])
+        except Exception:
+            arity = None
+        cfg.pairs_list = _parse_pairs(cfg.pairs, arity=arity)
         cfg.boots_dtype = np.float32 if cfg.boots_float32 else float
         cfg.values_dtype = np.float32 if cfg.values_float32 else float
         cfg.index_dtype = np.dtype(np.int32) if cfg.index_int32 else None
@@ -327,18 +319,212 @@ def _concat_per_animal(per_animals: list[list[np.ndarray]]) -> list[np.ndarray]:
     return out
 
 
-def _parse_pairs(pairs_arg: str) -> list[tuple[tuple[str, str], tuple[str, str]]]:
-    out: list[tuple[tuple[str, str], tuple[str, str]]] = []
+# ---------------- Small compute helpers (dedupe) ---------------- #
+
+
+def _compute_group_quantiles(
+    per_animal: list[np.ndarray],
+    groups_map: dict,
+    q_list: list[float],
+    *,
+    n_boot: int,
+    ci: float,
+    seed: int,
+    chunk: int,
+    boots_dtype,
+    values_dtype,
+    index_dtype,
+    boots_map: dict | None = None,
+    region_label: str | None = None,
+    window_label: int | str | None = None,
+) -> tuple[list[dict[str, object]], dict | None]:
+    rows_q: list[dict[str, object]] = []
+    if boots_map is None:
+        qa = bootstrap_groups_percentiles(
+            per_animal,
+            groups_map,
+            q=q_list,
+            n_boot=n_boot,
+            ci=ci,
+            seed=seed,
+            chunk=chunk,
+            dtype=np.dtype(boots_dtype),
+            val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+            index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+        )
+        for gk, res in qa.items():
+            for qi, pt, lo, hi in zip(res["q"], res["point"], res["lo"], res["hi"], strict=False):
+                rows_q.append(
+                    {
+                        "region": region_label,
+                        "roi": region_label,
+                        "window": (window_label if window_label is not None else ""),
+                        "group": gk,
+                        "q": float(qi),
+                        "point": float(pt),
+                        "lo": float(lo),
+                        "hi": float(hi),
+                        "n": int(res.get("n", 0)),
+                    }
+                )
+        return rows_q, None
+    # With provided boots_map, compute points from pooled values and CIs from boots
+    q_arr = boots_map.get("__q__", np.asarray(q_list, float))
+    for gk, idxs in groups_map.items():
+        if gk == "__q__":
+            continue
+        pooled_g = pool_per_animal(per_animal, idxs)
+        if pooled_g.size:
+            point = np.percentile(pooled_g, q_arr)
+        else:
+            point = np.full_like(q_arr, np.nan, dtype=float)
+        boots = boots_map[gk]
+        lo, hi = ci_from_boots(boots, ci=ci)
+        for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
+            rows_q.append(
+                {
+                    "region": region_label,
+                    "roi": region_label,
+                    "window": (window_label if window_label is not None else ""),
+                    "group": gk,
+                    "q": float(qi),
+                    "point": float(pt),
+                    "lo": float(lo_i),
+                    "hi": float(hi_i),
+                    "n": int(pooled_g.size),
+                }
+            )
+    return rows_q, boots_map
+
+
+def _compute_pair_diffs(
+    per_animal: list[np.ndarray],
+    groups_map: dict,
+    pairs: list,
+    q_list: list[float],
+    *,
+    n_boot: int,
+    ci: float,
+    seed: int,
+    chunk: int,
+    boots_dtype,
+    values_dtype,
+    index_dtype,
+    boots_map: dict | None = None,
+    region_label: str | None = None,
+    window_label: int | str | None = None,
+) -> list[dict[str, object]]:
+    rows_d: list[dict[str, object]] = []
+    if boots_map is None:
+        for A, B in pairs:
+            if A not in groups_map or B not in groups_map:
+                continue
+            xa = pool_per_animal(per_animal, groups_map[A])
+            xb = pool_per_animal(per_animal, groups_map[B])
+            qd = bootstrap_diff_percentiles(
+                xa,
+                xb,
+                q=q_list,
+                n_boot=n_boot,
+                ci=ci,
+                seed=seed,
+                chunk=chunk,
+                dtype=np.dtype(boots_dtype),
+                val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
+                index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
+            )
+            p_arr = np.asarray(qd.get("p", np.full(len(qd.get("q", [])), np.nan)), float).ravel()
+            for qi, pt, lo, hi, sig, p_i in zip(
+                qd["q"], qd["point"], qd["lo"], qd["hi"], qd["sig"], p_arr, strict=False
+            ):
+                rows_d.append(
+                    {
+                        "region": region_label,
+                        "roi": region_label,
+                        "window": (window_label if window_label is not None else ""),
+                        "A": A,
+                        "B": B,
+                        "q": float(qi),
+                        "diff": float(pt),
+                        "lo": float(lo),
+                        "hi": float(hi),
+                        "p": float(p_i),
+                        "p_method": P_METHOD_DESC,
+                        "significant": bool(sig),
+                        "n_a": int(qd.get("n_x", 0)),
+                        "n_b": int(qd.get("n_y", 0)),
+                    }
+                )
+        return rows_d
+    # With provided boots_map, compute diff boots once and evaluate
+    q_arr = boots_map.get("__q__", np.asarray(q_list, float))
+    for A, B in pairs:
+        if A not in groups_map or B not in groups_map:
+            continue
+        boots_A = boots_map.get(A)
+        boots_B = boots_map.get(B)
+        if boots_A is None or boots_B is None:
+            continue
+        n_used = min(boots_A.shape[0], boots_B.shape[0])
+        diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
+        lo, hi = ci_from_boots(diff_boots, ci=ci)
+        pooled_A = pool_per_animal(per_animal, groups_map[A])
+        pooled_B = pool_per_animal(per_animal, groups_map[B])
+        if pooled_A.size and pooled_B.size:
+            point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
+        else:
+            point = np.full_like(q_arr, np.nan, dtype=float)
+        p_vals = [
+            float((np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0) / (diff_boots.shape[0] + 1.0))
+            for j in range(diff_boots.shape[1])
+        ]
+        sig = (lo > 0) | (hi < 0)
+        for qi, pt, lo_i, hi_i, p_i, s in zip(q_arr, point, lo, hi, p_vals, sig, strict=False):
+            rows_d.append(
+                {
+                    "region": region_label,
+                    "roi": region_label,
+                    "window": (window_label if window_label is not None else ""),
+                    "A": A,
+                    "B": B,
+                    "q": float(qi),
+                    "diff": float(pt),
+                    "lo": float(lo_i),
+                    "hi": float(hi_i),
+                    "p": float(p_i),
+                    "p_method": P_METHOD_DESC,
+                    "significant": bool(s),
+                    "n_a": int(pooled_A.size),
+                    "n_b": int(pooled_B.size),
+                }
+            )
+    return rows_d
+
+
+def _parse_pairs(pairs_arg: str, *, arity: int | None = None) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Parse pairs specification into a list of tuple pairs with optional arity validation.
+
+    Format: '(a1,a2,...)-(b1,b2,...)' separated by ';'.
+    If arity is provided, validates that each side has exactly that many tokens.
+    """
+    out: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
     if not pairs_arg:
         return out
     for chunk in pairs_arg.split(";"):
         chunk = chunk.strip()
         if not chunk:
             continue
-        left, right = chunk.split("-", 1)
-        la, lb = [s.strip() for s in left.strip().strip("()").split(",", 1)]
-        ra, rb = [s.strip() for s in right.strip().strip("()").split(",", 1)]
-        out.append(((la, lb), (ra, rb)))
+        try:
+            left, right = chunk.split("-", 1)
+        except ValueError:
+            raise ValueError(f"Invalid pair specification (missing '-'): {chunk}")
+        L = tuple(s.strip() for s in left.strip().strip("()").split(",") if s.strip())
+        R = tuple(s.strip() for s in right.strip().strip("()").split(",") if s.strip())
+        if arity is not None and (len(L) != arity or len(R) != arity):
+            raise ValueError(
+                f"Pair arity mismatch for '{chunk}': expected {arity} values per side, got {len(L)} and {len(R)}"
+            )
+        out.append((L, R))
     return out
 
 
@@ -715,7 +901,6 @@ def process_region_dir(
     diffs_rows: list[dict[str, object]] = []
     corr_rows: list[dict[str, object]] = []
     pooltest_rows: list[dict[str, object]] = []
-    pooltest_rows: list[dict[str, object]] = []
 
     win_files = _list_window_files(region_dir)
     if not win_files:
@@ -752,7 +937,8 @@ def process_region_dir(
             tau_index=None if cfg.tau_index < 0 else cfg.tau_index,
             n_animals=cfg.n_animals,
         )
-        # Optionally pool all windows together
+        # Per-group percentiles and per-pair diffs (optionally reusing boots)
+        boots_map = None
         if cfg.reuse_group_boots:
             boots_map = bootstrap_groups_boots(
                 per_animal,
@@ -765,110 +951,39 @@ def process_region_dir(
                 val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
                 index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
             )
-            q_arr = boots_map.get("__q__", np.asarray(q_list, float))
-            for gk, idxs in groups_map.items():
-                if gk == "__q__":
-                    continue
-                pooled_g = pool_per_animal(per_animal, idxs)
-                if pooled_g.size:
-                    point = np.percentile(pooled_g, q_arr)
-                else:
-                    point = np.full_like(q_arr, np.nan, dtype=float)
-                boots = boots_map[gk]
-                lo, hi = ci_from_boots(boots, ci=cfg.ci)
-                for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
-                    rows_q.append(
-                        {
-                            "region": roi,
-                            "roi": roi,
-                            "window": int(win),
-                            "group": gk,
-                            "q": float(qi),
-                            "point": float(pt),
-                            "lo": float(lo_i),
-                            "hi": float(hi_i),
-                            "n": int(pooled_g.size),
-                        }
-                    )
-            # Per-pair differences from stored boots
-            for A, B in pairs:
-                if A not in groups_map or B not in groups_map:
-                    continue
-                boots_A = boots_map.get(A)
-                boots_B = boots_map.get(B)
-                if boots_A is None or boots_B is None:
-                    continue
-                n_used = min(boots_A.shape[0], boots_B.shape[0])
-                diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
-                lo, hi = ci_from_boots(diff_boots, ci=cfg.ci)
-                pooled_A = pool_per_animal(per_animal, groups_map[A])
-                pooled_B = pool_per_animal(per_animal, groups_map[B])
-                if pooled_A.size and pooled_B.size:
-                    point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
-                else:
-                    point = np.full_like(q_arr, np.nan, dtype=float)
-                p_vals = [
-                    float(
-                        (np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0)
-                        / (diff_boots.shape[0] + 1.0)
-                    )
-                    for j in range(diff_boots.shape[1])
-                ]
-                sig = (lo > 0) | (hi < 0)
-                for qi, pt, lo_i, hi_i, p_i, s in zip(
-                    q_arr, point, lo, hi, p_vals, sig, strict=False
-                ):
-                    rows_d.append(
-                        {
-                            "region": roi,
-                            "roi": roi,
-                            "window": int(win),
-                            "A": A,
-                            "B": B,
-                            "q": float(qi),
-                            "diff": float(pt),
-                            "lo": float(lo_i),
-                            "hi": float(hi_i),
-                            "p": float(p_i),
-                            "p_method": P_METHOD_DESC,
-                            "significant": bool(s),
-                            "n_a": int(pooled_A.size),
-                            "n_b": int(pooled_B.size),
-                        }
-                    )
-        # No reuse of group boots; compute everything from scratch
-        else:
-            # ------ Per-group percentiles Bootstrap with CIs
-            qa = bootstrap_groups_percentiles(
-                per_animal,
-                groups_map,
-                q=q_list,
-                n_boot=cfg.n_boot,
-                ci=cfg.ci,
-                seed=cfg.seed,
-                chunk=cfg.chunk,
-                dtype=np.dtype(boots_dtype),
-                val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
-                index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
-            )
-            # Store per-group results
-            for gk, res in qa.items():
-                for qi, pt, lo, hi in zip(
-                    res["q"], res["point"], res["lo"], res["hi"], strict=False
-                ):
-                    rows_q.append(
-                        {
-                            "region": roi,
-                            "roi": roi,
-                            "window": int(win),
-                            "group": gk,
-                            "q": float(qi),
-                            "point": float(pt),
-                            "lo": float(lo),
-                            "hi": float(hi),
-                            "n": int(res["n"]),
-                        }
-                    )
+        qrows, _ = _compute_group_quantiles(
+            per_animal,
+            groups_map,
+            q_list,
+            n_boot=cfg.n_boot,
+            ci=cfg.ci,
+            seed=cfg.seed,
+            chunk=cfg.chunk,
+            boots_dtype=boots_dtype,
+            values_dtype=values_dtype,
+            index_dtype=index_dtype,
+            boots_map=boots_map,
+            region_label=roi,
+            window_label=int(win),
+        )
+        rows_q.extend(qrows)
+        drows = _compute_pair_diffs(
+            per_animal,
+            groups_map,
+            pairs,
+            q_list,
+            n_boot=cfg.n_boot,
+            ci=cfg.ci,
+            seed=cfg.seed,
+            chunk=cfg.chunk,
+            boots_dtype=boots_dtype,
+            values_dtype=values_dtype,
+            index_dtype=index_dtype,
+            boots_map=boots_map,
+            region_label=roi,
+            window_label=int(win),
+        )
+        rows_d.extend(drows)
             # Per-window correlations with NOR, if requested
             if cfg.correlate_nor and isinstance(data.cog_data_filtered, pd.DataFrame):
                 nor_col = _detect_nor_column(data.cog_data_filtered, cfg.nor_col)
@@ -1031,8 +1146,10 @@ def process_region_dir(
     pools = _pool_windows_indices(windows, cfg.pool_threshold)
     if cfg.pool_all and windows:
         pools["all"] = windows
+    # Create pools based on window length
     if pools:
         by_win = {w: p for (w, p) in win_files}
+        # Process each pool of windows
         for pool_name, pool_windows in pools.items():
             if not pool_windows:
                 continue
@@ -1044,7 +1161,8 @@ def process_region_dir(
             )
             for w in pool_windows
             if w in by_win
-        ]
+            ]
+            # Pool per-animal values across all windows in the pool
             pooled = _concat_per_animal(per_animals)
             # Precompute per-animal percentiles matrix for correlations
             mat = None
@@ -1055,6 +1173,7 @@ def process_region_dir(
                     vals = np.asarray(pooled[i], float)
                     if vals.size:
                         mat[i, :] = np.percentile(vals, qs)
+            boots_map = None
             if cfg.reuse_group_boots:
                 boots_map = bootstrap_groups_boots(
                     pooled,
@@ -1067,73 +1186,39 @@ def process_region_dir(
                     val_dtype=(None if values_dtype is None else np.dtype(values_dtype)),
                     index_dtype=(None if index_dtype is None else np.dtype(index_dtype)),
                 )
-                q_arr = boots_map.get("__q__", np.asarray(q_list, float))
-                for gk, idxs in groups_map.items():
-                    if gk == "__q__":
-                        continue
-                    pooled_g = pool_per_animal(pooled, idxs)
-                    boots = boots_map[gk]
-                    lo, hi = ci_from_boots(boots, ci=cfg.ci)
-                    if pooled_g.size:
-                        point = np.percentile(pooled_g, q_arr)
-                    else:
-                        point = np.full_like(q_arr, np.nan, dtype=float)
-                    for qi, pt, lo_i, hi_i in zip(q_arr, point, lo, hi, strict=False):
-                        quantiles_rows.append(
-                            {
-                                "region": folder_label,
-                                "roi": folder_label,
-                                "window": pool_name,
-                                "group": gk,
-                                "q": float(qi),
-                                "point": float(pt),
-                                "lo": float(lo_i),
-                                "hi": float(hi_i),
-                                "n": int(pooled_g.size),
-                            }
-                        )
-                for A, B in pairs:
-                    if A not in groups_map or B not in groups_map:
-                        continue
-                    boots_A = boots_map.get(A)
-                    boots_B = boots_map.get(B)
-                    if boots_A is None or boots_B is None:
-                        continue
-                    n_used = min(boots_A.shape[0], boots_B.shape[0])
-                    diff_boots = boots_A[:n_used, :] - boots_B[:n_used, :]
-                    lo, hi = ci_from_boots(diff_boots, ci=cfg.ci)
-                    pooled_A = pool_per_animal(pooled, groups_map[A])
-                    pooled_B = pool_per_animal(pooled, groups_map[B])
-                    point = np.percentile(pooled_A, q_arr) - np.percentile(pooled_B, q_arr)
-                    p_vals = [
-                        float(
-                            (np.count_nonzero(np.abs(diff_boots[:, j]) >= abs(point[j])) + 1.0)
-                            / (diff_boots.shape[0] + 1.0)
-                        )
-                        for j in range(diff_boots.shape[1])
-                    ]
-                    sig = (lo > 0) | (hi < 0)
-                    for qi, pt, lo_i, hi_i, p_i, s in zip(
-                        q_arr, point, lo, hi, p_vals, sig, strict=False
-                    ):
-                        diffs_rows.append(
-                            {
-                                "region": folder_label,
-                                "roi": folder_label,
-                                "window": pool_name,
-                                "A": A,
-                                "B": B,
-                                "q": float(qi),
-                                "diff": float(pt),
-                                "lo": float(lo_i),
-                                "hi": float(hi_i),
-                                "p": float(p_i),
-                                "p_method": P_METHOD_DESC,
-                                "significant": bool(s),
-                                "n_a": int(pooled_A.size),
-                                "n_b": int(pooled_B.size),
-                            }
-                        )
+            qrows, _ = _compute_group_quantiles(
+                pooled,
+                groups_map,
+                q_list,
+                n_boot=cfg.n_boot,
+                ci=cfg.ci,
+                seed=cfg.seed,
+                chunk=cfg.chunk,
+                boots_dtype=boots_dtype,
+                values_dtype=values_dtype,
+                index_dtype=index_dtype,
+                boots_map=boots_map,
+                region_label=folder_label,
+                window_label=pool_name,
+            )
+            quantiles_rows.extend(qrows)
+            drows = _compute_pair_diffs(
+                pooled,
+                groups_map,
+                pairs,
+                q_list,
+                n_boot=cfg.n_boot,
+                ci=cfg.ci,
+                seed=cfg.seed,
+                chunk=cfg.chunk,
+                boots_dtype=boots_dtype,
+                values_dtype=values_dtype,
+                index_dtype=index_dtype,
+                boots_map=boots_map,
+                region_label=folder_label,
+                window_label=pool_name,
+            )
+            diffs_rows.extend(drows)
                 # Pool-test against pooled supergroups (pooled windows), reuse boots not needed
             if pool_groups_map:
                 for gk, idxs in groups_map.items():
@@ -1374,7 +1459,7 @@ def main() -> int:
         formatter_class=HelpFormatter,
         epilog=(
             "Example:\n"
-            "  python scripts/compute_speed_bootstrap.py \\\n+              --tr 400 --subset regions400 --tau-index 0 --n-boot 500 \\\n+              --reuse-group-boots --boots-float32 --chunk 256 --progress\n"
+            "  python scripts/compute_speed_bootstrap.py \\\n+              --tr 400 --subset regions400 --tau-index 0 --n-boot 500 \\\n+              --reuse-group-boots --chunk 256 --progress\n"
         ),
     )
     ap.add_argument("--tr", type=int, default=500, help="Total TR used to select metadata.")
@@ -1472,7 +1557,7 @@ def main() -> int:
         action="store_true",
         help=(
             "On pooled windows (short/long/all), correlate per-animal speed "
-            "percentiles with a NOR score column."
+            "percentiles with a NOR score column (read from the preprocessed cognitive data CSV via DFCAnalysis)."
         ),
     )
     ap.add_argument(
@@ -1489,7 +1574,7 @@ def main() -> int:
         action="store_true",
         help="Also compute correlations within each group (per --group-cols).",
     )
-    ap.add_argument("--n-animals", type=int, default=48, help="Limit number of animals loaded per file (0 = all).")
+    ap.add_argument("--n-animals", type=int, default=0, help="Limit number of animals loaded per file (0 = all).")
     ap.add_argument(
         "--bootstrap-pool-cols",
         type=str,
@@ -1515,6 +1600,16 @@ def main() -> int:
         multi_worker = True
     _blas_threads = cfg.blas_threads if cfg.blas_threads is not None else (1 if multi_worker else None)
     limit_blas_threads(_blas_threads)
+    # Warn if regions scope is requested without region parallelism
+    if cfg.parallel_scope in {"regions", "both"} and (not cfg.region_jobs or int(cfg.region_jobs) <= 1):
+        logging.warning(
+            "parallel-scope includes regions but --region-jobs is 1; set --region-jobs > 1 to parallelize regions."
+        )
+    # Warn if limiting animals for analysis
+    if cfg.n_animals and int(cfg.n_animals) > 0:
+        logging.warning(
+            f"--n-animals={cfg.n_animals} limits samples; prefer 0 (all) for final analyses to avoid sampling bias."
+        )
 
     # Load quantiles and pairs
     q_list = cfg.q_list

@@ -1,5 +1,7 @@
 # Bootstrap Speed CLI — Notebook‑Style Tutorial
 
+Note: This is a legacy, notebook‑style tutorial centered on an older combined compute+plot CLI. For the current, cleaner flow that separates compute and plot, see `docs/Compute_and_Plot_Tutorial.md`.
+
 This tutorial shows how to use `scripts/bootstrap_speed_groups_cli.py` to bootstrap dFC speed distributions per group, per region and window, and optionally pool across windows. You can paste the code blocks into a Jupyter notebook (Markdown + code cells).
 
 ## 0) Setup
@@ -26,6 +28,11 @@ export DATASET_NAME=julien_caillette
 python scripts/paths_doctor.py --show --check-write --create
 ```
 
+Context checks (recommended when using cognitive data or NOR correlations):
+```bash
+python scripts/paths_doctor.py --check-context
+```
+
 Verify outputs exist:
 
 ```python
@@ -47,6 +54,7 @@ python scripts/bootstrap_speed_groups_cli.py --tr 500 --subset regions500 --show
 ## 2) Basic Run (Single Tau)
 
 ```bash
+# Legacy CLI example — for compute‑only, prefer scripts/compute_speed_bootstrap.py
 python scripts/bootstrap_speed_groups_cli.py \
   --tr 500 --subset regions500 --tau-index 0 \
   --n-boot 2000 --seed 0 --ci 95 \
@@ -116,6 +124,7 @@ Tuning plotting behavior
 
 Performance tips
 - Use `--jobs N` and `--parallel-scope windows` to parallelize per‑window work within each region.
+- If your workflow includes region‑level parallelism, increase `--region-jobs` accordingly; when `--parallel-scope` includes `regions` but `--region-jobs=1`, the newer compute script warns.
 - Combine with `--progress` to keep an eye on progress.
 
 Note on output folder names
@@ -233,6 +242,11 @@ python scripts/plot_speed_pooltest.py --tr 500 --subset dmn_within --bywin --poo
 - Tau index: run `--show-tau` first or use `--tau-index -1` to pool all taus.
 - Empty groups/windows: rows with `n=0` and NaN CIs; plots skip gracefully.
 - Subset path: ensure it points to per‑window NPZs in `regions-<label>/` or `all/`.
+
+## 6.2) Notes on Context and SoT
+
+- Single source of truth (SoT): newer scripts import `DFCAnalysis` from `src/net_fluidity_julien/context.py` to resolve paths and cognitive data. Ensure `src/` is on `PYTHONPATH` if using those scripts.
+- NOR correlations in the new compute CLI use a score read from the cognitive CSV via `DFCAnalysis`. Specify `--nor-col` when multiple candidate columns exist.
 
 ## 6.1) What bootstrap is used?
 

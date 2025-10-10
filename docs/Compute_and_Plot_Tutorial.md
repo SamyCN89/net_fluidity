@@ -54,14 +54,18 @@ python scripts/compute_speed_bootstrap.py \
 
 Notes:
 - `--outdir` defaults to `--subset` (or `bootstrap` if no subset).
-- Use `--append-subset-to-outdir` to suffix an explicit outdir as `<outdir>__subset-<subset>`.
 - `--progress` shows tqdm bars in the underlying compute.
+- Parallel scopes: use `--parallel-scope windows|regions|both`. Pair with `--jobs` (windows) and `--region-jobs` (regions).
+- Memory defaults: boots use float32 and indices use int32 by default. Opt out with `--no-boots-float32` and `--no-index-int32`.
+- `--n-animals` limits animals loaded per NPZ (default 0 = all). For quick scans you may set a smaller number, but prefer all for final analyses to avoid sampling bias.
+ - When `--parallel-scope` includes `regions` but `--region-jobs` is `1`, the script emits a warning. Increase `--region-jobs` to parallelize across regions.
+ - Single source of truth (SoT): scripts import `DFCAnalysis` from `src/net_fluidity_julien/context.py`. Ensure this module is on `PYTHONPATH`.
 
 Options overview (compute)
 - `--tr INT`: select TR by metadata; e.g., 500 or 400.
 - `--subset NAME`: choose the output subset folder under `paths['speed']`; if omitted, defaults to `bootstrap`.
 - `--outdir NAME`: override output folder name (defaults to `--subset` if omitted).
-- `--append-subset-to-outdir`: suffix `<outdir>__subset-<subset>` when combining multiple subsets.
+- `--parallel-scope windows|regions|both`: scope of parallelism; use `--jobs` and `--region-jobs` accordingly.
 - `--tau-index INT`: choose a tau slice; `-1` pools all taus together.
 - `--q LIST`: percentiles to compute (comma‑sep), default `1,5,50,95,99`.
 - `--pairs STRING`: pairs string `(G1,T1)-(G2,T2);...` to compare for diffs.
@@ -71,11 +75,10 @@ Options overview (compute)
 - `--pool-threshold median|INT`: pool windows into `short` (≤ threshold) and `long` (> threshold).
 - `--pool-all`: also add an `all` pool across all windows.
 - `--jobs INT`: parallelize across windows per ROI (e.g., `8`).
-- `--parallel-scope windows`: current scope; window‑level parallelism.
 - `--progress`: show progress bars.
 - `--load-cache`: reuse existing CSVs if present (skips recompute).
 - `--reuse-group-boots`: reuse per‑group bootstrap replicates across pairs for faster diffs.
-- `--boots-float32` / `--values-float32` / `--index-int32`: memory/perf tuning for large jobs.
+- Memory/perf: defaults are float32 boots and int32 indices. Use `--no-boots-float32` / `--no-index-int32` to opt out; `--values-float32` casts values.
   
 Pool‑test controls
 - `--bootstrap-pool-cols COLS`: build pooled supergroups by matching a subset of `--group-cols` (e.g., `genotype`).
@@ -91,6 +94,7 @@ Behavior and outputs
     - `region, roi, window, A, B, q, diff, lo, hi, p, p_method, significant, n_a, n_b`.
   - `speed_nor_correlations.csv` (if `--correlate-nor`): pooled‑window correlations of per‑animal percentiles with a NOR score; columns:
     - `region, roi, window, q, pearson_r, pearson_p, spearman_rho, spearman_p, n, nor_col`.
+  - NOR source: the NOR column is read from the preprocessed cognitive CSV via `DFCAnalysis`. Use `--nor-col` to select a column if multiple are present.
 
 ### 1.1) Pool‑Test (target vs pooled supergroup)
 
@@ -182,7 +186,6 @@ python scripts/plot_speed_bootstrap.py \
 Options:
 - `--plot-format png|pdf|svg` (default `png`).
 - `--outdir` optional; defaults to `--subset` if omitted.
-- Use `--append-subset-to-outdir` to suffix when reusing an outdir across subsets.
 - `--plot-diffs-by-win`: per ROI and pair, plot diff(A−B) vs window.
 - `--plot-diffs-bywin-grid`: per ROI, grid aggregating all pairs (by-window).
 - `--plot-pooled-diffs`: per ROI and pair, plot pooled (short/long/all) diffs with CIs.
@@ -203,6 +206,7 @@ Script: `scripts/plot_speed_correlations.py`
   - `--metric spearman|pearson` (default `spearman`)
   - `--alpha 0.05`: significance threshold; filled markers indicate `p <= alpha`
   - `--plot-by-win`, `--plot-pooled`, `--progress`, `--plot-format`, `--outdir`, `--append-subset-to-outdir`
+  - NOR source reminder: correlations are computed against a cognitive score (e.g., NOR index) from the cognitive CSV managed by `DFCAnalysis`.
 
 Pool‑test plots (from `speed_bootstrap_pooltest*.csv`)
 
@@ -289,6 +293,7 @@ Examples (overrides)
 
 - Configure roots with `PATHS_ROOT` or `PATHS_ENV` + `PROJECT_ROOT_<ENV>`.
 - Validate with `scripts/paths_doctor.py --show --check-write --create`.
+- Context checks: run `scripts/paths_doctor.py --check-context` to validate the cognitive CSV, required `--group-cols`, and the `--nor-col` if you plan to use `--correlate-nor`.
 - If raw data are read‑only, you can symlink or mirror them into your root at `dataset/<DATASET_NAME>/...` to keep the layout consistent.
 - Long runs without Slurm:
   - `tmux new -s boots && bash scripts/run_bootstrap_batches.sh both |& tee boots.log`

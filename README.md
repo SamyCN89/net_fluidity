@@ -38,7 +38,29 @@ If you use `fun_paths.get_paths`, it will read `PROJECT_ROOT_<ENV>` (default `LO
 
 ## Quick Start
 
-Compute a dFC stream from time series and its dFC speed using the optimized unified function:
+Bootstrap compute/plot (recommended flow)
+
+```bash
+# 1) Configure paths (env vars or .env) and install shared package
+pip install -e shared_code
+export PATHS_ROOT=/abs/path/to/project/root
+export DATASET_NAME=julien_caillette
+
+# 2) Inspect/prepare paths and context
+make speed-doctor
+
+# 3) Compute CSVs (quantiles, diffs, optional correlations)
+make speed-compute TR=500 SUBSET=regions500 TAU_INDEX=0 N_BOOT=2000 JOBS=8 PAIR_SCOPE=windows
+
+# 4) Plot from CSVs
+make speed-plot TR=500 SUBSET=regions500
+
+# Optional: pool-tests or correlations (if computed)
+make speed-pooltest TR=500 SUBSET=regions500
+make speed-cor TR=500 SUBSET=regions500
+```
+
+Core API example (compute dFC stream and speed directly):
 
 ```python
 import numpy as np
@@ -68,6 +90,15 @@ python test_compatibility.py
 ```
 
 These scripts generate synthetic data and compare implementations. They do not require external data.
+
+## Makefile Targets
+
+- `make help-speed`: lists dFC speed bootstrap targets and variables.
+- `make speed-doctor`: shows and prepares paths; runs context checks.
+- `make speed-compute`: runs `scripts/compute_speed_bootstrap.py` with common defaults (override variables like `TR`, `SUBSET`, `N_BOOT`).
+- `make speed-plot`: plots from CSVs via `scripts/plot_speed_bootstrap.py`.
+- `make speed-pooltest`: renders pool-test figures if `speed_bootstrap_pooltest*.csv` exists.
+- `make speed-cor`: renders correlation figures if `speed_nor_correlations.csv` exists.
 
 ## Notes on Implementations
 
