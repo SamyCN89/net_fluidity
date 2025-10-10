@@ -461,6 +461,60 @@ def build_group_comparisons(
                 cols_mdiff.append(mdiff)
                 cols_cdr.append(cdr)
                 names.append((title, f"{name_i} vs {name_j}"))
+
+        # POOLED ACROSS BASES PER AGE (to match curve plots)
+        # Build four cohorts per age (2m/4m): Female wt, Female dKI, Male wt, Male dKI
+        title_pooled = "Sex×Genotype (pooled)"
+        for age in ("2m", "4m"):
+            # unions for sex
+            sex_union = {"Female": [], "Male": []}
+            for sex_base, agesS in F_sex.items():
+                if agesS.get(age) is None:
+                    continue
+                low = sex_base.lower()
+                if "female" in low:
+                    sex_union["Female"].append(agesS[age])
+                elif "male" in low:
+                    sex_union["Male"].append(agesS[age])
+            sex_union = {
+                k: (np.unique(np.concatenate(v)) if v else np.array([], dtype=int))
+                for k, v in sex_union.items()
+            }
+            # unions for genotype
+            geno_union = {"wt": [], "dKI": []}
+            for geno_base, agesG in F_geno.items():
+                if agesG.get(age) is None:
+                    continue
+                low = geno_base.lower()
+                if "wt" in low:
+                    geno_union["wt"].append(agesG[age])
+                elif "dki" in low:
+                    geno_union["dKI"].append(agesG[age])
+            geno_union = {
+                k: (np.unique(np.concatenate(v)) if v else np.array([], dtype=int))
+                for k, v in geno_union.items()
+            }
+
+            cohorts = []  # list[(label, idx)]
+            for sex_name in ("Female", "Male"):
+                for geno_key in ("wt", "dKI"):
+                    idx = np.intersect1d(sex_union[sex_name], geno_union[geno_key], assume_unique=False)
+                    if idx.size:
+                        cohorts.append((f"{sex_name} {geno_key}-{age}", idx))
+            # pairwise across cohorts within this age
+            for i in range(len(cohorts)):
+                for j in range(i + 1, len(cohorts)):
+                    name_i, idx_i = cohorts[i]
+                    name_j, idx_j = cohorts[j]
+                    X, Y = data_T[:, idx_i], data_T[:, idx_j]
+                    p = _mwu_rows(X, Y)
+                    muX, muY = np.mean(X, axis=1), np.mean(Y, axis=1)
+                    mdiff = muY - muX
+                    cdr = (muY - muX) / np.maximum(muY + muX, 1e-9)
+                    cols_p.append(p)
+                    cols_mdiff.append(mdiff)
+                    cols_cdr.append(cdr)
+                    names.append((title_pooled, f"{name_i} vs {name_j}"))
     if not cols_p:
         empty = pd.DataFrame(index=link_labels, columns=pd.MultiIndex.from_tuples([]))
         return empty, empty, empty
