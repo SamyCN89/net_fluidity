@@ -7,40 +7,35 @@ Centralized, vectorized implementations to be reused by CLIs and notebooks.
 from __future__ import annotations
 
 from collections.abc import Iterable
-<<<<<<< HEAD
 
 from numba import njit, prange, set_num_threads
-=======
->>>>>>> 3c1c59b (Refactor bootstrap functions to remove unused Numba implementation and streamline percentile calculations)
 import numpy as np
 
-set_num_threads(cfg.numba_threads if hasattr(cfg, "numba_threads") else 4)
 
+# @njit(parallel=True, fastmath=True)
+# def _bootstrap_diff_inner(x, y, q_arr, n_boot, ci, seed):
+#     """Low-level parallel bootstrap of percentile differences."""
+#     nx, ny = x.size, y.size
+#     nq = q_arr.size
+#     boots = np.empty((n_boot, nq), np.float32)
+#     rng = np.random.default_rng(seed)
 
-@njit(parallel=True, fastmath=True)
-def _bootstrap_diff_inner(x, y, q_arr, n_boot, ci, seed):
-    """Low-level parallel bootstrap of percentile differences."""
-    nx, ny = x.size, y.size
-    nq = q_arr.size
-    boots = np.empty((n_boot, nq), np.float32)
-    rng = np.random.default_rng(seed)
+#     for b in prange(n_boot):
+#         idx_x = rng.integers(0, nx, nx)
+#         idx_y = rng.integers(0, ny, ny)
+#         xb = x[idx_x]
+#         yb = y[idx_y]
+#         for i in range(nq):
+#             q = q_arr[i]
+#             px = np.percentile(xb, q)
+#             py = np.percentile(yb, q)
+#             boots[b, i] = px - py
 
-    for b in prange(n_boot):
-        idx_x = rng.integers(0, nx, nx)
-        idx_y = rng.integers(0, ny, ny)
-        xb = x[idx_x]
-        yb = y[idx_y]
-        for i in range(nq):
-            q = q_arr[i]
-            px = np.percentile(xb, q)
-            py = np.percentile(yb, q)
-            boots[b, i] = px - py
-
-    alpha = (100.0 - ci) / 2.0
-    lo = np.percentile(boots, alpha, axis=0)
-    hi = np.percentile(boots, 100.0 - alpha, axis=0)
-    sig = (lo > 0) | (hi < 0)
-    return lo, hi, sig
+#     alpha = (100.0 - ci) / 2.0
+#     lo = np.percentile(boots, alpha, axis=0)
+#     hi = np.percentile(boots, 100.0 - alpha, axis=0)
+#     sig = (lo > 0) | (hi < 0)
+#     return lo, hi, sig
 
 
 def bootstrap_percentiles(
@@ -93,8 +88,6 @@ def bootstrap_percentiles(
     return point, lo, hi
 
 
-=======
->>>>>>> 3c1c59b (Refactor bootstrap functions to remove unused Numba implementation and streamline percentile calculations)
 def bootstrap_diff_percentiles(
     x: np.ndarray,
     y: np.ndarray,
@@ -127,13 +120,8 @@ def bootstrap_diff_percentiles(
             "n_x": int(nx),
             "n_y": int(ny),
         }
-<<<<<<< HEAD
-
     # Observed percentile difference
-=======
     point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
-    nx, ny = x.size, y.size
-    nx, ny = x.size, y.size
     rng = np.random.default_rng(seed)
     boots = np.empty((n_boot, q_arr.size), dtype)
     done = 0
@@ -156,14 +144,10 @@ def bootstrap_diff_percentiles(
     lo = np.percentile(boots, alpha, axis=0)
     hi = np.percentile(boots, 100.0 - alpha, axis=0)
     sig = (lo > 0) | (hi < 0)
-    point = np.percentile(x, q_arr) - np.percentile(y, q_arr)
-
-    # Parallel bootstrap using numba-compiled kernel
-    lo, hi, sig = _bootstrap_diff_inner(x, y, q_arr, n_boot, ci, seed)
 
     return {
         "q": q_arr,
-        "point": point,
+        "point": point.astype(dtype,copy=False),
         "lo": lo.astype(dtype),
         "hi": hi.astype(dtype),
         "sig": sig,
