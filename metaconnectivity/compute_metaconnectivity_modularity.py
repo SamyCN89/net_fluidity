@@ -65,7 +65,7 @@ PROCESSORS = -1
 
 lag = 1
 tau = 5
-window_size = 100
+window_size = 9
 window_parameter = (5, 100, 1)
 
 # Parameters allegiance analysis
@@ -117,6 +117,7 @@ mc_ref_allegiance_communities, sort_allegiance, contingency_matrix = (
     )
 )
 
+#%%
 # sorted initial mc by communities
 mc_allegiance = mc[:, sort_allegiance][:, :, sort_allegiance]
 # Optional -fill with 0 the diagonal

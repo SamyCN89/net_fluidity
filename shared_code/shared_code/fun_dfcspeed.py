@@ -27,12 +27,7 @@ import numexpr as ne
 import numpy as np
 from tqdm import tqdm
 
-from .fun_loaddata import (
-    get_missing_files,
-    load_from_cache,
-    make_file_path,
-    save2disk,
-)
+from .fun_loaddata import get_missing_files, load_from_cache, make_file_path, save2disk
 from .fun_optimization import (
     cosine_speed_vectorized,
     fast_corrcoef,
@@ -167,6 +162,30 @@ def ts2dfc_stream(ts, window_size, lag=None, format_data="2D", method="pearson")
             dfc_stream[:, :, k] = fc
 
     return dfc_stream
+
+
+def dfc_stream2fcd(dfc_stream: np.ndarray) -> np.ndarray:
+    """Convert a dFC stream into a functional connectivity dynamics (FCD) matrix.
+
+    Parameters
+    ----------
+    dfc_stream : np.ndarray
+        2D (n_pairs, n_frames) or 3D (n_roi, n_roi, n_frames) dFC stream.
+
+    Returns
+    -------
+    np.ndarray
+        Correlation matrix between dFC frames.
+    """
+    if dfc_stream.ndim not in (2, 3):
+        raise ValueError("dfc_stream must be 2D or 3D")
+
+    if dfc_stream.ndim == 3:
+        dfc_vec = matrix2vec(dfc_stream)
+    else:
+        dfc_vec = dfc_stream
+
+    return np.corrcoef(dfc_vec.T)
 
 
 # %% #===============================================================================
@@ -943,6 +962,29 @@ def pool_vel_windows(vel, lentau, limits, strategy="pad"):
     return pooled_final
 
 
+def window_pooling_speed(
+    filter_listed,
+    vel_list,
+    short_bins: int = 10,
+    mid_bins: int = 31,
+):
+    """Legacy pooling helper maintained for backward compatibility."""
+    indices = np.where(filter_listed)[0]
+    short_segments, mid_segments, long_segments = [], [], []
+
+    for idx in indices:
+        segments = vel_list[idx]
+        total = len(segments)
+        short_segments.extend(segments[: short_bins])
+        mid_segments.extend(segments[short_bins : min(mid_bins, total)])
+        long_segments.extend(segments[min(mid_bins, total) :])
+
+    def _concat(parts):
+        return np.concatenate(parts) if parts else np.array([])
+
+    return _concat(short_segments), _concat(mid_segments), _concat(long_segments)
+
+
 def get_population_wpooling(wp_list, index_group):
     print("Group:", np.sum(index_group))
     index_mask = (
@@ -995,3 +1037,25 @@ def check_and_rerun_missing_files(
     #         delayed(compute4window)(ws, prefix) for ws in missing_files
     #     )
     return missing_files
+# =============================================================================
+# Helpers
+# =============================================================================
+
+
+def matrix2vec(matrix3d: np.ndarray) -> np.ndarray:
+    """Vectorize each frame of a 3D matrix into columns.
+
+    Parameters
+    ----------
+    matrix3d : np.ndarray
+        Array shaped (n_roi, n_roi, n_frames).
+
+    Returns
+    -------
+    np.ndarray
+        Array shaped (n_roi * n_roi, n_frames) with column-wise vectorised frames.
+    """
+    if matrix3d.ndim != 3:
+        raise ValueError("matrix3d must be 3D")
+    n_roi = matrix3d.shape[0]
+    return matrix3d.reshape(n_roi * n_roi, matrix3d.shape[2], order="C")
