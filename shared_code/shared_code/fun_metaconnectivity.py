@@ -77,112 +77,6 @@ def compute_metaconnectivity(ts_data, window_size=7, lag=1, save_path=None, n_jo
     return mc
 
 
-# %%
-# Deprecated - Old version of compute_metaconnectivity function
-def compute_metaconnectivity_old(
-    ts_data, window_size=7, lag=1, return_dfc=False, save_path=None, n_jobs=-1
-):
-    """
-    This function calculates meta-connectivity matrices from time-series data using
-    a sliding window approach. It supports parallel computation and caching of results
-    to optimize performance.
-
-    -----------
-    ts_data : np.ndarray
-        A 3D array of shape (n_animals, n_regions, n_timepoints) representing the
-        time-series data for multiple animals and brain regions.
-    window_size : int, optional
-        The size of the sliding window used for dynamic functional connectivity (DFC)
-        computation. Default is 7.
-    lag : int, optional
-        The lag parameter for time-series analysis. Default is 1.
-    return_dfc : bool, optional
-        If True, the function also returns the DFC stream. Default is False.
-    save_path : str or None, optional
-        The directory path where the computed meta-connectivity and DFC stream will
-        be saved. If None, results are not saved. Default is None.
-    n_jobs : int, optional
-        The number of parallel jobs to use for computation. Use -1 to utilize all
-        available CPU cores. Default is -1.
-
-    --------
-    mc : np.ndarray
-        A 3D array of meta-connectivity matrices for each animal.
-    dfc_stream : np.ndarray, optional
-        A 4D array of DFC streams for each animal, returned only if `return_dfc` is True.
-
-    Notes:
-    ------
-    - If a `save_path` is provided and a cached result exists, the function will load
-      the cached data instead of recomputing it.
-    - The function uses joblib for parallel computation, with the "loky" backend.
-    - The meta-connectivity matrices are computed by correlating the DFC streams.
-
-    Examples:
-    ---------
-    # Example usage:
-    mc = compute_metaconnectivity(ts_data, window_size=10, lag=2, save_path="./cache")
-    mc, dfc_stream = compute_metaconnectivity(ts_data, return_dfc=True, n_jobs=4)
-    """
-
-    n_animals, tr_points, nodes = ts_data.shape
-    dfc_stream = None
-    mc = None
-
-    # File path setup
-    save_path = Path(save_path) if save_path else None
-    file_path = (
-        save_path
-        / f"mc_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
-        if save_path
-        else None
-    )
-    if file_path:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        # file_path = os.path.join(save_path, f'mc_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz')
-        # os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-    # Load from cache
-    if file_path and file_path.exists():
-        print(f"Loading meta-connectivity from: {file_path}")
-        data = np.load(file_path, allow_pickle=True)
-        mc = data["mc"]
-        dfc_stream = data["dfc_stream"] if return_dfc and "dfc_stream" in data else None
-
-    else:
-        print(
-            f"Computing meta-connectivity in parallel (window_size={window_size}, lag={lag})..."
-        )
-
-        # Parallel DFC stream computation per animal
-        with parallel_backend("loky", n_jobs=n_jobs):
-            dfc_stream_list = Parallel()(
-                delayed(ts2dfc_stream)(ts_data[i], window_size, lag, format_data="2D")
-                # for i in tqdm(range(n_animals), desc="DFC Streams")
-                for i in range(n_animals)
-            )
-        dfc_stream = np.stack(dfc_stream_list)
-
-        # Parallel MC matrices per animal
-        with parallel_backend("loky", n_jobs=n_jobs):
-            mc_list = Parallel()(
-                delayed(fast_corrcoef)(dfc.T)
-                # for dfc in tqdm(dfc_stream, desc="Meta-connectivity")
-                for dfc in dfc_stream
-            )
-        mc = np.stack(mc_list)
-
-        # Save results if path is provided
-        if file_path:
-            print(f"Saving meta-connectivity to: {file_path}")
-            if return_dfc:
-                np.savez_compressed(
-                    file_path, mc=mc, dfc_stream=dfc_stream if return_dfc else None
-                )
-            else:
-                np.savez_compressed(file_path, mc=mc)
-    # print(f"Max RAM usage during run: {max(all_mem_use):.2f} MB")
-    return (mc, dfc_stream) if return_dfc else mc
 
 
 # %%
@@ -806,6 +700,11 @@ def compute_mc_nplets_mask_and_index(regions, allegiance_sort=None):
     mc_nplets_index = mask[mc_idx[:, 0], mc_idx[:, 1]]
 
     return mask, mc_nplets_index
+
+
+def compute_trimers_genuine(mc_values, reference_values, trimer_mask):
+    """Return boolean mask where |MC| exceeds |reference| for trimer entries."""
+    return np.abs(mc_values[:, trimer_mask]) > np.abs(reference_values)
 
 
 # %%

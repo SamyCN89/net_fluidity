@@ -9,22 +9,25 @@ Created on Mon Sep 23 13:26:30 2024
 # from functions_analysis import *
 from pathlib import Path
 
-from fun_dfcspeed import ts2dfc_stream, ts2fc
+from metaconnectivity.fun_dfcspeed import ts2dfc_stream, ts2fc
 from matplotlib import pyplot as plt
-from fun_metaconnectivity import (
+from shared_code.fun_metaconnectivity import (
     compute_mc_nplets_mask_and_index,
+    compute_trimers_genuine,
     trimers_leaves_fc,
     trimers_root_fc,
 )
-from fun_utils import (
-    get_paths,
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import (
+    # get_paths,
     load_cognitive_data,
     load_grouping_data,
     load_timeseries_data,
     set_figure_params,
 )
 import numpy as np
-
+import pickle
+#%%
 # =============================================================================
 # This code compute
 # Load the dataz
@@ -35,22 +38,43 @@ save_fig = set_figure_params(False)
 # =================== Paths and folders =======================================
 timeseries_folder = "Timecourses_updated_03052024"
 external_disk = True
-if external_disk == True:
-    root = Path("/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/")
-else:
-    root = Path("/home/samy/Bureau/Proyect/LauraHarsan/Ines/")
+# if external_disk == True:
+#     root = Path("/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/")
+# else:
+#     root = Path("/home/samy/Bureau/Proyect/LauraHarsan/Ines/")
 
+# paths = get_paths(
+#     external_disk=True, external_path=root, timecourse_folder=timeseries_folder
+# )
 paths = get_paths(
-    external_disk=True, external_path=root, timecourse_folder=timeseries_folder
+    dataset_name="ines_abdullah",
+    timecourse_folder="Timecourses_updated_03052024",
+    cognitive_data_file="ROIs.xlsx",
 )
-
+#%%
 # ========================== Load data =========================
-cog_data_filtered = load_cognitive_data(paths["sorted"] / "cog_data_sorted_2m4m.csv")
-mask_groups, label_variables = load_grouping_data(
-    paths["results"] / "grouping_data_oip.pkl"
-)
 
-data_ts = load_timeseries_data(paths["sorted"] / "ts_and_meta_2m4m.npz")
+# Load groups
+with open(paths["preprocessed"] / "grouping_data_oip.pkl", "rb") as f:
+    mask_groups, label_variables = pickle.load(f)
+with open(paths["preprocessed"] / "grouping_data_per_sex(gen_phen).pkl", "rb") as f:
+    mask_groups_per_sex, label_variables_per_sex = pickle.load(f)
+with open(paths["preprocessed"] / "grouping_data_new.pkl", "rb") as f:
+    groups_sex_geno, groups_sex_pheno_oip, groups_sex_pheno_nor = pickle.load(f)
+
+# # Load cognitive data
+# cog_data_df = pd.read_excel(paths["cog_data"], sheet_name="Exclusions")
+# data_roi = pd.read_excel(paths["cog_data"], sheet_name="41_Allen").to_numpy()
+
+
+# cog_data_filtered = load_cognitive_data(paths["sorted"] / "cog_data_sorted_2m4m.csv")
+# mask_groups, label_variables = load_grouping_data(
+#     paths["results"] / "grouping_data_oip.pkl"
+# )
+
+#%%
+data_ts = np.load(paths["preprocessed"] / "ts_and_meta_2m4m.npz")
+# data_ts = load_timeseries_data(paths["sorted"] / "ts_and_meta_2m4m.npz")
 ts = data_ts["ts"]
 n_animals = data_ts["n_animals"]
 regions = data_ts["regions"]
@@ -192,10 +216,6 @@ dfc_leaves_values_mean = np.mean(dfc_leaves_values, axis=-1)
 # trimers_genuine_mc_root_fc_leaves = (mc_val[:, trimer_mask]) > (
 #     fc_leaves_values
 # )  # genuine trimers by MC_{ir,jr} > FC_{i,j}
-
-
-def compute_trimers_genuine(mc_val, dfc_leaves_values_mean, trimer_mask):
-    return np.abs(mc_val[:, trimer_mask]) > np.abs(dfc_leaves_values_mean)
 
 
 trimers_genuine_mc_root_fc_leaves = compute_trimers_genuine(

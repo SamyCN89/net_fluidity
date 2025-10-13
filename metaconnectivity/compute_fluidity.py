@@ -11,9 +11,6 @@ Created on Mon Sep 23 13:26:30 2024
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist
-from scipy.stats import genpareto
-
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
     #    get_paths,
@@ -22,6 +19,7 @@ from shared_code.fun_utils import (
     load_timeseries_data,
     set_figure_params,
 )
+from shared_code.fun_fluidity import extremal_sueveges, manifold_fluidity
 
 # =============================================================================
 # This code compute
@@ -62,70 +60,12 @@ anat_labels = data_ts["anat_labels"]
 # Parameters speed
 
 
-def extremal_Sueveges(Y, p):
-    u = np.quantile(Y, p)  # Same: p-th quantile threshold
-    q = 1 - p
-    Li = np.where(Y > u)[0]  # Same: get indices where Y > threshold
-    Ti = np.diff(Li)  # Time between exceedances
-    Si = Ti - 1  # Inter-event times
-    Nc = np.sum(Si > 0)  # Count of clusters (Si > 0)
-    N = len(Ti)  # Number of inter-exceedance intervals
-    sum_qSi = np.sum(q * Si)  # Sum for formula
-
-    if sum_qSi == 0:  # Prevent division by 0
-        return np.nan
-
-    numerator = sum_qSi + N + Nc - np.sqrt((sum_qSi + N + Nc) ** 2 - 8 * Nc * sum_qSi)
-    theta = numerator / (2 * sum_qSi)  # Suveges' closed-form formula
-    return theta
-
-
-# moved to top
-
-
-def MA_EEG_Man_Dim_Flui(TS, quanti=0.98, step=1):
-    L = TS.shape[0]
-    Dimension = np.zeros(L)
-    Fluidity = np.zeros(L)
-
-    for j in range(0, L, step):
-        idx_others = np.setdiff1d(np.arange(0, L, step), [j])
-        if len(idx_others) == 0:
-            continue
-
-        distance = cdist(TS[j : j + 1], TS[idx_others])[0]
-        logdista = -np.log(distance + np.finfo(float).eps)  # Avoid log(0)
-
-        Fluidity[j] = extremal_Sueveges(logdista, quanti)
-        thresh = np.quantile(logdista, quanti)
-
-        sorted_logdista = np.sort(logdista)
-        findidx = np.argmax(sorted_logdista > thresh)
-        logextr = (
-            sorted_logdista[findidx:-1]
-            if (findidx is not None and findidx < len(sorted_logdista) - 1)
-            else np.array([])
-        )
-
-        if logextr.size > 0:
-            try:
-                c, loc, scale = genpareto.fit(logextr - thresh, floc=0)
-                Dimension[j] = 1.0 / (scale + np.finfo(float).eps)
-            except Exception:
-                Dimension[j] = np.nan
-        else:
-            Dimension[j] = np.nan
-
-    return Fluidity, Dimension
-
-
-# %%
-
 fluidity = np.zeros((n_animals, len(ts[0])))
 dimension = np.zeros((n_animals, len(ts[0])))
 
 results = Parallel(n_jobs=-1)(
-    delayed(MA_EEG_Man_Dim_Flui)(ts[xx]) for xx in tqdm(range(n_animals))
+    delayed(manifold_fluidity)(ts[xx], quantile=0.98, step=1)
+    for xx in tqdm(range(n_animals))
 )
 for xx, (f, d) in enumerate(results):
     fluidity[xx] = f

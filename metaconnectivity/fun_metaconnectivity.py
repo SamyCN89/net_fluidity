@@ -31,26 +31,26 @@ from tqdm import tqdm
 #%%Metaconnectivity
 def compute_metaconnectivity(ts_data, window_size=7, lag=1, return_dfc=False, save_path=None, n_jobs=-1):
     """
-    This function calculates meta-connectivity matrices from time-series data using 
-    a sliding window approach. It supports parallel computation and caching of results 
+    This function calculates meta-connectivity matrices from time-series data using
+    a sliding window approach. It supports parallel computation and caching of results
     to optimize performance.
 
     -----------
     ts_data : np.ndarray
-        A 3D array of shape (n_animals, n_regions, n_timepoints) representing the 
+        A 3D array of shape (n_animals, n_regions, n_timepoints) representing the
         time-series data for multiple animals and brain regions.
     window_size : int, optional
-        The size of the sliding window used for dynamic functional connectivity (DFC) 
+        The size of the sliding window used for dynamic functional connectivity (DFC)
         computation. Default is 7.
     lag : int, optional
         The lag parameter for time-series analysis. Default is 1.
     return_dfc : bool, optional
         If True, the function also returns the DFC stream. Default is False.
     save_path : str or None, optional
-        The directory path where the computed meta-connectivity and DFC stream will 
+        The directory path where the computed meta-connectivity and DFC stream will
         be saved. If None, results are not saved. Default is None.
     n_jobs : int, optional
-        The number of parallel jobs to use for computation. Use -1 to utilize all 
+        The number of parallel jobs to use for computation. Use -1 to utilize all
         available CPU cores. Default is -1.
 
     --------
@@ -61,7 +61,7 @@ def compute_metaconnectivity(ts_data, window_size=7, lag=1, return_dfc=False, sa
 
     Notes:
     ------
-    - If a `save_path` is provided and a cached result exists, the function will load 
+    - If a `save_path` is provided and a cached result exists, the function will load
       the cached data instead of recomputing it.
     - The function uses joblib for parallel computation, with the "loky" backend.
     - The meta-connectivity matrices are computed by correlating the DFC streams.
@@ -140,6 +140,7 @@ def _run_louvain(mc_data, gamma):
     """
     Ci, Q = bct.modularity.modularity_louvain_und_sign(mc_data, gamma=gamma)
     return np.asanyarray(Ci, dtype=np.int32), Q
+
 def build_agreement_matrix_vectorized(communities):
     """
     Compute the agreement matrix for a 2D numpy array of community labels using vectorization.
@@ -295,10 +296,10 @@ def allegiance_matrix_analysis(mc_data, n_runs=100, gamma_pt=10, cache_path=None
     return allegancy_communities, argsort_allegancy_communities, allegancy_modularity_q, contingency_matrix
 
 def fun_allegiance_communities(mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1):
-    """ 
+    """
     Compute allegiance communities from a single or multiple mc matrices.
 
-    
+
     Parameters:
         mc_data: 2D or 3D ndarray
         n_runs: int
@@ -500,7 +501,7 @@ def get_fc_mc_indices(regions, allegiance_sort=None):
     The function returns the indices for both FC and MC matrices.
 
     Parameters:
-    ----------     
+    ----------
     regions : int
         The number of regions in the functional connectivity matrix.
     allegiance_sort : array-like, optional
@@ -721,7 +722,7 @@ def compute_mc_nplets_mask_and_index(regions, allegiance_sort=None):
 def trimers_by_apex(trimer_values, trimer_reg_apex):
     """
     Splits trimer MC values by apex region and group.
-    
+
     Parameters
     ----------
     mc_values : ndarray, shape (n_animals, n_trimers)
@@ -730,7 +731,7 @@ def trimers_by_apex(trimer_values, trimer_reg_apex):
         Apex region for each trimer.
     index1, index2 : boolean arrays
         Group masks (e.g., Good vs Impaired)
-    
+
     Returns
     -------
     regval_index1 : list of arrays
