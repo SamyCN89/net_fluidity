@@ -7,9 +7,9 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 ## Overview
 
 - Goal: quantify “cohesion” (allegiance) — how often ROI pairs belong to the same community over time — and analyze effects across age/sex/genotype.
-- Inputs: preprocessed time series and metadata from `shared_code/fun_paths.py` (`preprocessed/ts_and_meta_2m4m.npz` and grouping data), plus merged allegiance (communities over time) built from per-window results.
+- Inputs: dataset-specific preprocessing CLIs in `scripts/preprocessing/` build canonical bundles (`ts_and_meta_<dataset>.npz`) plus grouping metadata. These feed `allegiance/src/dfc_compute.py` to build dynamic FC streams, followed by allegiance/cohesion stages.
 - Outputs: compact NPZ summaries for downstream stats, Parquet/CSV events, and figures under `fig/<dataset>/cohesion/`.
-- Determinism: all scripts expose CLIs; parameters are recorded in file names and a manifest JSON.
+- Determinism: preprocessing, dFC, and cohesion scripts expose CLIs; parameters are recorded in file names and manifest JSON.
 
 ---
 
@@ -19,6 +19,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
   - Computes dynamic FC streams per animal over a range of window sizes.
   - Uses `shared_code.fun_dfcspeed.ts2dfc_stream` and paths from `shared_code.fun_paths.get_paths`.
   - Emits `dfc_*.npz` in `paths["dfc"]` with shapes `(animals, regions, regions, frames)` or `(animals, pairs, frames)` depending on `--format`.
+  - Refer to `docs/dfc_compute.md` for full CLI usage and caching semantics.
 
 - `allegiance_merge.py`
   - Merges per-window allegiance outputs into a single `merged_allegiance_*.npz` file.
@@ -50,8 +51,12 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 
 ## Data Flow
 
-1) Time series → DFC streams
-   - `dfc_compute.py` loads `ts` from `preprocessed/ts_and_meta_2m4m.npz` and computes DFC per animal and window size.
+0) Raw inputs → canonical bundles
+   - `scripts/preprocessing/preprocess.py` dispatches to `scripts/preprocessing/julien.py` or `scripts/preprocessing/ines.py` (based on `--dataset-name`) to align time-series and cognitive metadata, write `ts_and_meta_<dataset>.npz`, and emit grouping artefacts. Shims under `julien_data/src/preprocess.py` and `metaconnectivity/cognitive_data_ts_sorted.py` now import these central modules.
+
+1) Canonical bundles → DFC streams
+   - `scripts/dfc/dfc_compute.py` (also re-exported by `allegiance/src/dfc_compute.py`) loads `ts` from the canonical bundle (default `ts_and_meta_<dataset>.npz`) and computes DFC per animal/window size. Use `--jobs` to parallelise per-animal computation when resources allow. See `docs/dfc_compute.md` for command examples.
+   - `scripts/speed/dfc_speed_compute.py` consumes those dFC bundles and generates per-window speed artefacts under `results/<dataset>/speed/`, preserving the legacy subset naming (`all`, `shared`, region folders). Supports ROI filtering via `--region-labels` / `--region-indices`.
 
 2) Per-window allegiance → merged allegiance
    - External step (not shown here) produces per-window allegiance artifacts per animal/window.
@@ -75,7 +80,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 ## Shared Utilities and Configuration
 
 - `shared_code.fun_paths.get_paths` centralizes filesystem layout and resolves:
-  - `preprocessed/` for `ts_and_meta_*.npz` and `grouping_data_*.pkl`
+  - `preprocessed/` for `ts_and_meta_<dataset>.npz` and `grouping_data_*.pkl`
   - `dfc/` for dFC outputs; `allegiance/` for merged data; `f_cohesion/` for figures
   - Paths are controlled via environment variables per governance (`.env`). Set one of:
     - `PATHS_ROOT` (hard override) **or**
@@ -85,7 +90,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
   - Time courses: `dataset/<DATASET_NAME>/<timecourse_folder>/*.mat` (produced upstream).
   - Cognitive table: `dataset/<DATASET_NAME>/cog_data/<cognitive_data_file>`.
   - Anatomical labels: `dataset/<DATASET_NAME>/cog_data/<anat_labels_file>`.
-  - Preprocessing emits `results/<DATASET_NAME>/preprocessed/ts_and_meta_*.npz` plus grouping pickles under `results/<DATASET_NAME>/preprocessed/`.
+  - Preprocessing emits `results/<DATASET_NAME>/preprocessed/ts_and_meta_<dataset>.npz` plus grouping pickles.
 - `shared_code.fun_loaddata.TimeSeriesBundle` wraps the preprocessed NPZ (time series + metadata) and optional grouping masks, providing `n_animals`, `n_regions`, and label accessors for downstream pipelines.
 
 - `shared_code.fun_metaconnectivity.load_merged_allegiance` reads the merged allegiance bundle and returns `(dfc_communities, sort_allegiances, contingency_matrices)`.
@@ -95,6 +100,10 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 ---
 
 ## Typical Usage
+
+- Preprocess canonical bundles:
+  - `python scripts/preprocessing/preprocess.py --dataset-name julien --only-tr 500`
+  - `python scripts/preprocessing/preprocess.py --dataset-name ines --folder 2mois=Lot3_2mois --folder 4mois=Lot3_4mois`
 
 - Compute cohesion summaries (DMN example):
   - `python allegiance/src/cohesion_compute.py --window-size 9 --lag 1 --tau 3 --roi dmn --emit all --save-plots --no-show`

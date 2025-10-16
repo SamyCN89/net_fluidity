@@ -38,6 +38,50 @@ If you use `fun_paths.get_paths`, it will read `PROJECT_ROOT_<ENV>` (default `LO
 
 ## Quick Start
 
+### Preprocess datasets
+
+Run the central CLI (shorthand dataset names supported):
+
+```bash
+# Julien dataset (500-TR animals only)
+python scripts/preprocessing/preprocess.py --dataset-name julien --only-tr 500
+
+# Ines dataset with custom folder mapping
+python scripts/preprocessing/preprocess.py \
+  --dataset-name ines \
+  --ines-folder 2mois=Lot3_2mois \
+  --ines-folder 4mois=Lot3_4mois
+```
+
+This writes canonical bundles (`ts_and_meta_<dataset>.npz`) under `results/<dataset>/preprocessed/`, plus legacy-compatible artefacts. See `docs/preprocessing.md` for full usage.
+
+### Compute dynamic FC streams
+
+Use the consolidated CLI (supports threaded execution via `--jobs`). See `docs/dfc_compute.md` for parameter reference and troubleshooting tips.
+
+```bash
+python scripts/dfc/dfc_compute.py \
+  --dataset-name julien \
+  --wmin 5 --wmax 20 --wstep 5 \
+  --lag 1 --tau 5 --format 3D \
+  --jobs 4
+```
+
+### Compute dFC speed
+
+The new shared CLI reads the dFC bundles above and writes per-window speed arrays for both datasets:
+
+```bash
+python scripts/speed/dfc_speed_compute.py \
+  --dataset-name ines \
+  --subset-name all \
+  --window-min 5 --window-max 15 --window-step 5 \
+  --lag 1 --tau-max 3 \
+  --jobs 4
+```
+
+Specify `--region-labels "ACC,PL"` or `--region-indices 0,4` to focus on subsets, and use `--dry-run` to inspect planned outputs. Artefacts appear under `results/<dataset>/speed/<subset>/`.
+
 Bootstrap compute/plot (recommended flow)
 
 ```bash
@@ -103,6 +147,7 @@ These scripts generate synthetic data and compare implementations. They do not r
 ## Notes on Implementations
 
 - Prefer the unified `shared_code.fun_dfcspeed.dfc_speed` which supports Pearson/Spearman/cosine and returns optional FC2 streams. Earlier variants exist under `metaconnectivity/` and `julien_data/` for reference and benchmarking.
+- Dynamic FC streams for both datasets should now be generated via `scripts/dfc/dfc_compute.py` (aliased by `allegiance/src/dfc_compute.py`). Legacy scripts in `julien_data/` and `metaconnectivity/old_useful/` are being retired in favour of this shared implementation.
 
 ## Phase 3 Workflow
 

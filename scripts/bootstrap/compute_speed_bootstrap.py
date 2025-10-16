@@ -23,6 +23,22 @@ from joblib import Parallel, delayed
 import numpy as np
 import pandas as pd
 
+# Shared dataset defaults / path helpers
+try:
+    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset
+except ModuleNotFoundError:  # pragma: no cover - allow standalone execution
+    import sys
+
+    HERE = Path(__file__).resolve()
+    ROOT = HERE.parents[2]
+    for candidate in (ROOT, ROOT / "shared_code"):
+        if str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
+    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset  # type: ignore
+
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import load_timeseries_data
+
 # Centralized kernels (require shared_code package to be installed)
 from shared_code.fun_bootstrap import (
     bootstrap_diff_percentiles,
@@ -38,41 +54,104 @@ from shared_code.fun_bootstrap import (
 # ---------------- Context and IO helpers ---------------- #
 
 
-def get_context(tr: int | None = None):
-    """Return dataset context via the single source of truth (SoT).
+@dataclass
+class DatasetContext:
+    """Lightweight dataset assets required for speed bootstrapping."""
 
-    Enforces SoT: only src/net_fluidity_julien/context.py is supported.
-    """
-    try:
-        from net_fluidity_julien.context import DFCAnalysis  # type: ignore
-    except ModuleNotFoundError:
-        # Retry with src/ on sys.path
-        import sys
+    dataset_key: str
+    paths: dict[str, Path]
+    bundle: dict
+    cog_df: pd.DataFrame
 
-        here = Path(__file__).resolve()
-        repo_root = here.parents[1]
-        src_path = repo_root / "src"
-        if src_path.exists() and str(src_path) not in sys.path:
-            sys.path.insert(0, str(src_path))
-        try:
-            from net_fluidity_julien.context import DFCAnalysis  # type: ignore
-        except Exception as e:
-            raise RuntimeError(
-                "DFCAnalysis not available. Ensure 'src/net_fluidity_julien/context.py' exists and is importable."
-            ) from e
-    data = DFCAnalysis()
-    if tr is None:
-        data.get_metadata()
-    else:
-        preproc = Path(data.paths["preprocessed"])  # type: ignore[index]
-        cands = sorted(preproc.glob(f"metadata_animals_*_tr_{int(tr)}.pkl"))
-        if not cands:
-            raise FileNotFoundError(f"No metadata file for tr={tr} under {preproc}")
-        data.get_metadata(meta_filename=cands[0].name)
-    data.get_ts_preprocessed()
-    data.get_cogdata_preprocessed()
-    data.get_temporal_parameters()
-    return data
+    @property
+    def n_animals(self) -> int:
+        return int(self.bundle["n_animals"])
+
+    @property
+    def total_tr(self) -> int:
+        return int(self.bundle["total_tr"])
+
+
+def _select_cog_csv(
+    preprocessed_dir: Path,
+    dataset_key: str,
+    tr_hint: int | None,
+    total_tr: int,
+) -> Path:
+    """Heuristically choose the cognitive metadata CSV produced by preprocessing."""
+
+    def _first_match(pattern: str) -> Path | None:
+        matches = sorted(preprocessed_dir.glob(pattern))
+        return matches[0] if matches else None
+
+    # Dataset-specific favourites
+    if dataset_key.startswith("ines"):
+        for pattern in (
+            "cog_data_sorted_2m4m.csv",
+            "cog_data_sorted*.csv",
+        ):
+            path = _first_match(pattern)
+            if path:
+                return path
+
+    if dataset_key.startswith("julien"):
+        hints: list[str] = []
+        if tr_hint:
+            hints.append(f"cog_data_filtered*_tr_{int(tr_hint)}.csv")
+        hints.append(f"cog_data_filtered*_tr_{int(total_tr)}.csv")
+        hints.append("cog_data_filtered*.csv")
+        for pattern in hints:
+            path = _first_match(pattern)
+            if path:
+                return path
+
+    # Generic fallbacks
+    for pattern in (
+        "cog_data_filtered*.csv",
+        "cog_data_sorted*.csv",
+        "cog_data*.csv",
+    ):
+        path = _first_match(pattern)
+        if path:
+            return path
+
+    raise FileNotFoundError(
+        f"Could not locate cognitive metadata CSV in {preprocessed_dir} "
+        f"(dataset={dataset_key}, tr_hint={tr_hint}, total_tr={total_tr})."
+    )
+
+
+def _load_cog_dataframe(
+    preprocessed_dir: Path,
+    dataset_key: str,
+    tr_hint: int | None,
+    total_tr: int,
+) -> pd.DataFrame:
+    path = _select_cog_csv(preprocessed_dir, dataset_key, tr_hint, total_tr)
+    logging.getLogger(__name__).info("Loading cognitive metadata from %s", path)
+    return pd.read_csv(path)
+
+
+def load_dataset_context(dataset_name: str, tr_hint: int | None) -> DatasetContext:
+    dataset_key = _canonical_dataset(dataset_name)
+    cfg = DATASET_DEFAULTS[dataset_key]
+    paths = get_paths(
+        dataset_name=dataset_key,
+        timecourse_folder=cfg["timecourse_folder"],
+        cognitive_data_file=cfg["cognitive_data_file"],
+        anat_labels_file=cfg["anat_labels_file"],
+    )
+    bundle_path = Path(paths["preprocessed"]) / cfg["bundle_name"]
+    if not bundle_path.exists():
+        raise FileNotFoundError(f"Preprocessed bundle not found: {bundle_path}")
+    bundle = load_timeseries_data(bundle_path)
+    cog_df = _load_cog_dataframe(
+        Path(paths["preprocessed"]),
+        dataset_key=dataset_key,
+        tr_hint=tr_hint,
+        total_tr=int(bundle["total_tr"]),
+    )
+    return DatasetContext(dataset_key=dataset_key, paths=paths, bundle=bundle, cog_df=cog_df)
 
 
 def load_per_animal_from_npz(
@@ -110,6 +189,49 @@ def load_per_animal_from_npz(
     return out
 
 
+def _resolve_group_columns(cog_df: pd.DataFrame, columns: list[str]) -> list[str]:
+    """Map requested column names to actual DataFrame columns (case-insensitive)."""
+    if not isinstance(cog_df, pd.DataFrame):
+        raise TypeError("cog_df must be a pandas DataFrame")
+    resolved: list[str] = []
+    lower_map = {str(col).lower(): col for col in cog_df.columns}
+    for name in columns:
+        key = str(name).strip()
+        if not key:
+            continue
+        if key in cog_df.columns:
+            resolved.append(key)
+            continue
+        match = lower_map.get(key.lower())
+        if match is None:
+            raise KeyError(f"Column '{name}' not found in cognitive dataframe.")
+        resolved.append(match)
+    if not resolved:
+        raise ValueError("No valid grouping columns provided.")
+    return resolved
+
+
+def _resolve_pool_columns(group_cols: list[str], pool_cols_opt: str | None) -> list[str]:
+    if not pool_cols_opt:
+        return []
+    lower_map = {c.lower(): c for c in group_cols}
+    resolved: list[str] = []
+    for token in str(pool_cols_opt).split(","):
+        key = token.strip()
+        if not key:
+            continue
+        if key in group_cols:
+            resolved.append(key)
+        else:
+            match = lower_map.get(key.lower())
+            if match is None:
+                raise KeyError(
+                    f"Pooling column '{key}' not found among grouping columns {group_cols}."
+                )
+            resolved.append(match)
+    return resolved
+
+
 def build_groups_from_columns(cog_df: pd.DataFrame, columns: list[str]) -> dict:
     if not isinstance(cog_df, pd.DataFrame):
         raise TypeError("cog_df must be a pandas DataFrame")
@@ -136,6 +258,7 @@ SUBSET_TAG_RE = re.compile(
 
 @dataclass
 class BootstrapConfig:
+    dataset_name: str = "ines"
     tr: int = 500
     subset: str | None = None
     outdir: str | None = None
@@ -165,11 +288,13 @@ class BootstrapConfig:
     correlate_nor: bool = False
     nor_col: str | None = None
     correlate_nor_by_groups: bool = False
-    n_animals: int = 48
+    n_animals: int = 0
     bootstrap_pool_cols: str | None = None
     pool_exclude_self: bool = False
 
     # Derived
+    group_cols_resolved: list[str] = field(default_factory=list)
+    pool_cols_resolved: list[str] = field(default_factory=list)
     q_list: list[float] = field(default_factory=list)
     pairs_list: list = field(default_factory=list)
     boots_dtype: type = float
@@ -183,6 +308,7 @@ class BootstrapConfig:
         if region_jobs is None or int(region_jobs) <= 0:
             region_jobs = args.jobs if scope == "regions" else 1
         cfg = cls(
+            dataset_name=args.dataset_name,
             tr=args.tr,
             subset=args.subset,
             outdir=args.outdir,
@@ -728,16 +854,21 @@ def limit_blas_threads(n: int | None):
         pass
 
 
-def resolve_paths_and_groups(cfg: BootstrapConfig, data):
-    speed_root = Path(data.paths["speed"])  # type: ignore[index]
+def resolve_paths_and_groups(cfg: BootstrapConfig, ctx: DatasetContext):
+    speed_root = Path(ctx.paths["speed"])  # type: ignore[index]
     if cfg.subset:
         speed_root = speed_root / cfg.subset
     region_dirs = _find_region_folders(speed_root)
-    groups_map = build_groups_from_columns(
-        data.cog_data_filtered,
-        [s.strip() for s in cfg.group_cols.split(",") if s.strip()],
-    )
-    outputs_root = Path(data.paths["speed"])  # type: ignore[index]
+    requested_group_cols = [s.strip() for s in str(cfg.group_cols).split(",") if s.strip()]
+    if not cfg.group_cols_resolved:
+        cfg.group_cols_resolved = _resolve_group_columns(ctx.cog_df, requested_group_cols)
+    group_cols_list = cfg.group_cols_resolved
+    if not group_cols_list:
+        raise ValueError("No grouping columns resolved; check --group-cols.")
+    if not cfg.pool_cols_resolved:
+        cfg.pool_cols_resolved = _resolve_pool_columns(group_cols_list, cfg.bootstrap_pool_cols)
+    groups_map = build_groups_from_columns(ctx.cog_df, group_cols_list)
+    outputs_root = Path(ctx.paths["speed"])  # type: ignore[index]
     outdir_name = BootstrapConfig.build_outdir_name(cfg.outdir, cfg.subset)
     outdir = outputs_root / outdir_name
     outdir.mkdir(parents=True, exist_ok=True)
@@ -933,7 +1064,7 @@ def process_region_dir(
     boots_dtype: type | np.dtype,
     values_dtype: type | np.dtype,
     index_dtype: np.dtype | None,
-    data,
+    ctx: DatasetContext,
     pairs: list,
 ) -> tuple[
     list[dict[str, object]],
@@ -960,15 +1091,12 @@ def process_region_dir(
         return quantiles_rows, diffs_rows, corr_rows, pooltest_rows
 
     # Build pooled-supergroup mapping if requested
-    group_cols_list = [s.strip() for s in str(cfg.group_cols).split(",") if s.strip()]
-    pool_cols_list = (
-        [s.strip() for s in str(cfg.bootstrap_pool_cols).split(",") if s.strip()]
-        if cfg.bootstrap_pool_cols
-        else []
-    )
-    pool_groups_map = _build_pool_groups(
-        groups_map, group_cols_list, cfg.bootstrap_pool_cols
-    )
+    group_cols_list = cfg.group_cols_resolved or [
+        s.strip() for s in str(cfg.group_cols).split(",") if s.strip()
+    ]
+    pool_cols_list = cfg.pool_cols_resolved or []
+    pool_cols_opt = ",".join(pool_cols_list) if pool_cols_list else None
+    pool_groups_map = _build_pool_groups(groups_map, group_cols_list, pool_cols_opt)
     pos_map = {c: i for i, c in enumerate(group_cols_list)}
 
     # ------ Per-window processing ------
@@ -1049,15 +1177,15 @@ def process_region_dir(
         )
         rows_d.extend(drows)
         # Per-window correlations with NOR, if requested
-        if cfg.correlate_nor and isinstance(data.cog_data_filtered, pd.DataFrame):
-            nor_col = _detect_nor_column(data.cog_data_filtered, cfg.nor_col)
+        if cfg.correlate_nor and isinstance(ctx.cog_df, pd.DataFrame):
+            nor_col = _detect_nor_column(ctx.cog_df, cfg.nor_col)
             if nor_col:
                 # Overall (all animals)
                 rows_c.extend(
                     _compute_nor_correlation_rows(
                         per_animal,
                         q_list,
-                        data.cog_data_filtered,
+                        ctx.cog_df,
                         nor_col,
                         roi,
                         int(win),
@@ -1075,7 +1203,7 @@ def process_region_dir(
                             _compute_nor_correlation_rows(
                                 per_animal,
                                 q_list,
-                                data.cog_data_filtered,
+                                ctx.cog_df,
                                 nor_col,
                                 roi,
                                 int(win),
@@ -1364,16 +1492,16 @@ def process_region_dir(
                             }
                         )
                 if cfg.correlate_nor and isinstance(
-                    data.cog_data_filtered, pd.DataFrame
+                    ctx.cog_df, pd.DataFrame
                 ):
-                    nor_col = _detect_nor_column(data.cog_data_filtered, cfg.nor_col)
+                    nor_col = _detect_nor_column(ctx.cog_df, cfg.nor_col)
                     if nor_col:
                         # Overall
                         corr_rows.extend(
                             _compute_nor_correlation_rows(
                                 pooled,
                                 q_list,
-                                data.cog_data_filtered,
+                                ctx.cog_df,
                                 nor_col,
                                 folder_label,
                                 pool_name,
@@ -1391,7 +1519,7 @@ def process_region_dir(
                                     _compute_nor_correlation_rows(
                                         pooled,
                                         q_list,
-                                        data.cog_data_filtered,
+                                        ctx.cog_df,
                                         nor_col,
                                         folder_label,
                                         pool_name,
@@ -1541,8 +1669,16 @@ def main() -> int:
         formatter_class=HelpFormatter,
         epilog=(
             "Example:\n"
-            "  python scripts/compute_speed_bootstrap.py \\\n              --tr 400 --subset regions400 --tau-index 0 --n-boot 500 \\\n              --reuse-group-boots --chunk 256 --progress\n"
+            "  python scripts/bootstrap/compute_speed_bootstrap.py \\\n"
+            "      --dataset-name julien --subset all --tau-index 0 --n-boot 500 \\\n"
+            "      --reuse-group-boots --chunk 256 --progress\n"
         ),
+    )
+    ap.add_argument(
+        "--dataset-name",
+        type=str,
+        default="ines",
+        help="Dataset alias (e.g., 'ines', 'julien').",
     )
     ap.add_argument(
         "--tr", type=int, default=500, help="Total TR used to select metadata."
@@ -1673,7 +1809,7 @@ def main() -> int:
         action="store_true",
         help=(
             "On pooled windows (short/long/all), correlate per-animal speed "
-            "percentiles with a NOR score column (read from the preprocessed cognitive data CSV via DFCAnalysis)."
+            "percentiles with a NOR score column (loaded from the preprocessed cognitive metadata CSV)."
         ),
     )
     ap.add_argument(
@@ -1751,11 +1887,13 @@ def main() -> int:
     q_list = cfg.q_list
     pairs = cfg.pairs_list
 
-    # Load context/data
-    data = get_context(tr=cfg.tr)
+    # Load dataset context
+    ctx = load_dataset_context(cfg.dataset_name, cfg.tr)
+    if not cfg.n_animals or int(cfg.n_animals) <= 0:
+        cfg.n_animals = ctx.n_animals
     region_dirs, groups_map, outdir, q_path, d_path, c_path = resolve_paths_and_groups(
-        cfg, data
-    )  # region_dirs: list of Path, groups_map: dict, outdir: Path, q_path: Path, d_path: diffs_path, c_path: correaltion Path
+        cfg, ctx
+    )
 
     # --------- Load-cache behavior --------- #
     # Load-cache behavior: skip recomputation if outputs exist
@@ -1803,7 +1941,7 @@ def main() -> int:
             boots_dtype,
             values_dtype,
             index_dtype,
-            data,
+            ctx,
             pairs,
         )
 

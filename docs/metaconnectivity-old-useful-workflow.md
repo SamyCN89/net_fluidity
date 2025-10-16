@@ -5,7 +5,7 @@ This guide helps triage code parked in `metaconnectivity/old_useful/` after prom
 ---
 
 ## Decision Workflow
-- **Clarify target workflow**: Identify the analysis or figure you need to reproduce and note the modern entrypoints under `scripts/` or `allegiance/src/`.
+- **Clarify target workflow**: Identify the analysis or figure you need to reproduce and note the modern entrypoints under `scripts/preprocessing/`, `scripts/dfc/` (see `docs/dfc_compute.md`), or `allegiance/src/`.
 - **Check shared helpers**: Search `shared_code/shared_code/*.py` (use `rg`). If a helper already exists, adopt it rather than forking.
 - **Assess gaps**: When shared helpers lack a required feature, decide whether to extend them (preferred) or temporarily wrap the legacy helper.
 - **Classify the asset**:
@@ -57,8 +57,8 @@ _When to pick_: Surfaces subtle drift; yields the cleanest repo but takes longer
 | --- | --- | --- | --- | --- |
 | `compute_metaconnectivity.py`, `compute_metaconnectivity_allegiance.py` | Legacy MC pipelines | Retire | Use `metaconnectivity/compute_metaconnectivity_modularity.py` hooked into shared helpers. Preserve CLI notes only. | `metaconnectivity/compute_metaconnectivity_modularity.py` |
 | `compute_genuine_trimers.py`, `metaconnectivity_allegiance_matrix_test*.py` | Prototype allegiance/trimers workflows | Retire | Modern flow: `metaconnectivity/compute_trimers.py` plus `shared_code.fun_metaconnectivity.compute_trimers_genuine`. | `metaconnectivity/compute_trimers.py` |
-| `dfc_streams*.py`, `dfc_metaconnectivity.py` | Early dFC pipelines | Retire | Replace with shared helpers invoked from `allegiance/src` or `scripts/metaconnectivity`. | `shared_code.fun_dfcspeed` |
-| `master_mc.py`, `Consolidate_data.py` | Legacy orchestration | Archive | Document historical context; avoid running. Prefer Make/CLI pipelines. | — |
+| `dfc_streams*.py`, `dfc_metaconnectivity.py` | Early dFC pipelines | Retire | Replace with shared helpers invoked from `allegiance/src` or the consolidated CLIs (`scripts/dfc/dfc_compute.py`, `scripts/speed/dfc_speed_compute.py`). | `shared_code.fun_dfcspeed` |
+| `master_mc.py`, `Consolidate_data.py` | Legacy orchestration | Archive | Document historical context; avoid running. Prefer unified CLIs (`scripts/preprocessing/`, `scripts/dfc/`). | — |
 | `plot_*` scripts | Visualization helpers | Adapt | Move reusable pieces into `shared_code.fun_plot` or notebooks once confirmed still needed. | `shared_code.fun_plot` (extend) |
 
 ### Data & Artifacts
@@ -110,4 +110,3 @@ _When to pick_: Surfaces subtle drift; yields the cleanest repo but takes longer
 1. Confirm whether `variables_selector` or `fun_mc_viscocity` still serve active analyses; port with tests if yes.
 2. Decide which plotting utilities should become documented examples or notebooks.
 3. Track progress toward removing `metaconnectivity/old_useful` once all call sites migrate to shared helpers (maintain an issue checklist referencing this workflow).
-

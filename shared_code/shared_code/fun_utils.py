@@ -17,16 +17,27 @@ from scipy.io import loadmat
 def load_cognitive_data(path_to_csv: Path) -> pd.DataFrame:
     return pd.read_csv(path_to_csv)
 
+
 def load_timeseries_data(path_to_npz: Path) -> dict:
-    data = np.load(path_to_npz)
-    return {
+    data = np.load(path_to_npz, allow_pickle=True)
+    payload = {
         "ts": data["ts"],
         "n_animals": int(data["n_animals"]),
-        "total_tr": data["total_tr"],
-        "regions": data["regions"],
+        "total_tr": int(data["total_tr"]),
+        "regions": int(data["regions"]),
         "anat_labels": data["anat_labels"],
-        "is_2month_old": data["is_2month_old"],
     }
+    if "is_2month_old" in data.files:
+        payload["is_2month_old"] = data["is_2month_old"]
+    if "mouse_ids" in data.files:
+        payload["mouse_ids"] = data["mouse_ids"]
+    if "dataset_name" in data.files:
+        dataset_raw = data["dataset_name"]
+        payload["dataset_name"] = dataset_raw.item() if dataset_raw.shape == () else dataset_raw
+    if "filter_mode" in data.files:
+        filt_raw = data["filter_mode"]
+        payload["filter_mode"] = filt_raw.item() if getattr(filt_raw, "shape", ()) == () else filt_raw
+    return payload
 
 
 def load_timeseries(ts_file: Path) -> np.ndarray:
