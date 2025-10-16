@@ -59,10 +59,6 @@ def ts2fc(timeseries, format_data="2D", method="pearson"):
     # Calculate correlation coefficient matrix
     if method == "pearson":
         fc = fast_corrcoef(timeseries)
-        # fc = fast_corrcoef2(timeseries)
-        # fc = fast_corrcoef_numba(timeseries)
-
-        # fc = np.corrcoef(timeseries.T)
     elif method == "plv":
         fc = compute_plv_matrix_vectorized(timeseries.T)
     else:

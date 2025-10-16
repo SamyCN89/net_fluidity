@@ -109,6 +109,7 @@ def dfc_speed_split(
     indices_max = n_frames - (vstep + tau_max + time_offset)
     indices = np.arange(0, indices_max, 1)
 
+    #generate time window based on time_offset and vstep
     time_window = int(np.ceil(time_offset / vstep)) if time_offset > 0 else 0
 
     print(f"indices_max: {indices_max}, n_frames: {n_frames}, vstep: {vstep}, tau_max: {tau_max}, time_offset: {time_offset}")
