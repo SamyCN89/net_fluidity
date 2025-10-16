@@ -11,6 +11,7 @@ import logging
 import sys
 import pickle
 from pathlib import Path
+import time
 
 from joblib import Parallel, delayed
 import numpy as np
@@ -150,18 +151,19 @@ def dfc_speed_split(
     indices_max = n_frames - (vstep + tau_max + time_offset)
     indices = np.arange(0, indices_max, 1)
 
+    time_window = int(np.ceil(time_offset / vstep)) if time_offset > 0 else 0
     if np.size(tau_range) > 1:
         for tau_aux in tau_range:
             fc1_indices.append(indices[:-1])  # Indices for the first FC matrix
             fc2_indices.append(
-                indices[1:] + tau_aux + time_offset + vstep - 1
+                indices[1:] + tau_aux + time_window + vstep - 1
             )  # Indices for the second FC matrix
             # print(indices[:-1], indices[1:]+tau_aux+time_offset+vstep-1)
     else:
         tau_aux = tau_range
         fc1_indices.append(indices[:-1])
         fc2_indices.append(
-            indices[1:] + tau_aux + time_offset + vstep - 1
+            indices[1:] + tau_aux + time_window + vstep - 1
         )  # Indices for the second FC matrix
 
     n_speeds = (len(indices) - 1) * np.size(tau_range)

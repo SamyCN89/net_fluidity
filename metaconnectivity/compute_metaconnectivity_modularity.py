@@ -6,6 +6,7 @@ Created on Mon Sep 23 13:26:30 2024
 """
 
 # %%
+from pathlib import Path
 # from functions_analysis import *
 import time
 
@@ -19,12 +20,8 @@ from shared_code.fun_metaconnectivity import (
     intramodule_indices_mask,
 )
 from shared_code.fun_paths import get_paths
-from shared_code.fun_utils import (
-    load_cognitive_data,
-    load_grouping_data,
-    load_timeseries_data,
-    set_figure_params,
-)
+from shared_code.fun_loaddata import load_timeseries_bundle
+from shared_code.fun_utils import set_figure_params
 
 # ===============================================================================
 # This code compute metaconnectivity and modularity
@@ -38,24 +35,28 @@ paths = get_paths(
     anat_labels_file="41_Allen.txt",
 )
 
-folders = {"2mois": "TC_2months", "4mois": "TC_4months"}
-
-# ========================== Load data =========================
-cog_data_filtered = load_cognitive_data(
-    paths["preprocessed"] / "cog_data_sorted_2m4m.csv"
+bundle = load_timeseries_bundle(
+    paths["preprocessed"] / "ts_and_meta_2m4m.npz",
+    paths["preprocessed"] / "grouping_data_oip.pkl",
 )
-data_ts = load_timeseries_data(paths["preprocessed"] / "ts_and_meta_2m4m.npz")
-mask_groups, label_variables = load_grouping_data(
-    paths["preprocessed"] / "grouping_data_oip.pkl"
-)
+ts = bundle.ts
+n_animals = bundle.n_animals
+regions = bundle.n_regions
+mask_groups = bundle.mask_groups
+label_variables = bundle.label_variables
 
+if mask_groups is None or label_variables is None:
+    raise ValueError(
+        "Grouping data is required; expected masks and labels in the preprocessed bundle."
+    )
 
-# ========================== Indices ==========================================
-ts = data_ts["ts"]
-n_animals = data_ts["n_animals"]
-regions = data_ts["regions"]
-anat_labels = data_ts["anat_labels"]
-
+dataset_name = paths["results"].name
+report_root = Path("reports/metaconnectivity") / dataset_name
+mc_dir = report_root / "mc"
+allegiance_dir = report_root / "allegiance"
+mc_mod_dir = report_root / "mc_mod"
+for directory in (mc_dir, allegiance_dir, mc_mod_dir):
+    directory.mkdir(parents=True, exist_ok=True)
 
 # %%
 # ======================== Metaconnectivigty ==========================================
@@ -86,7 +87,7 @@ mc = compute_metaconnectivity(
     window_size=window_size,
     lag=lag,
     n_jobs=PROCESSORS,
-    save_path=paths["mc"],
+    save_path=mc_dir,
 )
 stop = time.time()
 print(f"Metaconnectivity time {stop-start}")
@@ -111,7 +112,7 @@ mc_ref_allegiance_communities, sort_allegiance, contingency_matrix = (
         mc_ref,
         n_runs=n_runs_allegiance,
         gamma_pt=gamma_pt_allegiance,
-        save_path=paths["allegiance"],
+        save_path=allegiance_dir,
         ref_name=label_ref,
         n_jobs=PROCESSORS,
     )
@@ -145,12 +146,12 @@ mc_val = mc_allegiance[:, mc_idx[:, 0], mc_idx[:, 1]]
 mc_mod_idx = mc_modules_mask[mc_idx[:, 0], mc_idx[:, 1]].astype(int)
 # %% Save modularity
 save_filename = paths[
-    "mc_mod"
+    "results"
 ] / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(
     " ", ""
 )
 
-# Ensure the directory exists before saving
+save_filename = mc_mod_dir / save_filename.name
 save_filename.parent.mkdir(parents=True, exist_ok=True)
 
 np.savez_compressed(

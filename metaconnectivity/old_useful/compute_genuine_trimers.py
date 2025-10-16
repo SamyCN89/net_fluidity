@@ -6,30 +6,23 @@ Created on Mon Sep 23 13:26:30 2024
 @author: samy
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-import brainconn as bct
-import os
+from pathlib import Path
 import time
-import pandas as pd
-# from functions_analysis import *
-from scipy.io import loadmat, savemat
-from scipy.special import erfc
-from scipy.stats import pearsonr, spearmanr
-
-from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import linkage, fcluster
-
 from itertools import combinations_with_replacement
 
-import copy
-from pathlib import Path
-import pickle
+import matplotlib.pyplot as plt
+import numpy as np
 
-from fun_loaddata import *
 from fun_dfcspeed import *
-from fun_metaconnectivity import compute_metaconnectivity, allegiance_matrix_analysis, intramodule_indices_mask, get_fc_mc_indices, get_mc_region_identities, compute_trimers_identity, build_trimer_mask, fun_allegiance_communities
-from fun_utils import split_groups_by_age
+from fun_metaconnectivity import (
+    build_trimer_mask,
+    compute_trimers_identity,
+    fun_allegiance_communities,
+    get_fc_mc_indices,
+    get_mc_region_identities,
+)
+from shared_code.fun_loaddata import load_timeseries_bundle
+from shared_code.fun_paths import get_paths
 # =============================================================================
 # This code compute 
 # Load the data
@@ -47,56 +40,41 @@ save_fig =True
 # save_data = False
 bins_parameter=200
 
-# =================== Paths and folders =======================================
-external_disk = True
+paths = get_paths(
+    dataset_name="ines_abdullah",
+    timecourse_folder="Timecourses_updated_03052024",
+    cognitive_data_file="ROIs.xlsx",
+    anat_labels_file="41_Allen.txt",
+)
 
-if external_disk==True:
-    root = Path('/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/')
-else:    
-    root = Path('/home/samy/Bureau/Proyect/LauraHarsan/Ines/')
+bundle = load_timeseries_bundle(
+    paths["preprocessed"] / "ts_and_meta_2m4m.npz",
+    paths["preprocessed"] / "grouping_data_oip.pkl",
+)
+ts = bundle.ts
+n_animals = bundle.n_animals
+regions = bundle.n_regions
+mask_groups = bundle.mask_groups
+label_variables = bundle.label_variables
 
-folders = {'2mois': 'TC_2months', '4mois': 'TC_4months'}
+if mask_groups is None or label_variables is None:
+    raise ValueError(
+        "Grouping data missing from the preprocessed bundle; expected masks and labels."
+    )
 
-path_results = root / 'results'
-path_figures = root / 'fig'
-path_sorted = path_results / 'sorted_data/'
-path_mc_mod = path_results / 'mc_mod/'
-path_timeseries = path_results / 'Timecourses_updated_03052024'
-path_cog_data   = path_timeseries / 'ROIs.xlsx'
-path_allegiance = path_results / 'allegiance/'
-
-# save_filename = path_mc_mod / 'mc_allegiance_ref(runs=%s_gammaval=%s)=%s_lag=%s_windowsize=%s_animals=%s_regions=%s.npz'%(label_ref, n_runs_allegiance, gamma_pt_allegiance, lag, window_size, n_animals, regions)
-
-# path_sorted = 'mc_mod' 
-#%%
-# =================== Paths and folders =======================================
-
-
-# ========================== Load data =========================
-cog_data_filtered = pd.read_csv(path_sorted / 'cog_data_sorted_2m4m.csv')
-data_ts = np.load(path_sorted / 'ts_and_meta_2m4m.npz')
-
-ts=data_ts['ts']
-n_animals = data_ts['n_animals']
-total_tp = data_ts['total_tp']
-regions = data_ts['regions']
-is_2month_old = data_ts['is_2month_old']
-anat_labels= data_ts['anat_labels']
-
-with open(path_results / "grouping_data_oip.pkl", "rb") as f:
-    mask_groups, label_variables = pickle.load(f)
+dataset_name = paths["results"].name
+report_root = Path("reports/metaconnectivity") / dataset_name
+mc_dir = report_root / "mc"
+allegiance_dir = report_root / "allegiance"
+mc_mod_dir = report_root / "mc_mod"
+for directory in (mc_dir, allegiance_dir, mc_mod_dir):
+    directory.mkdir(parents=True, exist_ok=True)
 #%% Indices
 
-#Parameters and indices of variables
-ts          = data_ts['ts']
-n_animals   = int(data_ts['n_animals'])
-total_tp    = data_ts['total_tp']
-regions     = data_ts['regions']
-anat_labels = data_ts['anat_labels']
-
-# ========================== Indices ==========================================
-#time groups
-is_2month_old = data_ts['is_2month_old']
+metadata = bundle.metadata
+total_tp = metadata.get("total_tp") or metadata.get("total_tr")
+anat_labels = metadata.get("anat_labels")
+is_2month_old = metadata.get("is_2month_old")
 
 #%%
 # =============================================================================
@@ -124,22 +102,15 @@ time_window_range = np.arange(time_window_min,
                               time_window_step)
 #%%Analysis of MC
 start = time.time()
-# Choose reference condition
-# label_ref = 'good2M_recurrecy' #The label of the reference matrix
-# label_ref = 'wt2M_recurrecy' #The label of the reference matrix
-# =============================================================================
-# Community structered - allegiance matrix
-# Save intramodules_idx, intramodule_indices, mc_modules_mask
-# =============================================================================
-# # ========================Communities ==========================================
-# #Set reference
-label_ref = label_variables[0][0] #The label of the reference matrix
-ind_ref = mask_groups[0][0] # the mask of the reference matrix
-# mc_ref = np.mean(mc[ind_ref],axis=0)
-save_filename = path_mc_mod / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(' ','')
-# data_analysis = np.load(os.path.join(path_results, 'mc/mc_allegiance_ref=%s_lag=%s_windowsize=%s_.npz'%(lag, window_size)), allow_pickle=True)
-# data_analysis = np.load(os.path.join(path_results, 'mc/mc_analysis_data_lag=%s_windowsize=%s_.npz'%(lag, window_size)), allow_pickle=True)
+label_ref = label_variables[0][0]
+ind_ref = mask_groups[0][0]
+mc_filename = (
+    f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})="
+    f"{gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_"
+    f"animals={n_animals}_regions={regions}.npz"
+).replace(" ", "")
 
+save_filename = mc_mod_dir / mc_filename
 data_analysis = np.load(save_filename, allow_pickle=True)
 # mc_allegiance = data_analysis['mc']
 # mc_ref_allegiance_communities           = data_analysis['mc_ref_allegiance_communities']
