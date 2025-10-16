@@ -5,19 +5,22 @@ Created on Mon Oct  2 14:42:38 2023
 
 @author: samy
 """
-
+#%%
 from scipy.io import loadmat
 import numpy as np
 import matplotlib.pyplot as plt
 import brainconn as bct
 import os
 import numpy.linalg as LA
-import scipy.stats 
+import scipy.stats
 from scipy.special import kl_div
 import time
 import pandas as pd
-from functions_analysis import *
+# from .functions_analysis import *
 
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import set_figure_params
+from shared_code.fun_utils import filename_sort_mat
 # =============================================================================
 # Figure's parameters
 # =============================================================================
@@ -40,14 +43,14 @@ def load_matdata(folder_data, specific_folder, files_name):
 
     for idx,file_name in enumerate(files_name):
         file_path       = os.path.join(hash_dir, file_name)
-        
+
         try:
             data = loadmat(file_path)['tc']
             ts_list.append(data)
         except Exception as e:
             print(f"Error loading data from {file_path}: {e}")
-    
-    
+
+
     # Check if the first dimension is consistent
     first_dim_size = ts_list[0].shape[0]
     if all(data.shape[0] == first_dim_size for data in ts_list):
@@ -60,7 +63,15 @@ def load_matdata(folder_data, specific_folder, files_name):
 # =============================================================================
 # Load data - Intersect the data for 2 and 4 months
 # =============================================================================
-root = '/home/samy/Bureau/Proyect/LauraHarsan/Ines/Timecourses_updated/'
+
+paths = get_paths(
+    dataset_name="ines_abdullah",
+    timecourse_folder=timecourse_folder,
+    cognitive_data_file="ROIs.xlsx",
+    anat_labels_file="41_Allen.txt",
+)
+
+root = '/home/samy/Bureau/Proyect/LauraHarsan/Ines/Timecourses_updated_03052024/'
 
 # Define paths and folders
 folders = {'2mois': 'Lot3_2mois', '4mois': 'Lot3_4mois'}
@@ -74,6 +85,7 @@ int_2m4m = np.intersect1d(hash_numbers['2mois'], hash_numbers['4mois'], return_i
 
 print('Number of intersected elements in 2m and 4m :' , len(int_2m4m[0]))
 
+#%%
 #%%
 # =============================================================================
 # Load cognitive data from .xlsx document
@@ -136,7 +148,7 @@ index_tsintcog  = np.array(int_2m4m)[1:,inter_cogfun[1]] #intersection of 2m,4m 
 #Extracting the file name of functional time series that are intersected
 filename_int2m = filenames['2mois'][index_tsintcog[0]]
 filename_int4m = filenames['4mois'][index_tsintcog[1]]
-        
+
 #Loading the time series of the intersected data
 ts2m = load_matdata(root, folders['2mois'], filename_int2m)
 ts4m = load_matdata(root, folders['4mois'], filename_int4m)
@@ -180,9 +192,9 @@ gen_label       = cog_data_filtered['gen_label'].to_numpy()
 plt.figure(1,figsize=(10, 6))
 plt.clf()
 plt.subplot(211)
-# plt.hist((male_wt_data['OiP_2M'], male_wt_data['OiP_4M'], male_dki_data['OiP_2M'], male_dki_data['OiP_4M']), bins=4, 
-#          alpha=0.7, 
-#           histtype='step', 
+# plt.hist((male_wt_data['OiP_2M'], male_wt_data['OiP_4M'], male_dki_data['OiP_2M'], male_dki_data['OiP_4M']), bins=4,
+#          alpha=0.7,
+#           histtype='step',
 #          label=('Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'))
 plt.violinplot((male_wt_data['OiP_2M'], male_wt_data['OiP_4M'], male_dki_data['OiP_2M'], male_dki_data['OiP_4M']))
             # labels=('Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'))
@@ -210,14 +222,14 @@ plt.legend()
 def ts2fc(timeseries, format_data = '2D'):
     """
     Calculate functional connectivity from time series data.
-    
+
     Parameters:
     timeseries (array): Time series data of shape (timepoints, nodes).
     format_data (str): Output format, '2D' for full matrix or '1D' for lower-triangular vector.
-    
+
     Returns:
     fc (array): Functional connectivity matrix ('2D') or vector ('1D').
-    
+
     Adapted from Lucas Arbabyazd et al 2020. Methods X, doi: 10.1016/j.neuroimage.2020.117156
     """
     # Calculate correlation coefficient matrix
@@ -238,12 +250,12 @@ def sort_modularity(fc):
     # modules, louvain = bct.modularity.modularity_louvain_dir(fc)
     modules, louvain = bct.modularity.modularity_louvain_und_sign(fc, gamma=1.1)
     # print(np.unique(modules),louvain)
-    
+
     #sort accord the modularity
     sort_modules = np.argsort(modules)
     # print(sort_modules)
     fc_mod = fc[:,sort_modules][sort_modules,:] #fc sorted by modularity
-    
+
     return fc_mod
 
 #Functional connectivity
@@ -264,10 +276,10 @@ tri_4m = np.array([fc_4m[tt, ind_fctri_4m[0], ind_fctri_4m[1]] for tt in range(n
 #%%
 for idx_mice in range(n_animals):
 # for idx_mice in range(2):
-    
+
     aux_ts2m = ts2m[idx_mice]
     aux_ts4m = ts4m[idx_mice]
-    
+
     plt.figure(2)
     plt.clf()
     plt.subplot(321)
@@ -275,13 +287,13 @@ for idx_mice in range(n_animals):
     plt.plot(ts2m[idx_mice])
     plt.ylabel('Bold')
     plt.xlabel('time')
-    
+
     plt.subplot(322)
     plt.title('4m mouse #%s %s %s'%(mouse_hash_cog[idx_mice], gen_label[idx_mice], sex_label[idx_mice]))
     plt.plot(ts4m[idx_mice])
     plt.ylabel('Bold')
     plt.xlabel('time')
-    
+
     plt.subplot(323)
     plt.title('FC')
     plt.imshow(fc_2m_mod[idx_mice], aspect='auto', interpolation='none',cmap='RdBu_r')
@@ -290,7 +302,7 @@ for idx_mice in range(n_animals):
     plt.yticks([])
     plt.xlabel("regions")
     plt.ylabel("regions")
-    
+
     plt.subplot(324)
     plt.title('FC')
     plt.imshow(fc_4m_mod[idx_mice], aspect='auto', interpolation='none',cmap='RdBu_r')
@@ -299,34 +311,34 @@ for idx_mice in range(n_animals):
     plt.yticks([])
     plt.xlabel("regions")
     plt.ylabel("regions")
-    
+
     plt.subplot(325)
     # Fit linear regression via least squares with numpy.polyfit
     # It returns an slope (b) and intercept (a)
     # deg=1 means linear fit (i.e. polynomial of degree 1)
-    # Create sequence of 100 numbers from 0 to 100 
+    # Create sequence of 100 numbers from 0 to 100
     b,a=np.polyfit(tri_2m[idx_mice], tri_4m[idx_mice],deg=1)
     xseq = np.linspace(-1, 1, num=100)
-    
+
     plt.title('slope:%s'%np.round(b,3))
     plt.scatter(tri_2m[idx_mice], tri_4m[idx_mice])
-    
+
     # Plot regression line
     plt.plot(xseq, a + b * xseq, color="k", lw=2.5);
-    
+
     plt.xlabel('2m')
     plt.ylabel('4m')
     plt.xlim(-1,1)
     plt.ylim(-1,1)
-    
-    
+
+
     plt.subplot(326)
-    
+
     plt.hist((tri_2m[idx_mice], tri_4m[idx_mice]),histtype='step',bins=50)
     plt.legend(('2m','4m'))
     plt.xlabel('CC')
     plt.ylabel('Counts #')
-    
+
 # for idx_mice in range(n_animals):
     if save_fig ==True:
         # plt.title('2m mouse #%s %s %s'%(mouse_hash_cog[idx_mice], gen_label[idx_mice], sex_label[idx_mice]))
@@ -387,17 +399,17 @@ def ts2dfc_stream(ts, windows_size, lag=None, format_data='2D'):
     Returns:
     dFCstream (array): Dynamic functional connectivity stream.
     """
-    
+
     if lag is None:
         lag = windows_size
-    
-    
+
+
     ts_total, regions = np.shape(ts)
-    
+
     cc2               = regions * (regions-1)//2 #number of pairwise correlations
     # Calculate the number of frames/windows
     frames = (ts_total-windows_size)//lag + 1
-    
+
     if format_data=='3D':
         dfc_stream = np.zeros((regions,regions, frames))
     elif format_data=='2D':
@@ -429,10 +441,10 @@ print('sim time', stop-start)
 def matrix2vec(matrix3d):
     """
     Convert a 3D matrix into a 2D matrix by vectorizing each 2D matrix along the third dimension.
-    
+
     Parameters:
     matrix3d (numpy.ndarray): 3D numpy array.
-    
+
     Returns:
     numpy.ndarray: 2D numpy array where each column is the vectorized form of the 2D matrices from the 3D input.
     """
@@ -442,17 +454,17 @@ def matrix2vec(matrix3d):
 def dFCstream2dFC(dFCstream):
     """
     Calculate the dynamic functional connectivity (dFC) matrix from a dFCstream.
-    
+
     Parameters:
     dFCstream (numpy.ndarray): Input dynamic functional connectivity stream, can be 2D or 3D.
-    
+
     Returns:
     numpy.ndarray: The dFC matrix computed as the correlation of the dFCstream.
     """
     if dFCstream.ndim < 2 or dFCstream.ndim > 3:
         raise ValueError("Provide a valid size dFCstream (2D or 3D)!")
     # Convert 3D dFCstream to 2D if necessary
-  
+
     if dFCstream.ndim == 3:
         dFCstream_2D = matrix2vec(dFCstream)
     else:
@@ -461,7 +473,7 @@ def dFCstream2dFC(dFCstream):
     # Compute dFC
     dFCstream_2D = dFCstream_2D.T
     dFC = np.corrcoef(dFCstream_2D)
-    
+
     return dFC
 
 lag=1
@@ -490,11 +502,11 @@ plt.imshow(fcd3, aspect='auto', interpolation=None, cmap='jet')
 def dFC_Speeds(dFCstream, vstep=1):
     """
     Calculate speeds of variation in dynamic functional connectivity over a specified step size.
-    
+
     Parameters:
     dFCstream (numpy.ndarray): Input dynamic functional connectivity stream (2D or 3D).
     vstep (int): Step size for computing speed of variation (default=1).
-    
+
     Returns:
     typSpeed (float): Median of computed distribution of speeds.
     Speeds (numpy.ndarray): Time series of computed speeds.
@@ -507,7 +519,7 @@ def dFC_Speeds(dFCstream, vstep=1):
         FCstr = dFCstream
     else:
         raise ValueError("Provide a valid size dFCstream (2D or 3D)!")
-    
+
     nslices = FCstr.shape[1]
     speeds = []
 
@@ -573,7 +585,7 @@ def fcd_analysis(ts_aux, windows_size, overlap):
         aux_pcorr = np.corrcoef(ts_aux[w0:w1].T)
         np.fill_diagonal(aux_pcorr, 0)
         aux_dfc.append(aux_pcorr)
-    
+
     dfc_stream  = np.array([allPm[np.tril_indices(regions, k = -1)] for allPm in aux_dfc])
 
     #fcd
@@ -590,23 +602,23 @@ def fcd_velocity_old(aux_ts,time_windows_min=5,time_windows_max=50,time_window_s
 
     time_windows_range = np.arange(time_windows_min,time_windows_max+1,time_window_step)
     mean_velocity = np.zeros(np.shape(time_windows_range))
-    
+
     for num_ind, aux_tw in enumerate(time_windows_range):
-    
-    
+
+
         fcd, dfc_stream = fcd_analysis(aux_ts, aux_tw, overlap)
-    
+
         window_not_overlap = round(aux_tw/overlap)
-        
+
         size = fcd.shape[0]
         ind_ribbon_max = np.tril_indices(size,k=window_not_overlap+k_range)
         ind_ribbon_min = np.tril_indices(size,k=window_not_overlap-k_range)
-    
-    
+
+
         mask_ribbon = np.zeros((size, size))
         mask_ribbon[ind_ribbon_max] =1
         mask_ribbon[ind_ribbon_min] =0
-    
+
         ind_ribbon = mask_ribbon>0
         fcd_velocity = 1-fcd[ind_ribbon]
         mean_velocity[num_ind] = np.nanmean(fcd_velocity)
@@ -618,36 +630,36 @@ def fcd_velocity(aux_ts,time_windows_min=5,time_windows_max=50,time_window_step=
 
     time_windows_range = np.arange(time_windows_min,time_windows_max+1,time_window_step)
     mean_velocity = np.zeros(np.shape(time_windows_range))
-    
+
     fcd_velocity  =[]
     dfc_walk = []
     for num_ind, aux_tw in enumerate(time_windows_range):
-    
-    
+
+
         fcd, dfc_stream = fcd_analysis(aux_ts, aux_tw, overlap)
-    
+
         window_not_overlap = round(aux_tw/overlap)
-        
+
         size = fcd.shape[0]
         ind_ribbon_max = np.tril_indices(size,k=window_not_overlap+k_range)
         ind_ribbon_min = np.tril_indices(size,k=window_not_overlap-k_range)
-    
+
         mask_ribbon = np.zeros((size, size))
         mask_ribbon[ind_ribbon_max] =1
         mask_ribbon[ind_ribbon_min] =0
-    
+
         ind_ribbon = mask_ribbon>0
         aux_fcd_velocity = fcd[ind_ribbon]
         mean_velocity[num_ind] = np.nanmean(aux_fcd_velocity)
-        
+
         #walk
         fcd_velocity.append((aux_fcd_velocity))
-        
+
         mask_ribbon[mask_ribbon==0] = np.nan
         dfc_walk_mean = 1-np.nanmean(fcd*mask_ribbon, axis=1)
         dfc_walk_std = 1-np.nanstd(fcd*mask_ribbon, axis=1)
         dfc_walk.append((dfc_walk_mean,dfc_walk_std))
-        
+
 
     return time_windows_range, mean_velocity, fcd_velocity, dfc_walk
 
@@ -664,16 +676,16 @@ mid_vel = np.array([])
 long_vel = np.array([])
 
 for yy in fcd_velocity[:9]:
-    short_vel = np.concatenate((short_vel, yy))  
+    short_vel = np.concatenate((short_vel, yy))
 
 for yy in fcd_velocity[10:30]:
-    mid_vel = np.concatenate((mid_vel, yy))  
+    mid_vel = np.concatenate((mid_vel, yy))
 
 for yy in fcd_velocity[30:]:
-    long_vel = np.concatenate((long_vel, yy))  
+    long_vel = np.concatenate((long_vel, yy))
     # aux1.append(yy)
 
-# mean_fcd_velocity_2m = np.array([fcd_velocity(ts2m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range) 
+# mean_fcd_velocity_2m = np.array([fcd_velocity(ts2m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range)
                                            # for idx_mice in range(n_animals)])
 #%%
 plt.figure(9841352)
@@ -712,11 +724,11 @@ print(stop-start)
 
 # fc_2m_mod = np.array([sort_modularity(fc_2m[xx]) for xx in range(n_animals)])
 #%%
-mean_fcd_velocity_2m = np.array([fcd_velocity_old(ts2m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range) 
+mean_fcd_velocity_2m = np.array([fcd_velocity_old(ts2m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range)
                                            for idx_mice in range(n_animals)])
-mean_fcd_velocity_2m = np.array([fcd_velocity(ts2m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range) 
+mean_fcd_velocity_2m = np.array([fcd_velocity(ts2m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range)
                                            for idx_mice in range(n_animals)])
-mean_fcd_velocity_4m = np.array([fcd_velocity(ts4m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range) 
+mean_fcd_velocity_4m = np.array([fcd_velocity(ts4m[idx_mice],time_windows_min=5,time_windows_max=50,time_window_step=1,overlap=overlap,k_range=k_range)
                                            for idx_mice in range(n_animals)])
 
 #%%
@@ -724,7 +736,7 @@ mean_fcd_velocity_4m = np.array([fcd_velocity(ts4m[idx_mice],time_windows_min=5,
 
 # for idx_mice in range(n_animals):
 for idx_mice in range(2):
-    
+
     plt.figure(25)
     plt.clf()
     plt.subplot(321)
@@ -735,7 +747,7 @@ for idx_mice in range(2):
     plt.ylabel(r'(region$_{i}$,region$_{j}$)')
     plt.xlabel(r't$_{w}$')
     plt.colorbar()
-    
+
     plt.subplot(322)
     plt.title('dFC stream 4m mouse #%s %s %s'%(mouse_hash_cog[idx_mice], gen_label[idx_mice], sex_label[idx_mice]))
     # plt.title('dFC stream 4m mouse #%s %s'%(mouse_hash_cog[idx_mice], gen_label))
@@ -752,7 +764,7 @@ for idx_mice in range(2):
     plt.ylabel(r't$_{a}$')
     plt.clim(0,0.5)
     plt.colorbar()
-    
+
     plt.subplot(324)
     plt.title('FCD (W=%s)'%windows_size)
     plt.imshow(fcd[idx_mice,1], aspect='auto', interpolation='none',cmap='jet')
@@ -760,8 +772,8 @@ for idx_mice in range(2):
     plt.ylabel(r't$_{a}$')
     plt.clim(0,0.5)
     plt.colorbar()
-    # dfc_stream = 
-    
+    # dfc_stream =
+
     plt.subplot(325)
     plt.title('FCD velocity, overlap=%s, k+-=%s'%(overlap,k_range))
     plt.plot(mean_fcd_velocity_2m[idx_mice,0], mean_fcd_velocity_2m[idx_mice,1],'.--',label='2m')
@@ -797,7 +809,7 @@ def extract_FCD(data, L = 50, mode = 1, dt = 1, steps = 1):
     """
     Computes the FCD matrix. First, calculates all the Functional Connectivity
     (FC) matrices over time. Next, Uses the FCs matrices to build the FCD matrix.
-    
+
     Parameters
     ----------
     data : txN numpy array.
@@ -807,7 +819,7 @@ def extract_FCD(data, L = 50, mode = 1, dt = 1, steps = 1):
     mode : integer.
            1: Pearson Correlation based distance (values between 0 and 1).
            2: Clarkson distance (values between 0 and 1).
-    dt : float. 
+    dt : float.
          inverse of the sampling rate in time units (e.g., seconds).
     steps : integer > 0.
             number of points to advance for calculating the next FC.
@@ -820,34 +832,34 @@ def extract_FCD(data, L = 50, mode = 1, dt = 1, steps = 1):
     steps : integer > 0.
             The selected step.
     """
-    
+
     nnodes = data.shape[1] #Number of nodes
 
     L_points = int(np.round(L / dt, 0)) #Time windows' length in points
-    
+
     N_windows = (data.shape[0] - L_points) // steps + 1 #Total number of time windows
-    
+
     all_corr_matrix = [] #vector to append the FCs matrices
-    
-    #FCs built using the Pearson Correlation 
+
+    #FCs built using the Pearson Correlation
     #and neglecting negative values.
     for i in range(0,N_windows):
         idx1, idx2 = 0 + i * steps, L_points + i *steps
         corr_matrix = np.corrcoef(data[idx1:idx2,:].T)
         np.fill_diagonal(corr_matrix, 0)
         all_corr_matrix.append(corr_matrix)
-    
+
     #Vectorized versions of FCs matrices.
     corr_vectors = np.array([allPm[np.tril_indices(nnodes, k = -1)] for allPm in all_corr_matrix])
-       
+
     X = np.shape(corr_vectors)[0]
     FCD = np.zeros((X,X))
-     
+
     if mode in [1,2]:
         modeFCD = names[mode-1]
     else:
         raise ValueError('Select a valid mode for the FCD')
-        
+
     #Computing the FCD
     if modeFCD == 'corr': #Correlation-based distance
         CV_centered=corr_vectors - np.mean(corr_vectors,-1)[:,None]
@@ -856,10 +868,10 @@ def extract_FCD(data, L = 50, mode = 1, dt = 1, steps = 1):
     elif modeFCD == 'clarksondist': #Clarkson distance
         for ii in range(X):
             for jj in range(ii):
-                FCD[ii,jj]= LA.norm(corr_vectors[ii,:]/LA.norm(corr_vectors[ii,:]) - corr_vectors[jj,:]/LA.norm(corr_vectors[jj,:]))  
+                FCD[ii,jj]= LA.norm(corr_vectors[ii,:]/LA.norm(corr_vectors[ii,:]) - corr_vectors[jj,:]/LA.norm(corr_vectors[jj,:]))
                 FCD[jj,ii]=FCD[ii,jj]
         FCD /= np.sqrt(2)
-   
+
     return(FCD, L_points, steps,corr_vectors)
 
 fcd,l_points, steps,corr_vectors = extract_FCD(timeseries,L=30,mode=1,steps=1)
@@ -876,11 +888,11 @@ plt.colorbar()
 def FCD_vars(FCD, L_points, steps, bins = 20, vmin = 0, vmax = 1):
     """
     Calculates the FCD's speed (dtyp) and FCD's variance (varFCD). The typical
-    FCD speed corresponds to the median of the histogram of the FCD values, 
-    through the diagonal of the FCD with a L_points/steps offset. The varFCD 
-    is computed as the variance of FCD values of the upper triangle of the FCD 
-    matrix (using the same offset). 
-   
+    FCD speed corresponds to the median of the histogram of the FCD values,
+    through the diagonal of the FCD with a L_points/steps offset. The varFCD
+    is computed as the variance of FCD values of the upper triangle of the FCD
+    matrix (using the same offset).
+
     Parameters
     ----------
     FCD : LxL numpy array.
@@ -900,16 +912,16 @@ def FCD_vars(FCD, L_points, steps, bins = 20, vmin = 0, vmax = 1):
     varFCD : float.
              variance of the FCD.
     """
-    
-    
+
+
     offset = int(L_points / steps) #FCD values away from the diagonal
-    
-    distance = [FCD[XY,XY + offset] for XY in range(len(FCD) - offset)]                    
+
+    distance = [FCD[XY,XY + offset] for XY in range(len(FCD) - offset)]
     histogram = np.histogram(distance, bins, range = (vmin,vmax))
     dtyp = histogram[1][np.argmax(histogram[0])] #FCD speed
-    
+
     varFCD = np.var(FCD[np.triu_indices(FCD.shape[0], k = offset)]) #FCD variance
-    
+
     return([dtyp,varFCD,distance])
 
 dtyp,varFCD,distance=FCD_vars(fcd, l_points, 30, bins = 3, vmin = 0, vmax = 1)
@@ -937,14 +949,14 @@ def tapis_FC(FCtime):
     Pcorr : numpy array
         Unraveled FC matrices, with dimension W x (Mx(M-1)/2). Each row is a couple
         of channels.
-    Code Samy Castro and Patricio Orio 2023 
+    Code Samy Castro and Patricio Orio 2023
     """
     if len(FCtime.shape) != 3:
         raise ValueError("Array must be 3-dimension")
     T,M,N = FCtime.shape # time window, electrode PLI1, electrode PLI2
     if M!=N:
         raise ValueError("Last 2 dimensions must match (expecting an array of square matrices)")
-    
+
     Pcorr = np.zeros((T,int(M*(M-1)/2)))
     for t,fc in enumerate(FCtime):
         Pcorr[t] = np.abs(fc[np.triu_indices_from(fc,1)])
@@ -979,14 +991,14 @@ def calc_FCD(FCtime):
     T,M,N = FCtime.shape
     if M!=N:
         raise ValueError("Last 2 dimensions must match (expecting an array of square matrices)")
-    
+
     Pcorr = np.zeros((T,int(M*(M-1)/2)))
     for t,fc in enumerate(FCtime):
         Pcorr[t] = np.abs(fc[np.triu_indices_from(fc,1)])
     FCDmat = np.corrcoef(Pcorr)
     Pcorr = Pcorr.T
     # Pcorr = Pcorr
-    
+
     return Pcorr, FCDmat
 
 
@@ -994,7 +1006,7 @@ def calc_FCD(FCtime):
 #%%
 def conn_dyn(data, sf=100, nper = 50, overlap=0.9):
     """
-    Connectivity dynamics. Calculate a time-resolved Phase Lag Index functional connectivity. 
+    Connectivity dynamics. Calculate a time-resolved Phase Lag Index functional connectivity.
     Needs to be provided in a frequency band.
 
     Parameters
@@ -1022,33 +1034,33 @@ def conn_dyn(data, sf=100, nper = 50, overlap=0.9):
     # minF, maxF, perL    = rh
     windowlength        = int(nper) #1cycleXseg, number of cycles in windows, sampling frequency
     P,N                 = data.shape #time, electrodes
-    
+
     points_to_ext       = int(np.maximum(P*0.05, windowlength*2)) #Number of points in the windows
-    signal_ext          = np.concatenate((data[points_to_ext:0:-1], data, 
-                                 data[-2:-points_to_ext:-1]),axis=0) #reverse point_to_ext, data,    
-    
+    signal_ext          = np.concatenate((data[points_to_ext:0:-1], data,
+                                 data[-2:-points_to_ext:-1]),axis=0) #reverse point_to_ext, data,
+
     # b,a = signal.bessel(2, [minF * 2/sf, maxF * 2/sf], btype='bandpass')
     # b,a                 = signal.bessel(2, [minF /(sf/2), maxF /( sf/2)], btype='bandpass') #The dessign of the filter
     # Vfilt               = signal.filtfilt(b,a,signal_ext,axis=0)
-    
+
     # analytic            = signal.hilbert(Vfilt,axis=0)
     # analytic            = analytic[points_to_ext:-points_to_ext+2]
-    
+
     windowstart         = np.arange(0,len(data)-windowlength,windowlength*(1-overlap), dtype=int)
     windowend           = windowstart + windowlength
     time_points         = ((windowend+windowstart)/2)/sf
 
     PLI_mat             = np.zeros((len(windowstart),N,N))
-    
+
     #PLI Calculation
     for i,(i_init,i_end) in enumerate(zip(windowstart,windowend)):
         # cross_signal    = analytic[i_init:i_end,:,None] * np.conjugate(analytic[i_init:i_end,None,:])
         # pearson    = data[i_init:i_end,:,None] * np.conjugate(analytic[i_init:i_end,None,:])
         # PLI_mat[i]      = np.mean(np.sign(cross_signal.imag),0)
         pearson    = np.corrcoef(data[i_init:i_end].T)# * np.conjugate(analytic[i_init:i_end,None,:])
-        
+
         PLI_mat[i]      = np.abs(pearson)
-        
+
     return time_points, PLI_mat
 #%%
 # =============================================================================
@@ -1083,14 +1095,14 @@ def calc_FCD(FCtime):
     T,M,N = FCtime.shape
     if M!=N:
         raise ValueError("Last 2 dimensions must match (expecting an array of square matrices)")
-    
+
     Pcorr = np.zeros((T,int(M*(M-1)/2)))
     for t,fc in enumerate(FCtime):
         Pcorr[t] = np.abs(fc[np.triu_indices_from(fc,1)])
     FCDmat = np.corrcoef(Pcorr)
     Pcorr = Pcorr.T
     # Pcorr = Pcorr
-    
+
     return Pcorr, FCDmat
 
 time_points, PLI_mat = conn_dyn(timeseries,1)

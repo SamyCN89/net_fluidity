@@ -3,49 +3,28 @@
 """
 Created on Mon Sep 23 13:26:30 2024
 
-@author: samy
+Legacy pipeline retained for reference. Updated to rely on shared helpers so it
+respects repository paths and bundled metadata.
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-import brainconn as bct
-import os
-import time
-import pandas as pd
-# from functions_analysis import *
-from scipy.io import loadmat, savemat
-from scipy.special import erfc
-from scipy.stats import pearsonr, spearmanr
-
-from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import linkage, fcluster
-
-from itertools import combinations_with_replacement
-
-import copy
 from pathlib import Path
-import pickle
+import time
 
-from fun_loaddata import *
+import numpy as np
+
 from fun_dfcspeed import *
-
-from fun_metaconnectivity import (compute_metaconnectivity, 
-                                  allegiance_matrix_analysis, 
-                                  intramodule_indices_mask, 
-                                  get_fc_mc_indices, 
-                                  get_mc_region_identities, 
-                                  compute_trimers_identity, 
-                                  build_trimer_mask, 
-                                  fun_allegiance_communities,
-                                  )
-
-from fun_utils import (split_groups_by_age, 
-                       set_figure_params, 
-                       get_paths, 
-                       load_cognitive_data,
-                       load_timeseries_data,
-                       load_grouping_data,
-                       )
+from fun_metaconnectivity import (
+    build_trimer_mask,
+    compute_metaconnectivity,
+    compute_trimers_identity,
+    fun_allegiance_communities,
+    get_fc_mc_indices,
+    get_mc_region_identities,
+    intramodule_indices_mask,
+)
+from shared_code.fun_loaddata import load_timeseries_bundle
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import set_figure_params
 # =============================================================================
 # This code compute 
 # Load the data
@@ -54,28 +33,35 @@ from fun_utils import (split_groups_by_age,
 save_fig = set_figure_params(False)
 
 # =================== Paths and folders =======================================
-timeseries_folder = 'Timecourses_updated_03052024'
-external_disk = True
-if external_disk==True:
-    root = Path('/media/samy/Elements1/Proyectos/LauraHarsan/script_mc/')
-else:    
-    root = Path('/home/samy/Bureau/Proyect/LauraHarsan/Ines/')
+paths = get_paths(
+    dataset_name="ines_abdullah",
+    timecourse_folder="Timecourses_updated_03052024",
+    cognitive_data_file="ROIs.xlsx",
+    anat_labels_file="41_Allen.txt",
+)
 
-paths = get_paths(external_disk=True,
-                  external_path=root,
-                  timecourse_folder=timeseries_folder)
+bundle = load_timeseries_bundle(
+    paths["preprocessed"] / "ts_and_meta_2m4m.npz",
+    paths["preprocessed"] / "grouping_data_oip.pkl",
+)
+ts = bundle.ts
+n_animals = bundle.n_animals
+regions = bundle.n_regions
+mask_groups = bundle.mask_groups
+label_variables = bundle.label_variables
 
-# ========================== Load data =========================
-cog_data_filtered = load_cognitive_data(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
-data_ts = load_timeseries_data(paths['sorted'] / 'ts_and_meta_2m4m.npz')
-mask_groups, label_variables = load_grouping_data(paths['results'] / "grouping_data_oip.pkl")
+if mask_groups is None or label_variables is None:
+    raise ValueError(
+        "Grouping data missing from the preprocessed bundle; expected masks and labels."
+    )
 
-
-# ========================== Indices ==========================================
-ts=data_ts['ts']
-n_animals = data_ts['n_animals']
-regions = data_ts['regions']
-anat_labels = data_ts['anat_labels']
+dataset_name = paths["results"].name
+report_root = Path("reports/metaconnectivity") / dataset_name
+mc_dir = report_root / "mc"
+allegiance_dir = report_root / "allegiance"
+mc_mod_dir = report_root / "mc_mod"
+for directory in (mc_dir, allegiance_dir, mc_mod_dir):
+    directory.mkdir(parents=True, exist_ok=True)
 
 
 #%%
@@ -104,12 +90,13 @@ time_window_range = np.arange(time_window_min,
 
 #%%compute metaconnectivity
 start = time.time()
-mc = compute_metaconnectivity(ts, 
-                              window_size=window_size, 
-                              lag=lag, 
-                              n_jobs =PROCESSORS,
-                              save_path = paths['mc'],
-                              )
+mc = compute_metaconnectivity(
+    ts,
+    window_size=window_size,
+    lag=lag,
+    n_jobs=PROCESSORS,
+    save_path=mc_dir,
+)
 stop = time.time()
 print(f'Metaconnectivity time {stop-start}')
 
@@ -128,13 +115,16 @@ label_ref = label_variables[2][0] #The label of the reference matrix
 ind_ref = mask_groups[2][0] # the mask of the reference matrix
 mc_ref = np.mean(mc[ind_ref],axis=0)
 #%% Compute allegiance
-mc_ref_allegiance_communities, mc_ref_allegiance_sort, contingency_matrix = fun_allegiance_communities(mc_ref, 
-                                                                                                       n_runs = n_runs_allegiance, 
-                                                                                                       gamma_pt = gamma_pt_allegiance, 
-                                                                                                       save_path=paths['allegiance'],
-                                                                                                       ref_name=label_ref, 
-                                                                                                       n_jobs=PROCESSORS,
-                                                                                                       )
+mc_ref_allegiance_communities, mc_ref_allegiance_sort, contingency_matrix = (
+    fun_allegiance_communities(
+        mc_ref,
+        n_runs=n_runs_allegiance,
+        gamma_pt=gamma_pt_allegiance,
+        save_path=allegiance_dir,
+        ref_name=label_ref,
+        n_jobs=PROCESSORS,
+    )
+)
 
 #sorted initial mc by communities
 mc_allegiance = mc[:, mc_ref_allegiance_sort][:, :, mc_ref_allegiance_sort]
@@ -157,21 +147,21 @@ mc_val = mc_allegiance[:, mc_idx[:, 0], mc_idx[:, 1]]
 
 mc_mod_idx = mc_modules_mask[mc_idx[:, 0], mc_idx[:, 1]].astype(int)
 #%% Save modularity
-save_filename = paths['mc_mod'] / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(' ','')
+save_filename = mc_mod_dir / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(
+    " ", ""
+)
 
 np.savez_compressed(
     save_filename,
-    mc                              = mc_allegiance,
-    mc_val_tril            = mc_val,
-
-    mc_ref_allegiance_communities   = mc_ref_allegiance_communities,
-    mc_ref_allegiance_sort          = mc_ref_allegiance_sort,
-
-    mc_idx_tril             = mc_idx,
-    fc_reg_idx             = fc_reg_idx,
-    mc_reg_idx             = mc_reg_idx,
-    mc_mod_idx             = mc_mod_idx,
-    mc_modules_mask                 = mc_modules_mask,
+    mc=mc_allegiance,
+    mc_val_tril=mc_val,
+    mc_ref_allegiance_communities=mc_ref_allegiance_communities,
+    mc_ref_allegiance_sort=mc_ref_allegiance_sort,
+    mc_idx_tril=mc_idx,
+    fc_reg_idx=fc_reg_idx,
+    mc_reg_idx=mc_reg_idx,
+    mc_mod_idx=mc_mod_idx,
+    mc_modules_mask=mc_modules_mask,
 )
 
 
@@ -440,6 +430,5 @@ np.savez_compressed(
 # # mc_reg_idx             = data_analysis['mc_reg_idx']
 # # mc_mod_idx             = data_analysis['mc_mod_idx']
 # mc_nplets_index = data_analysis['mc_nplets_idx']
-
 
 

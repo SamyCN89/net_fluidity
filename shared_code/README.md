@@ -50,6 +50,25 @@ median_speed, speeds = dfc_speed(dfc_3d, vstep=2, method='cosine')
   - Data I/O helpers (npz/csv), matrix reshape utilities, grouping and plotting helpers.
 - `fun_paths.get_paths(...)`:
   - Builds canonical dataset/results/figures paths based on environment variables (see repo `README.md`).
+- `fun_loaddata.TimeSeriesBundle`:
+  - Lightweight dataclass bundling preprocessed time series, metadata, and optional grouping masks.
+  - Use `fun_loaddata.load_timeseries_bundle(preprocessed_npz, grouping_pickle)` to hydrate the bundle.
+
+## Dataset Contract & Environment Variables
+
+Metaconnectivity and cohesion pipelines expect the following inputs under the project root resolved by `fun_paths.get_paths`:
+
+- Raw time courses: `dataset/<DATASET_NAME>/<timecourse_folder>/*.mat`
+- Cognitive scores table: `dataset/<DATASET_NAME>/cog_data/<cognitive_data_file>`
+- Anatomical labels: `dataset/<DATASET_NAME>/cog_data/<anat_labels_file>`
+- Preprocessed artifacts (`ts_and_meta_*.npz`, `grouping_data_*.pkl`): `results/<DATASET_NAME>/preprocessed/`
+
+Configure paths via environment variables (e.g. in `.env`):
+
+- `PATHS_ROOT` — absolute override for the project root (skip other vars when set)
+- or `PROJECT_ROOT_<ENV>` (e.g. `PROJECT_ROOT_LOCAL`, `PROJECT_ROOT_CLUSTER`) with optional `PATHS_ENV`
+- `DATASET_NAME` — dataset selector (defaults to `ines_abdullah`)
+- Override folder/file names per dataset with `timecourse_folder`, `cognitive_data_file`, `anat_labels_file` arguments when calling `get_paths`.
 
 ## Testing
 
@@ -61,4 +80,3 @@ python ../test_compatibility.py
 ```
 
 These scripts generate synthetic data and do not require external datasets.
-

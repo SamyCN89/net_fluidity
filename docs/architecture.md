@@ -75,9 +75,18 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 ## Shared Utilities and Configuration
 
 - `shared_code.fun_paths.get_paths` centralizes filesystem layout and resolves:
-  - `preprocessed/` for `ts_and_meta_2m4m.npz` and `grouping_data_oip.pkl`
-  - `dfc/` for DFC outputs; `allegiance/` for merged data; `f_cohesion/` for figures
-  - Paths are controlled via environment variables per governance (`.env`), e.g. `PROJECT_ROOT_LOCAL`, `DATASET_NAME`.
+  - `preprocessed/` for `ts_and_meta_*.npz` and `grouping_data_*.pkl`
+  - `dfc/` for dFC outputs; `allegiance/` for merged data; `f_cohesion/` for figures
+  - Paths are controlled via environment variables per governance (`.env`). Set one of:
+    - `PATHS_ROOT` (hard override) **or**
+    - `PROJECT_ROOT_<ENV>` (e.g. `PROJECT_ROOT_LOCAL`, `PROJECT_ROOT_CLUSTER`) with optional `PATHS_ENV` selector.
+  - `DATASET_NAME` chooses the dataset subfolder (default: `ines_abdullah`); override `timecourse_folder`, `cognitive_data_file`, `anat_labels_file` per dataset when needed.
+- Raw-input contract for metaconnectivity:
+  - Time courses: `dataset/<DATASET_NAME>/<timecourse_folder>/*.mat` (produced upstream).
+  - Cognitive table: `dataset/<DATASET_NAME>/cog_data/<cognitive_data_file>`.
+  - Anatomical labels: `dataset/<DATASET_NAME>/cog_data/<anat_labels_file>`.
+  - Preprocessing emits `results/<DATASET_NAME>/preprocessed/ts_and_meta_*.npz` plus grouping pickles under `results/<DATASET_NAME>/preprocessed/`.
+- `shared_code.fun_loaddata.TimeSeriesBundle` wraps the preprocessed NPZ (time series + metadata) and optional grouping masks, providing `n_animals`, `n_regions`, and label accessors for downstream pipelines.
 
 - `shared_code.fun_metaconnectivity.load_merged_allegiance` reads the merged allegiance bundle and returns `(dfc_communities, sort_allegiances, contingency_matrices)`.
 

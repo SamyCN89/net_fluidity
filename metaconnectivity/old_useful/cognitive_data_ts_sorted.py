@@ -6,14 +6,20 @@ Created on Mon Sep 23 13:26:30 2024
 @author: samy
 """
 #%%
-import numpy as np
 import os
-import pandas as pd
-import pickle
 from pathlib import Path
-from fun_utils import filename_sort_mat, extract_hash_numbers, load_matdata, classify_phenotypes, make_combination_masks, make_masks
-import matplotlib.pyplot as plt
-import time
+
+import numpy as np
+import pandas as pd
+
+from shared_code.fun_loaddata import extract_hash_numbers, load_matdata
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import (
+    classify_phenotypes,
+    filename_sort_mat,
+    make_combination_masks,
+    make_masks,
+)
 
 # =============================================================================
 # This code compute 

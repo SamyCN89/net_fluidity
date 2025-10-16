@@ -5,6 +5,7 @@ Created on Mon Sep 23 13:26:30 2024
 
 @author: samy
 """
+#%%
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,7 +13,6 @@ import brainconn as bct
 import os
 import time
 import pandas as pd
-# from functions_analysis import *
 from scipy.io import loadmat, savemat
 from scipy.special import erfc
 from scipy.stats import pearsonr, spearmanr
@@ -23,22 +23,17 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from itertools import combinations_with_replacement
 
 import copy
-import pickle
 
-from fun_loaddata import *
 from fun_dfcspeed import *
-from fun_metaconnectivity import (compute_metaconnectivity, 
-                                  allegiance_matrix_analysis, 
-                                  intramodule_indices_mask, 
-                                  get_fc_mc_indices, 
-                                  get_mc_region_identities, 
-                                  compute_trimers_identity, 
+from fun_metaconnectivity import (compute_metaconnectivity,
+                                  allegiance_matrix_analysis,
+                                  intramodule_indices_mask,
+                                  get_fc_mc_indices,
+                                  get_mc_region_identities,
+                                  compute_trimers_identity,
                                   build_trimer_mask,
                                   )
-from fun_utils import (split_groups_by_age, 
-                       get_paths,
-                       set_figure_params,
-                       )
+from shared_code.fun_loaddata import load_timeseries_bundle
 
 
 # =============================================================================
@@ -56,30 +51,61 @@ from fun_utils import (split_groups_by_age,
 
 #%%Load and plot parameters
 
-# ========================== Figure parameters ================================
-#Figure parameters
-save_fig =  set_figure_params(True)
 bins_parameter=200
 
+from shared_code.fun_paths import get_paths
+from shared_code.fun_utils import set_figure_params
+
+# ========================== Figure parameters ================================
+# Set figure parameters globally
+save_fig = set_figure_params(True)
+
 # =================== Paths and folders =======================================
-external_disk = True
-paths = get_paths(external_disk)
+timecourse_folder = "Timecourses_updated_03052024"
+# paths = get_paths()
+paths = get_paths(
+    dataset_name="ines_abdullah",
+    timecourse_folder=timecourse_folder,
+    cognitive_data_file="ROIs.xlsx",
+    anat_labels_file="41_Allen.txt",
+)
+bundle = load_timeseries_bundle(
+    paths["preprocessed"] / "ts_and_meta_2m4m.npz",
+    paths["preprocessed"] / "grouping_data_oip.pkl",
+)
+ts = bundle.ts
+n_animals = bundle.n_animals
+regions = bundle.n_regions
+mask_groups = bundle.mask_groups
+label_variables = bundle.label_variables
 
-#%% Load sorted data
+if mask_groups is None or label_variables is None:
+    raise ValueError(
+        "Grouping data missing from the preprocessed bundle; expected masks and labels."
+    )
+
+dataset_name = paths["results"].name
+report_root = Path("reports/metaconnectivity") / dataset_name
+mc_mod_dir = report_root / "mc_mod"
+fig_root = report_root / "figures"
+allegiance_fig_dir = fig_root / "allegiance"
+modularity_fig_dir = fig_root / "modularity"
+for directory in (mc_mod_dir, allegiance_fig_dir, modularity_fig_dir):
+    directory.mkdir(parents=True, exist_ok=True)
 # ========================== Load data =========================
-cog_data_filtered = pd.read_csv(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
+# cog_data_filtered = pd.read_csv(paths['sorted'] / 'cog_data_sorted_2m4m.csv')
 
-# ts=data_ts['ts']
-data_ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz')
-n_animals   = int(data_ts['n_animals'])
-total_tp = data_ts['total_tp']
-regions = data_ts['regions']
-is_2month_old = data_ts['is_2month_old']
-anat_labels= data_ts['anat_labels']
+# # ts=data_ts['ts']
+# data_ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz')
+# n_animals   = int(data_ts['n_animals'])
+# total_tp = data_ts['total_tp']
+# regions = data_ts['regions']
+# is_2month_old = data_ts['is_2month_old']
+# anat_labels= data_ts['anat_labels']
 
-results_path = paths['results'] / "grouping_data_oip.pkl"
-with results_path.open("rb") as f:
-    mask_groups, label_variables = pickle.load(f)
+# results_path = paths['results'] / "grouping_data_oip.pkl"
+# with results_path.open("rb") as f:
+#     mask_groups, label_variables = pickle.load(f)
 #%% MEtaconnectivity computing
 # =============================================================================
 # Metaconnectivity
@@ -101,7 +127,7 @@ ind_ref = mask_groups[0][0] # the mask of the reference matrix
 label_ref = 'Good2m' #The label of the reference matrix
 # label_ref = 'wt2M_recurrecy' #The label of the reference matrix
 
-tau_array       = np.append(np.arange(0,tau), tau ) 
+tau_array       = np.append(np.arange(0,tau), tau )
 lentau          = len(tau_array)
 
 time_window_min, time_window_max, time_window_step = window_parameter
@@ -112,7 +138,7 @@ mc_data_filename = f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegia
 # =============================================================================
 # Load data
 # =============================================================================
-data_mc_mod_filename = paths['mc_mod'] / mc_data_filename 
+data_mc_mod_filename = mc_mod_dir / mc_data_filename
 data_mc_mod = np.load(data_mc_mod_filename, allow_pickle=True)
 
 mc_allegiance = data_mc_mod['mc']
@@ -153,7 +179,7 @@ for idx, setb in enumerate(mask_groups):
         plt.yticks((25, 150, 580, 779), labels=['1',' .\n.\n.', ' .\n.\n.', r'$N^2-N$'], fontsize=12)
         plt.xlabel(label_mclinks, labelpad=-3, fontsize=11)
         plt.ylabel(label_mclinks, labelpad=-27, fontsize=11)
-    
+
         cbar = plt.colorbar()
         cbar.set_label(label_mc_formula, rotation=270, labelpad=25, fontsize=11)  # <- your colorbar label
         plt.clim((-0.1, 0.1))
@@ -161,7 +187,7 @@ for idx, setb in enumerate(mask_groups):
         cbar.ax.tick_params(labelsize=15)
     plt.tight_layout()
     if save_fig==True:
-        plt.savefig(paths['allegiance'] / f'Allegiance_consensus_{aux_label}.png')
+        plt.savefig(allegiance_fig_dir / f'Allegiance_consensus_{aux_label}.png')
 #%%
 
 # =============================================================================
@@ -175,7 +201,7 @@ for idx, setb in enumerate(mask_groups):
         # ind= mask_groups_good_impaired[0]
         plt.figure(4+ii+(4*idx), figsize=(13,10))
         plt.clf()
-    
+
         aux_numplot_ = mc_allegiance[ind].shape[0]
         if np.sqrt(aux_numplot_)/np.round(np.sqrt(aux_numplot_))==1:
             aux2=int(np.sqrt(aux_numplot_))
@@ -191,7 +217,7 @@ for idx, setb in enumerate(mask_groups):
             plt.clim((-0.25, 0.25))
         plt.tight_layout()
         if save_fig==True:
-            plt.savefig(paths['allegiance'] / f'Allegiance_consensus_{aux_label[ii]}.png')
+            plt.savefig(allegiance_fig_dir / f'Allegiance_consensus_{aux_label[ii]}.png')
 
 #%%Modularity
 # =============================================================================
@@ -200,8 +226,8 @@ for idx, setb in enumerate(mask_groups):
 plt.figure(8, figsize=(13,9.5))
 plt.clf()
 plt.subplot(3,3,1)
-plt.hist(( (mc_val[:,mc_mod_idx>0]).ravel(), (mc_val[:,mc_mod_idx==0]).ravel()), 
-         bins=bins_parameter, 
+plt.hist(( (mc_val[:,mc_mod_idx>0]).ravel(), (mc_val[:,mc_mod_idx==0]).ravel()),
+         bins=bins_parameter,
          density=True,
          histtype='step',
          label=('Intra-module', 'Inter-module')
@@ -216,8 +242,8 @@ plt.legend()
 for idx, setb in enumerate(mask_groups):
     plt.subplot(3,3,2+(idx*3))
     plt.title('Intra-module')
-    plt.hist([mc_val[xx][: ,mc_mod_idx>0].ravel() for xx in setb], 
-              bins=bins_parameter, 
+    plt.hist([mc_val[xx][: ,mc_mod_idx>0].ravel() for xx in setb],
+              bins=bins_parameter,
              density=True,
              histtype='step',
              label=label_variables[idx])
@@ -228,8 +254,8 @@ for idx, setb in enumerate(mask_groups):
 
     plt.subplot(3,3,3+(idx*3))
     plt.title('Inter-module')
-    plt.hist([mc_val[xx][: ,mc_mod_idx==0].ravel() for xx in setb], 
-              bins=bins_parameter, 
+    plt.hist([mc_val[xx][: ,mc_mod_idx==0].ravel() for xx in setb],
+              bins=bins_parameter,
              density=True,
               histtype='step',
               label=label_variables[idx])
@@ -239,7 +265,7 @@ for idx, setb in enumerate(mask_groups):
     plt.legend()
 plt.tight_layout()
 if save_fig==True:
-    plt.savefig(paths['fmodularity'] / f'Intra_intermodularity_mc_values.png')
+    plt.savefig(modularity_fig_dir / f'Intra_intermodularity_mc_values.png')
 #%%
 # =============================================================================
 # Plot MC intra/inter values of each individual
@@ -252,14 +278,14 @@ plt.clf()
 plt.subplot(211)
 plt.title('Individual Intra-module values')
 plt.hist([mc_val[ind,mc_mod_idx>0].ravel() for ind in range(n_animals)],
-         bins=bins_parameter, 
+         bins=bins_parameter,
          density=True,
          histtype='step',
          alpha=0.2,
          color=np.full(n_animals, 'Gray')
         )
-plt.hist((mc_val[:,mc_mod_idx>0].ravel()), 
-         bins=bins_parameter, 
+plt.hist((mc_val[:,mc_mod_idx>0].ravel()),
+         bins=bins_parameter,
          density=True,
          histtype='step',
          linewidth=1.5,
@@ -271,16 +297,16 @@ plt.xticks([-0.7,0,0.7], fontsize=13)
 
 plt.subplot(212)
 plt.title('Individual Inter-module values')
-plt.hist([mc_val[ind,mc_mod_idx==0].ravel() for ind in range(n_animals)], 
-         bins=bins_parameter, 
+plt.hist([mc_val[ind,mc_mod_idx==0].ravel() for ind in range(n_animals)],
+         bins=bins_parameter,
          density=True,
          histtype='step',
          alpha=0.2,
          color=np.full(n_animals, 'Gray')
         )
 
-plt.hist((mc_val[:,mc_mod_idx==0].ravel()), 
-         bins=bins_parameter, 
+plt.hist((mc_val[:,mc_mod_idx==0].ravel()),
+         bins=bins_parameter,
          density=True,
          histtype='step',
          linewidth=1.5,
@@ -296,7 +322,7 @@ plt.ylabel(label_yhist)
 plt.tight_layout()
 if save_fig==True:
     # plt.savefig(paths['figures'] + 'modularity/Allmice_Intra_intermodularity_mc_values.png')
-    plt.savefig(paths['fmodularity'] / f'Allmice_Intra_intermodularity_mc_values.png')
+    plt.savefig(modularity_fig_dir / f'Allmice_Intra_intermodularity_mc_values.png')
 
 #%%
 # =============================================================================
@@ -319,17 +345,17 @@ for xx in range(len(np.unique(mc_ref_allegiance_communities))):
     # plt.subplot(3,3, 1+xx)
     plt.subplot(aux2,2,1+xx)
     plt.title('Module %s'%(xx+1))
-    plt.hist(mc_val[:, mc_mod_idx==xx+1].T, 
-             bins=bins_parameter, 
+    plt.hist(mc_val[:, mc_mod_idx==xx+1].T,
+             bins=bins_parameter,
              density=True,
              histtype='step',
              alpha=0.2,
               # color=np.full(n_animals, 'Gray')
             )
     plt.yscale('log')
-    
-    plt.hist((mc_val[:, mc_mod_idx==xx+1]).ravel(), 
-             bins=bins_parameter, 
+
+    plt.hist((mc_val[:, mc_mod_idx==xx+1]).ravel(),
+             bins=bins_parameter,
              density=True,
              histtype='step',
              linewidth=1.1,
@@ -341,7 +367,7 @@ for xx in range(len(np.unique(mc_ref_allegiance_communities))):
     plt.xlabel(label_mc_formula)
 plt.tight_layout()
 if save_fig==True:
-    plt.savefig(paths['fmodularity'] / f'Allmice_Intramodularity_mc_values.png')
+    plt.savefig(modularity_fig_dir / f'Allmice_Intramodularity_mc_values.png')
     # plt.savefig(paths['figures'] + 'modularity/Allmice_Intramodularity_alone_mc_values.png')
     # plt.savefig(paths['figures'] + 'modularity/Allmice_Intramodularity_alone_mc_values.png')
 
@@ -360,11 +386,11 @@ for idx, setb in enumerate(mask_groups):
         # plt.subplot(2,2, xx)
         plt.title('Module %s'%(xx))
         plt.hist(([mc_val[ind][:, mc_mod_idx==xx].ravel() for ind in setb]),
-             bins=70, 
+             bins=70,
              density=True,
              histtype='step',
              label=aux_label
-             
+
              # color=np.full(124, 'Gray')
             )
         plt.yscale('log')
@@ -374,8 +400,7 @@ for idx, setb in enumerate(mask_groups):
     plt.legend()
     plt.tight_layout()
     if save_fig==True:
-        plt.savefig(paths['fmodularity'] / f'Intramodularity_mc_values_{aux_label[0]}_{aux_label[2]}.png')
+        plt.savefig(modularity_fig_dir / f'Intramodularity_mc_values_{aux_label[0]}_{aux_label[2]}.png')
         # plt.savefig(paths['figures'] + 'modularity/Intramodularity_mc_values_%s_%s.png'%(aux_label[0], aux_label[2]))
 
 #%%
-
