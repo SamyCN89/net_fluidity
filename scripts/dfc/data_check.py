@@ -169,11 +169,11 @@ def dfc_speed_split(
     speeds_mat = speeds.reshape(len(tau_range), -1)  # Reshape to (n_pairs, n_speeds)
 
     return speeds_mat
-speed = dfc_speed_split(dfc_stream, vstep=int(s), tau_range=np.arange(1), method='pearson', return_fc2=False, time_offset=lag)
+# speed = dfc_speed_split(dfc_stream, vstep=int(s), tau_range=np.arange(1), method='pearson', return_fc2=False, time_offset=lag)
 
 # %%
 # Load data
-data = loadmat('/home/samy/Bureau/vscode/net_fluidity/scripts/speed/test.mat')['TS']
+data = loadmat('/home/samy/Bureau/vscode/net_fluidity/scripts/dfc/test.mat')['TS']
 
 #sample frequencies in Hz
 sf=((1/.72)*np.arange(55,65)).astype(int)

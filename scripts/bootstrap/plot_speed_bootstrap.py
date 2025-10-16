@@ -19,49 +19,38 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+try:
+    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset
+except ModuleNotFoundError:  # pragma: no cover - local execution fallback
+    import sys
 
-def get_context(tr: int | None = None):
-    """Return dataset context via the single source of truth (SoT)."""
-    try:
-        from net_fluidity_julien.context import DFCAnalysis  # type: ignore
-    except ModuleNotFoundError:
-        import sys
-        here = Path(__file__).resolve()
-        repo_root = here.parents[1]
-        src_path = repo_root / "src"
-        if src_path.exists() and str(src_path) not in sys.path:
-            sys.path.insert(0, str(src_path))
-        try:
-            from net_fluidity_julien.context import DFCAnalysis  # type: ignore
-        except Exception as e:
-            raise RuntimeError(
-                "DFCAnalysis not available. Ensure 'src/net_fluidity_julien/context.py' exists and is importable."
-            ) from e
-    data = DFCAnalysis()
-    if tr is None:
-        data.get_metadata()
-    else:
-        preproc = Path(data.paths["preprocessed"])  # type: ignore[index]
-        cands = sorted(preproc.glob(f"metadata_animals_*_tr_{int(tr)}.pkl"))
-        if not cands:
-            raise FileNotFoundError(f"No metadata file for tr={tr} under {preproc}")
-        data.get_metadata(meta_filename=cands[0].name)
-    data.get_ts_preprocessed()
-    data.get_cogdata_preprocessed()
-    data.get_temporal_parameters()
-    return data
+    HERE = Path(__file__).resolve()
+    ROOT = HERE.parents[2]
+    for candidate in (ROOT, ROOT / "shared_code"):
+        if str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
+    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset  # type: ignore
+
+from shared_code.fun_paths import get_paths
 
 
 def build_outdir_name(outdir: str | None, subset: str | None) -> str:
     return outdir if outdir else (subset if subset else "bootstrap")
 
 
-def resolve_outdirs(tr: int, subset: str | None, outdir: str | None):
-    data = get_context(tr=tr)
-    speed_root = Path(data.paths["speed"])  # type: ignore[index]
+def resolve_outdirs(dataset_name: str, subset: str | None, outdir: str | None):
+    canonical = _canonical_dataset(dataset_name)
+    cfg = DATASET_DEFAULTS[canonical]
+    paths = get_paths(
+        dataset_name=canonical,
+        timecourse_folder=cfg["timecourse_folder"],
+        cognitive_data_file=cfg["cognitive_data_file"],
+        anat_labels_file=cfg["anat_labels_file"],
+    )
+    speed_root = Path(paths["speed"])
     outdir_name = build_outdir_name(outdir, subset)
     csv_root = speed_root / outdir_name
-    fig_base = Path(data.paths.get("f_speed", speed_root))  # type: ignore[attr-defined]
+    fig_base = Path(paths.get("f_speed", speed_root))  # type: ignore[index]
     fig_root = fig_base / outdir_name
     fig_root.mkdir(parents=True, exist_ok=True)
     return csv_root, fig_root
@@ -150,7 +139,8 @@ def save_fig(fig, path: Path, cache: bool):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Plot dFC speed bootstrap figures from existing CSVs (plot-only).")
-    ap.add_argument("--tr", type=int, default=500)
+    ap.add_argument("--dataset-name", type=str, default="ines", help="Dataset alias (e.g. 'ines', 'julien').")
+    ap.add_argument("--tr", type=int, default=None, help="Deprecated; retained for backwards compatibility.")
     ap.add_argument("--subset", type=str, default=None)
     ap.add_argument("--outdir", type=str, default=None)
     ap.add_argument("--plot-format", type=str, default="png", choices=["png", "pdf", "svg"])
@@ -164,7 +154,7 @@ def main() -> int:
     args = ap.parse_args()
 
     # Resolve inputs/outputs
-    csv_root, fig_root = resolve_outdirs(args.tr, args.subset, args.outdir)
+    csv_root, fig_root = resolve_outdirs(args.dataset_name, args.subset, args.outdir)
     diffs_path = csv_root / "speed_bootstrap_diffs.csv"
     if not diffs_path.exists():
         raise FileNotFoundError(f"Missing required diffs CSV: {diffs_path}")

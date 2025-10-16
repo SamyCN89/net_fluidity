@@ -156,14 +156,14 @@ def dfc_speed_split(
         for tau_aux in tau_range:
             fc1_indices.append(indices[:-1])  # Indices for the first FC matrix
             fc2_indices.append(
-                indices[1:] + tau_aux + time_window + vstep - 1
+                indices[1:] + tau_aux + time_window
             )  # Indices for the second FC matrix
             # print(indices[:-1], indices[1:]+tau_aux+time_offset+vstep-1)
     else:
         tau_aux = tau_range
         fc1_indices.append(indices[:-1])
         fc2_indices.append(
-            indices[1:] + tau_aux + time_window + vstep - 1
+            indices[1:] + tau_aux + time_window
         )  # Indices for the second FC matrix
 
     n_speeds = (len(indices) - 1) * np.size(tau_range)
