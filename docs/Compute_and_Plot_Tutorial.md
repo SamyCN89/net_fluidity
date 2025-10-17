@@ -15,24 +15,16 @@ Paths are profile‑driven and cluster‑friendly. You can:
 - Set `PATHS_ENV` and define `PROJECT_ROOT_<ENV>`.
 Also set `DATASET_NAME` to select the dataset subfolder.
 
-Examples
+Example (simple hard override)
 ```
-# Simple hard override (recommended on cluster filesystems)
 export PATHS_ROOT=/abs/path/to/project/root
-export DATASET_NAME=julien_caillette
-
-# Or pick a named profile
-export PATHS_ENV=CLUSTER_FS
-export PROJECT_ROOT_CLUSTER_FS=/scratch/$USER/laura_harsan
-export DATASET_NAME=julien_caillette
-
-# Validate resolved roots/paths and write access
+export DATASET_NAME=ines_abdullah
 python scripts/paths_doctor.py --show --check-write --create
 ```
 
 ## 1) Compute CSVs (no plotting)
 
-Script: `scripts/compute_speed_bootstrap.py`
+Script: `scripts/bootstrap/compute_speed_bootstrap.py`
 
 Purpose: compute per-ROI, per-window (and pooled short/long/all) bootstrap tables as CSVs. No figures are generated; you can plot later.
 
@@ -42,11 +34,14 @@ Outputs (under dataset paths, with n‑boot suffixed copies):
 - `paths['speed']/<outdir>/speed_nor_correlations.csv` and `_nboot-<N>.csv` (when `--correlate-nor`)
 - Pool‑test (see below): `speed_bootstrap_pooltest.csv` and `_nboot-<N>.csv`
 
-Fast example (TR=500, subset `regions500`, parallel windows):
+Fast example (Julien dataset, TR=500, subset `regions500`, parallel windows):
 
 ```bash
-python scripts/compute_speed_bootstrap.py \
-  --tr 500 --subset regions500 --tau-index 0 \
+python scripts/bootstrap/compute_speed_bootstrap.py \
+  --dataset-name julien \
+  --subset regions500 \
+  --group-cols genotype,treatment \
+  --tau-index 0 \
   --pool-threshold median --pool-all \
   --n-boot 2000 --jobs 8 --parallel-scope windows \
   --progress
@@ -59,16 +54,17 @@ Notes:
 - Memory defaults: boots use float32 and indices use int32 by default. Opt out with `--no-boots-float32` and `--no-index-int32`.
 - `--n-animals` limits animals loaded per NPZ (default 0 = all). For quick scans you may set a smaller number, but prefer all for final analyses to avoid sampling bias.
  - When `--parallel-scope` includes `regions` but `--region-jobs` is `1`, the script emits a warning. Increase `--region-jobs` to parallelize across regions.
- - Single source of truth (SoT): scripts import `DFCAnalysis` from `src/net_fluidity_julien/context.py`. Ensure this module is on `PYTHONPATH`.
 
 Options overview (compute)
-- `--tr INT`: select TR by metadata; e.g., 500 or 400.
+- `--dataset-name {ines,julien}`: dataset alias (prefixes like `ines`, `julien` also work).
+- `--tr INT`: optional TR hint to pick the right metadata bundle (defaults to first match).
 - `--subset NAME`: choose the output subset folder under `paths['speed']`; if omitted, defaults to `bootstrap`.
 - `--outdir NAME`: override output folder name (defaults to `--subset` if omitted).
 - `--parallel-scope windows|regions|both`: scope of parallelism; use `--jobs` and `--region-jobs` accordingly.
 - `--tau-index INT`: choose a tau slice; `-1` pools all taus together.
 - `--q LIST`: percentiles to compute (comma‑sep), default `1,5,50,95,99`.
-- `--pairs STRING`: pairs string `(G1,T1)-(G2,T2);...` to compare for diffs.
+- `--group-cols STRING`: comma-separated cognitive columns (case-insensitive) used to build groups.
+- `--pairs STRING`: pairs string `(G1,T1)-(G2,T2);...` to compare for diffs (values must exist in the resolved groups).
 - `--n-boot INT`: bootstrap resamples (e.g., 500 for fast scans, 2000 for final).
 - `--seed INT`: RNG seed for reproducibility.
 - `--ci FLOAT`: CI percent for bootstrap (default 95). 
@@ -79,6 +75,7 @@ Options overview (compute)
 - `--load-cache`: reuse existing CSVs if present (skips recompute).
 - `--reuse-group-boots`: reuse per‑group bootstrap replicates across pairs for faster diffs.
 - Memory/perf: defaults are float32 boots and int32 indices. Use `--no-boots-float32` / `--no-index-int32` to opt out; `--values-float32` casts values.
+- Requires `numba` because the underlying dFC kernels depend on it (`pip install numba`).
   
 Pool‑test controls
 - `--bootstrap-pool-cols COLS`: build pooled supergroups by matching a subset of `--group-cols` (e.g., `genotype`).
@@ -220,6 +217,42 @@ Script: `scripts/plot_speed_pooltest.py`
   python scripts/plot_speed_pooltest.py --tr 500 --subset dmn_within --bywin --pooled --progress
   python scripts/plot_speed_pooltest.py --tr 500 --subset dmn_within --bywin --q 50
   ```
+
+## 3) Plot pooled distributions (window splits)
+
+Script: `scripts/bootstrap/plot_speed_distributions.py`
+
+Purpose: visualize the pooled speed distributions per group after the speed NPZ files are generated. Windows are split into pools (e.g., `short` & `long` via a median threshold) and optional `all`. Each subplot shows a histogram with the median overlay.
+
+Inputs: per-window NPZ files written by `scripts/speed/dfc_speed_compute.py` (e.g., `speed_win10_lag1_tau4_animals_126_regions_41.npz`).
+
+Figures: saved under `paths['f_speed']/<outdir>/speed_distributions_<region>.<fmt>` (defaults to the subset folder when `--outdir` is omitted).
+
+Example (Ines dataset):
+
+```bash
+python scripts/bootstrap/plot_speed_distributions.py \
+  --dataset-name ines \
+  --subset all \
+  --group-cols Genotype,Sexe \
+  --tau-index 0 \
+  --pool-threshold median \
+  --include-all-pool \
+  --bins 40 \
+  --plot-format png
+```
+
+Key options:
+- `--dataset-name`: dataset alias (`ines`, `julien`, etc.).
+- `--subset`: speed subset folder to inspect (e.g., `all`, `regions-ACC`).
+- `--group-cols`: grouping columns (case-insensitive) matched against the cognitive CSV.
+- `--tau-index`: tau slice to visualize (`-1` pools all taus).
+- `--pool-threshold`: `median` (default) or integer window threshold; use `none` to disable short/long split.
+- `--include-all-pool`: always add an `all` pool in addition to short/long.
+- `--bins`, `--density`: histogram bins and density scaling.
+- `--title`, `--outdir`, `--plot-format`: customise figure metadata/output path.
+
+The script is read-only: it never recomputes speeds, only aggregates existing per-window NPZs. If a window file is missing, the pool entry logs a warning and continues.
 
 ## 3) Common Flags and Tips
 

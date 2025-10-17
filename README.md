@@ -82,6 +82,8 @@ python scripts/speed/dfc_speed_compute.py \
 
 Specify `--region-labels "ACC,PL"` or `--region-indices 0,4` to focus on subsets, and use `--dry-run` to inspect planned outputs. Artefacts appear under `results/<dataset>/speed/<subset>/`.
 
+Full pipeline guidance (dFC → speed → bootstrap/plots) lives in `docs/speed_pipeline.md` and `docs/Compute_and_Plot_Tutorial.md`.
+
 Bootstrap compute/plot (recommended flow)
 
 ```bash
@@ -98,6 +100,17 @@ make speed-compute TR=500 SUBSET=regions500 TAU_INDEX=0 N_BOOT=2000 JOBS=8 PAIR_
 
 # 4) Plot from CSVs
 make speed-plot TR=500 SUBSET=regions500
+
+# Inspect pooled speed distributions (splits windows by median into short/long)
+python scripts/bootstrap/plot_speed_distributions.py \
+  --dataset-name ines \
+  --subset all \
+  --group-cols Genotype,Sexe \
+  --tau-index 0 \
+  --pool-threshold median \
+  --plot-format png \
+  --include-all-pool \
+  --bins 40
 
 # Optional: pool-tests or correlations (if computed)
 make speed-pooltest TR=500 SUBSET=regions500
