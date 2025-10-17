@@ -49,6 +49,9 @@ from shared_code.fun_bootstrap import (
     pool_per_animal,
 )
 
+# Module logger
+LOGGER = logging.getLogger(__name__)
+
 # %%
 
 # ---------------- Context and IO helpers ---------------- #
@@ -460,6 +463,11 @@ def _concat_per_animal(per_animals: list[list[np.ndarray]]) -> list[np.ndarray]:
                 parts.append(lst[i])
         out.append(np.concatenate(parts) if parts else np.array([], float))
     return out
+
+
+def _has_samples(per_animal: list[np.ndarray]) -> bool:
+    """Return True when at least one per-animal series contains data."""
+    return any(getattr(arr, "size", 0) > 0 for arr in per_animal)
 
 
 # ---------------- Small compute helpers (dedupe) ---------------- #
@@ -1129,6 +1137,15 @@ def process_region_dir(
             tau_index=None if cfg.tau_index < 0 else cfg.tau_index,
             n_animals=cfg.n_animals,
         )
+        if not _has_samples(per_animal):
+            tau_label = cfg.tau_index if cfg.tau_index >= 0 else "all"
+            LOGGER.warning(
+                "Skipping window %s in %s (tau_index=%s): no samples after filtering.",
+                win,
+                npz,
+                tau_label,
+            )
+            return rows_q, rows_d, rows_c, rows_p
         # Per-group percentiles and per-pair diffs (optionally reusing boots)
         boots_map = None
         if cfg.reuse_group_boots:
@@ -1332,6 +1349,14 @@ def process_region_dir(
                 if w in by_win
             ]
             # Pool per-animal values across all windows in the pool
+            per_animals = [lst for lst in per_animals if _has_samples(lst)]
+            if not per_animals:
+                LOGGER.warning(
+                    "Skipping pooled window '%s' in %s: no samples available after filtering constituent windows.",
+                    pool_name,
+                    folder_label,
+                )
+                continue
             pooled = _concat_per_animal(per_animals)
             # Precompute per-animal percentiles matrix for correlations
             mat = None

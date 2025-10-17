@@ -1,5 +1,11 @@
 # TODO — Next Session
 
+- Speed distributions polish
+  - Add smoke CLI example for Julien dataset (`--dataset-name julien --group-cols genotype,treatment --tau-index 0`) to docs.
+  - Hook `plot_speed_distributions.py` into `run_bootstrap_batches.sh` (optional flag) and Makefile helper.
+  - Add option to write summary CSV (median/std per pool) for downstream stats.
+  - Tests: synthetic NPZ fixture covering mixed naming (`tau=*`, `tau=5`) to exercise filename parser.
+
 - Cohesion pipeline polish (new CLI + stats)
   - Makefile: expose unified ROI flags (ROI, ROI_INDICES, ROI_LABELS, ROI_FILE), EMIT, TAG, OVERWRITE, PLOT, ANIMAL, SHOW; wire into cohesion-compute target.
   - Deprecations: print clear warnings for legacy compute flags (`--roi-scope/--dmn-index/--memory-index`, `--plot-animal/--save-all-binary/--no-show`) and update help strings.

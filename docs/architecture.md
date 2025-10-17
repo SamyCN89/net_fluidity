@@ -114,6 +114,9 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 - Plot selected link curves with annotations:
   - `python allegiance/src/plot_cohesion_curves.py --window-size 9 --lag 1 --tau 3 --roi-scope dmn --roi-substrings "d HIP,v HIP,RSP" --save-plots --no-show`
 
+- Visualise pooled dFC speed distributions (short/long split):
+  - `python scripts/bootstrap/plot_speed_distributions.py --dataset-name ines --subset all --group-cols Genotype,Sexe --pool-threshold median --tau-index 0`
+
 All scripts honor the figures root from `get_paths()` and support headless execution.
 
 ---

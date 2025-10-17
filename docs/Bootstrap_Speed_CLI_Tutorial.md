@@ -1,6 +1,6 @@
 # Bootstrap Speed CLI — Notebook‑Style Tutorial
 
-Note: This is a legacy, notebook‑style tutorial centered on an older combined compute+plot CLI. For the current, cleaner flow that separates compute and plot, see `docs/Compute_and_Plot_Tutorial.md`.
+Note: This is a legacy, notebook‑style tutorial centered on an older combined compute+plot CLI. For the current, cleaner flow that separates compute, plotting, and pooled distributions (including dataset selection via `--dataset-name`), see `docs/Compute_and_Plot_Tutorial.md` and `docs/speed_pipeline.md`.
 
 This tutorial shows how to use `scripts/bootstrap_speed_groups_cli.py` to bootstrap dFC speed distributions per group, per region and window, and optionally pool across windows. You can paste the code blocks into a Jupyter notebook (Markdown + code cells).
 
