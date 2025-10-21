@@ -21,6 +21,17 @@ This document describes how to run the consolidated Dynamic Functional Connectiv
 
 ---
 
+## Argument Cheat Sheet
+- `--wmin`, `--wmax`, `--wstep`: Define the inclusive window sweep. Example: `--wmin 5 --wmax 25 --wstep 5`.
+- `--lag`: Stride between windows; keep it positive. Example: `--lag 1` (every TR) or `--lag 2` (skip one).
+- `--tau`: Accepts one or several non-negative integers (comma-separated). Example: `--tau 0,5,10`. Each tau produces its own NPZ.
+- `--format`: Choose `3D` to preserve square matrices or `2D` for vectorised upper triangles.
+- `--cache`: `skip` (default) keeps existing files, `verify` checks shapes before reusing, `load` stops after loading, `overwrite` recomputes everything.
+- `--jobs`: Increase above `1` to parallelise per-animal computation (e.g. `--jobs 4`).
+- `--dry-run`: Print bundle metadata and the files that would be touched without performing any computation.
+
+---
+
 ## Typical Commands
 Preprocess first (example for Julien dataset):
 
@@ -65,6 +76,15 @@ python scripts/dfc/dfc_compute.py \
 - Files are written under `paths["dfc"]`, typically `results/<dataset>/dfc/`.
 - Each NPZ contains a single array stored under the `dfc` key.
 - Metadata such as the number of animals/regions/lags is encoded in the filename. Downstream scripts parse these names, so prefer the defaults unless you have a reason to customise them.
+- When multiple tau values are requested, one NPZ per tau is written, each tagged with `tau=<value>` in the filename (e.g. `dfc_window_size=5_lag=1_tau=10_…npz`).
+
+---
+
+## Logging
+- Successful runs log the bundle path, dataset alias, and timeseries shape so you can confirm the expected data source.
+- The configured window sweep, lag, tau, and target directory are echoed before computation starts.
+- Every cached or newly written NPZ file is reported with its full path, making it easier to audit generated artefacts.
+- Use `--dry-run` to list planned outputs per tau without touching existing files; cache handling is reported but no arrays are loaded or written.
 
 ---
 
@@ -74,6 +94,26 @@ python scripts/dfc/dfc_compute.py \
 - When running on a scheduler or cluster, set `--jobs 1` per worker and parallelise across window ranges using job arrays to avoid oversubscribing threads.
 - Add synthetic smoke tests around your preferred parameter choices to catch regressions, especially when changing default window ranges or format selection.
 
+### Loading Outputs
+```python
+from pathlib import Path
+import numpy as np
+
+dfc_path = Path("results/julien/dfc/dfc_window_size=5_lag=1_tau=5_animals=4_regions=37.npz")
+with np.load(dfc_path) as npz:
+    dfc = npz["dfc"]  # shape: (animals, regions, regions, frames) in 3D mode
+print(dfc.shape)
+```
+
+```python
+import sys, pathlib
+sys.path.append(str(pathlib.Path("shared_code").resolve()))
+from shared_code.fun_utils import load_timeseries_data
+
+bundle = load_timeseries_data(Path("results/julien/preprocessed/ts_and_meta_julien_caillette.npz"))
+print(bundle["regions"], bundle["n_animals"])
+```
+
 ---
 
 ## Troubleshooting
@@ -81,4 +121,3 @@ python scripts/dfc/dfc_compute.py \
 - **“Window X exceeds timeseries length”**: Your window is longer than the available TRs; lower `--wmin/--wmax` or ensure preprocessing outputs matched TR counts.
 - **Slow performance**: Increase `--jobs`, but monitor memory usage. For the vectorised format, consider switching to `--format 2D` if downstream consumers only need flattened data.
 - **Shape mismatch in verify mode**: Delete or rename the stale file so it can be recomputed, or rerun with `--cache overwrite`.
-

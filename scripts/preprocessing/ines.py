@@ -93,6 +93,7 @@ def _group_indices(df: pd.DataFrame, columns: Sequence[str]) -> Dict[Tuple[str, 
     return mapping
 
 
+# Load Ines recordings, align cognition metadata, and prepare grouping masks.
 def prepare_cognitive_dataset(
     *,
     dataset_name: str = "ines_abdullah",
@@ -105,6 +106,7 @@ def prepare_cognitive_dataset(
 ) -> PrepResult:
     """Build the cognitive preprocessing bundle for the requested dataset."""
 
+    # Resolve dataset-specific folders from shared configuration.
     paths = get_paths(
         dataset_name=dataset_name,
         timecourse_folder=timecourse_folder,
@@ -120,6 +122,7 @@ def prepare_cognitive_dataset(
     data_roi = pd.read_excel(paths["cog_data"], sheet_name=ANAT_SHEET).to_numpy()
 
     timeseries_root = Path(paths["timeseries"])
+    # Collect MAT filenames per age group and keep animals recorded at both ages.
     filenames = {
         period: filename_sort_mat(str(timeseries_root / folder))
         for period, folder in folders_map.items()
@@ -139,6 +142,7 @@ def prepare_cognitive_dataset(
     cog_data_df["ro24h_4m-2m"] = cog_data_df["RO24h_4M"] - cog_data_df["RO24h_2M"]
     cog_data_df["ro24h_4m+2m"] = cog_data_df["RO24h_4M"] + cog_data_df["RO24h_2M"]
 
+    # Restrict cognition table to animals with usable recordings at both ages.
     cog_data_filtered = (
         cog_data_df[cog_data_df["Name"].isin(common_ids)]
         .sort_values(by="Name")
@@ -160,6 +164,7 @@ def prepare_cognitive_dataset(
     LOGGER.info("Loading %d 4m time-series from %s", len(files_4m), folders_map["4mois"])
     ts_4m = load_matdata(str(timeseries_root), folders_map["4mois"], files_4m)
 
+    # Clip transient TRs from the start of each recording.
     ts_2m = ts_2m[:, transient:]
     ts_4m = ts_4m[:, transient:]
 
@@ -173,6 +178,7 @@ def prepare_cognitive_dataset(
     anat_labels = [str(entry[1]).replace(".", " ") for entry in data_roi]
     is_2month_old = np.arange(n_animals) < n2
 
+    # Derive phenotype labels used by downstream grouping helpers.
     cog_data_filtered = classify_phenotypes(
         cog_data_filtered, metric_prefix="OiP", threshold=threshold
     )
@@ -261,6 +267,7 @@ def prepare_cognitive_dataset(
         extra_group_maps=extra_group_maps,
     )
 
+    # Store provenance metadata for reproducibility.
     metadata = {
         "n_animals": np.array(n_animals, dtype=np.int32),
         "total_tr": np.array(total_tr, dtype=np.int32),
@@ -290,6 +297,7 @@ def write_outputs(result: PrepResult, *, dry_run: bool = False, write_extra_grou
         return result
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    LOGGER.info("Writing Ines preprocessing outputs to %s", output_dir)
 
     cog_csv = output_dir / "cog_data_sorted_2m4m.csv"
     LOGGER.info("Writing cognitive metadata to %s", cog_csv)
@@ -327,15 +335,31 @@ def write_outputs(result: PrepResult, *, dry_run: bool = False, write_extra_grou
     return result
 
 
+# Construct a standalone CLI for the Ines preprocessing helper.
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset-name", default="ines_abdullah")
-    parser.add_argument("--timecourse-folder", default="Timecourses_updated_03052024")
-    parser.add_argument("--cognitive-data-file", default="ROIs.xlsx")
+    parser.add_argument(
+        "--dataset-name",
+        default="ines_abdullah",
+        help=(
+            "Dataset key recognised by shared_code.fun_paths.get_paths "
+            "(default: ines_abdullah)."
+        ),
+    )
+    parser.add_argument(
+        "--timecourse-folder",
+        default="Timecourses_updated_03052024",
+        help="Folder containing Ines timecourses (default: Timecourses_updated_03052024).",
+    )
+    parser.add_argument(
+        "--cognitive-data-file",
+        default="ROIs.xlsx",
+        help="Excel workbook for cognitive metrics (default: ROIs.xlsx).",
+    )
     parser.add_argument(
         "--anat-labels-file",
         default="41_Allen.txt",
-        help="Optional text file name recorded in the bundle manifest.",
+        help="Optional text file name recorded in the bundle manifest (default: 41_Allen.txt).",
     )
     parser.add_argument(
         "--folder",
@@ -344,12 +368,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PERIOD=FOLDER",
         help="Override default folder mapping (e.g. --folder 2mois=Lot3_2mois).",
     )
-    parser.add_argument("--transient", type=int, default=50, help="Timepoints to drop from the start.")
+    parser.add_argument("--transient", type=int, default=50, help="Timepoints to drop from the start (default: 50).")
     parser.add_argument(
         "--threshold",
         type=float,
         default=0.2,
-        help="Phenotype classification threshold passed to shared_code.fun_utils.classify_phenotypes.",
+        help="Phenotype classification threshold passed to shared_code.fun_utils.classify_phenotypes (default: 0.2).",
     )
     parser.add_argument(
         "--dry-run",

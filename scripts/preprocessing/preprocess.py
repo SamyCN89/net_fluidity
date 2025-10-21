@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import MutableMapping, Optional, Sequence
 
+# Ensure local execution can import sibling modules without installing the package.
 if __package__ in (None, ""):
     _PKG_ROOT = Path(__file__).resolve().parent
     if str(_PKG_ROOT) not in sys.path:
@@ -21,10 +22,12 @@ else:
     from . import julien as julien_mod
 
 
+# Parse CLI folder overrides such as "2mois=MyFolder".
 def _parse_folder_overrides(items: Sequence[str] | None) -> MutableMapping[str, str]:
     return ines_mod.parse_folder_overrides(items or [])
 
 
+# Normalise dataset aliases passed on the CLI.
 def _canonical_dataset(name: str) -> str:
     lowered = name.lower()
     if lowered.startswith("julien"):
@@ -34,6 +37,7 @@ def _canonical_dataset(name: str) -> str:
     raise ValueError(f"Unsupported dataset '{name}'. Expected something like 'julien' or 'ines'.")
 
 
+# Build the preprocessing CLI and expose dataset-specific options.
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-name", default="julien", help="Dataset to preprocess (julien/ines).")
@@ -50,7 +54,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--filter-mode",
         default="exclude_shortest",
         choices=["exclude_shortest", "truncate", "none"],
-        help="How to harmonise TS lengths when --only-tr is not provided.",
+        help=(
+            "How to harmonise TS lengths when --only-tr is not provided "
+            "(default: exclude_shortest)."
+        ),
     )
     julien.add_argument(
         "--only-tr",
@@ -61,39 +68,48 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     julien.add_argument(
         "--julien-timecourse-folder",
         default="time_courses_2",
-        help="Timecourse folder override for Julien dataset.",
+        help="Timecourse folder override for Julien dataset (default: time_courses_2).",
     )
     julien.add_argument(
         "--julien-cognitive-data-file",
         default="mice_groups_comp_index_2.xlsx",
-        help="Cognitive Excel file for the Julien dataset.",
+        help=(
+            "Cognitive Excel file for the Julien dataset "
+            "(default: mice_groups_comp_index_2.xlsx)."
+        ),
     )
     julien.add_argument(
         "--julien-cognitive-sheet",
         default="mice_groups_comp_index",
-        help="Sheet inside the Julien cognitive workbook.",
+        help=(
+            "Sheet inside the Julien cognitive workbook "
+            "(default: mice_groups_comp_index)."
+        ),
     )
     julien.add_argument(
         "--julien-anat-labels-file",
         default="all_ROI_coimagine_2.txt",
-        help="Anatomical labels file for the Julien dataset.",
+        help=(
+            "Anatomical labels file for the Julien dataset "
+            "(default: all_ROI_coimagine_2.txt)."
+        ),
     )
 
     ines = parser.add_argument_group("Ines options")
     ines.add_argument(
         "--ines-timecourse-folder",
         default="Timecourses_updated_03052024",
-        help="Folder containing Ines timecourses.",
+        help="Folder containing Ines timecourses (default: Timecourses_updated_03052024).",
     )
     ines.add_argument(
         "--ines-cognitive-data-file",
         default="ROIs.xlsx",
-        help="Excel workbook for Ines cognitive measurements.",
+        help="Excel workbook for Ines cognitive measurements (default: ROIs.xlsx).",
     )
     ines.add_argument(
         "--ines-anat-labels-file",
         default="41_Allen.txt",
-        help="Anatomical labels file recorded for Ines runs.",
+        help="Anatomical labels file recorded for Ines runs (default: 41_Allen.txt).",
     )
     ines.add_argument(
         "--ines-folder",
@@ -106,26 +122,28 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--ines-transient",
         type=int,
         default=50,
-        help="Number of transient TRs to trim from each timeseries.",
+        help="Number of transient TRs to trim from each timeseries (default: 50).",
     )
     ines.add_argument(
         "--ines-threshold",
         type=float,
         default=0.2,
-        help="Phenotype threshold for Ines classification util.",
+        help="Phenotype threshold for Ines classification util (default: 0.2).",
     )
     ines.add_argument(
         "--ines-no-extra-groups",
         action="store_true",
         help="Skip writing exploratory grouping_data_new.pkl bundle.",
     )
-    # return parser.parse_args(argv)
+    # argparse swallows notebook args; parse_known_args keeps compatibility.
     return parser.parse_known_args(argv)[0]
 
 #%%
+# CLI adapters dispatching to dataset-specific preprocessors.
 def preprocess_julien(args: argparse.Namespace, dataset_name: str) -> None:
     julien_mod.setup_logging()
 
+    # Mirrors `python scripts/preprocessing/julien.py` with the parsed CLI options.
     result = julien_mod.prepare_dataset(
         filter_mode=args.filter_mode,
         only_tr=args.only_tr,
@@ -140,6 +158,7 @@ def preprocess_julien(args: argparse.Namespace, dataset_name: str) -> None:
 
 def preprocess_ines(args: argparse.Namespace, dataset_name: str) -> None:
     folder_overrides = _parse_folder_overrides(args.ines_folder)
+    # Mirrors `python scripts/preprocessing/ines.py` with the parsed CLI options.
     result = ines_mod.prepare_cognitive_dataset(
         dataset_name=dataset_name,
         timecourse_folder=args.ines_timecourse_folder,
@@ -152,6 +171,7 @@ def preprocess_ines(args: argparse.Namespace, dataset_name: str) -> None:
     ines_mod.write_outputs(result, dry_run=args.dry_run, write_extra_groups=not args.ines_no_extra_groups)
 
 
+# Entry-point used both by module execution and CLI wrapper.
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=getattr(logging, args.log_level))

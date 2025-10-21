@@ -15,11 +15,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+HERE = Path(__file__).resolve()
+ROOT = HERE.parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     here = Path(__file__).resolve()
-    julien_dir = here.parent.parent
+    root = here.parents[2]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    julien_dir = root / "julien_data"
     script = julien_dir / "speed_plots.py"
     if not script.exists():
         print("Underlying plotting script not found:", script)
