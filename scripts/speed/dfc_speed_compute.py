@@ -220,54 +220,63 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dataset-name",
+        metavar="NAME",
         default="ines",
-        help="Dataset alias (e.g. 'ines', 'julien').",
+        help="Dataset alias to resolve (e.g. 'julien', 'ines').",
     )
     parser.add_argument(
         "--subset-name",
+        metavar="TOKEN",
         default="all",
-        help="Subfolder under results/.../speed/ (e.g. 'all', 'shared', 'dmn').",
+        help="Subdirectory under results/<dataset>/speed/ (e.g. 'all', 'shared').",
     )
     parser.add_argument(
         "--window-min",
         type=int,
         default=5,
-        help="Minimum window size to process.",
+        metavar="INT",
+        help="Minimum window size to process. Example: --window-min 5",
     )
     parser.add_argument(
         "--window-max",
         type=int,
         default=5,
-        help="Maximum window size to process (inclusive).",
+        metavar="INT",
+        help="Maximum window size to process (inclusive). Example: --window-max 25",
     )
     parser.add_argument(
         "--window-step",
         type=int,
         default=1,
-        help="Window size increment.",
+        metavar="INT",
+        help="Window size increment. Example: --window-step 5",
     )
     parser.add_argument(
         "--lag",
         type=int,
         default=1,
-        help="Lag used when generating dFC streams (used for filename matching).",
+        metavar="INT",
+        help="Lag used by scripts/dfc/dfc_compute.py (needed for filename matching).",
     )
     parser.add_argument(
         "--dfc-tau-label",
         type=int,
         default=None,
-        help="Tau value embedded in dFC filenames (optional; auto-select when omitted).",
+        metavar="INT",
+        help="Tau label embedded in dFC filenames (optional). Example: --dfc-tau-label 5",
     )
     parser.add_argument(
         "--tau-range",
         default=None,
-        help="Comma-separated tau offsets (e.g. '0,1,2'). Mutually exclusive with --tau-max.",
+        metavar="INTS",
+        help="Comma-separated tau offsets for speed computation (e.g. --tau-range 0,5,10).",
     )
     parser.add_argument(
         "--tau-max",
         type=int,
         default=None,
-        help="Generate tau range [0, tau_max].",
+        metavar="INT",
+        help="Generate tau offsets from 0 up to this value (inclusive).",
     )
     parser.add_argument(
         "--method",
@@ -279,23 +288,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--time-offset",
         type=int,
         default=None,
-        help="Extra offset applied to FC2 indices (defaults to window size).",
+        metavar="INT",
+        help="Extra offset applied to FC2 indices (defaults to window size). Example: --time-offset 10",
     )
     parser.add_argument(
         "--jobs",
         type=int,
         default=1,
-        help="Number of worker threads for per-animal computation.",
+        metavar="INT",
+        help="Number of worker threads for per-animal computation (1 = serial). Example: --jobs 4",
     )
     parser.add_argument(
         "--region-indices",
         default=None,
-        help="Comma-separated ROI indices to include (applies pair filtering).",
+        metavar="LIST",
+        help="Comma-separated ROI indices to include (e.g. --region-indices 1,4,9).",
     )
     parser.add_argument(
         "--region-labels",
         default=None,
-        help="Comma-separated ROI labels to include (uses anatomical labels from bundle).",
+        metavar="LIST",
+        help="Comma-separated ROI labels to include, matched against bundle labels.",
     )
     parser.add_argument(
         "--region-mode",
@@ -306,7 +319,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--prefix",
         default="speed",
-        help="Filename prefix for saved artefacts.",
+        metavar="NAME",
+        help="Filename prefix for saved artefacts (default: speed).",
     )
     parser.add_argument(
         "--dry-run",
@@ -317,12 +331,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--cache",
         choices=["skip", "overwrite", "verify"],
         default="skip",
-        help="How to handle existing outputs: skip, overwrite, or verify basic metadata.",
+        help="How to handle existing outputs: skip them, overwrite, or verify metadata.",
     )
     parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging verbosity. Example: --log-level DEBUG",
     )
     return parser
 
@@ -331,11 +346,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=getattr(logging, args.log_level))
+    logging.basicConfig(level=getattr(logging, args.log_level), format="%(levelname)s - %(message)s")
+    logger.info("Resolving dataset alias '%s'", args.dataset_name)
     try:
         dataset = _canonical_dataset(args.dataset_name)
     except ValueError as exc:  # align CLI error messaging
         parser.error(str(exc))
+    logger.info("Dataset resolved to '%s'", dataset)
+
     cfg = DATASET_DEFAULTS[dataset]
     paths = get_paths(
         dataset_name=dataset,
@@ -347,19 +365,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     bundle_path = Path(paths["preprocessed"]) / cfg["bundle_name"]
     if not bundle_path.exists():
         parser.error(f"Preprocessed bundle not found: {bundle_path}")
+    logger.info("Loading timeseries bundle from %s", bundle_path)
     bundle = load_timeseries_data(bundle_path)
     anat_labels = [str(x) for x in np.asarray(bundle["anat_labels"]).ravel()]
     n_regions_bundle = int(bundle["regions"])
     mouse_ids = [str(x) for x in np.asarray(bundle.get("mouse_ids", []))]
+    ts_obj = bundle.get("ts")
+    ts_shape = tuple(ts_obj.shape) if hasattr(ts_obj, "shape") else ()
+    raw_animals = bundle.get("n_animals")
+    n_animals_bundle = int(raw_animals) if raw_animals is not None else (ts_shape[0] if ts_shape else None)
+    raw_tr = bundle.get("total_tr")
+    total_tr_bundle = int(raw_tr) if raw_tr is not None else (ts_shape[1] if len(ts_shape) > 1 else None)
+    logger.info(
+        "Bundle summary: animals=%s, regions=%s, total_tr=%s, ts_shape=%s",
+        n_animals_bundle if n_animals_bundle is not None else "?",
+        n_regions_bundle,
+        total_tr_bundle if total_tr_bundle is not None else "?",
+        ts_shape if ts_shape else "?",
+    )
 
     tau_range = _parse_tau_config(args.tau_range, args.tau_max)
     time_offset = int(args.time_offset) if args.time_offset is not None else None
+    logger.info("Speed tau offsets: %s", ", ".join(str(x) for x in tau_range))
+    if time_offset is None:
+        logger.info("Time offset: default to window size.")
+    else:
+        logger.info("Time offset: using explicit value %s.", time_offset)
 
     selected_indices, selected_labels = _parse_region_selection(
         indices=args.region_indices,
         labels=args.region_labels,
         atlas_labels=anat_labels,
     )
+    n_edges_total = n_regions_bundle * (n_regions_bundle - 1) // 2
     pair_mask = None
     if selected_indices is not None:
         if selected_indices.size > n_regions_bundle:
@@ -369,13 +407,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             logger.warning(
                 "Region selection produced zero edges; outputs will contain empty arrays."
             )
+        selected_edge_count = int(pair_mask.sum()) if pair_mask.size else 0
+        logger.info(
+            "Region selection: %s ROIs (%s mode) → %s edges out of %s.",
+            selected_indices.size,
+            args.region_mode,
+            selected_edge_count,
+            n_edges_total,
+        )
+        if selected_labels:
+            preview = ", ".join(selected_labels[:5])
+            if len(selected_labels) > 5:
+                preview += ", ..."
+            logger.info("Selected labels: %s", preview)
+    else:
+        logger.info("Region selection: all %s regions (%s edges).", n_regions_bundle, n_edges_total)
 
     dfc_dir = Path(paths["dfc"])
     if not dfc_dir.exists():
         parser.error(f"dFC directory not found: {dfc_dir}")
+    logger.info("Expecting dFC inputs under %s", dfc_dir)
     speed_root = Path(paths["speed"])
     subset_dir = speed_root / _sanitize_token(str(args.subset_name or "all"))
     subset_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Speed output root: %s", speed_root)
+    logger.info("Subset directory: %s", subset_dir)
 
     if selected_labels:
         if len(selected_labels) == 1:
@@ -389,10 +445,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         region_dir = subset_dir / "all"
     region_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Outputs will be written under %s", region_dir)
 
     windows = np.arange(args.window_min, args.window_max + 1, args.window_step, dtype=int)
     if windows.size == 0:
         parser.error("No window sizes generated; check --window-min/max/step.")
+    logger.info("Window sizes to process: %s", ", ".join(str(int(w)) for w in windows))
 
     outputs: list[Path] = []
     for window_size in windows:
@@ -402,10 +460,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             lag=int(args.lag),
             tau_label=args.dfc_tau_label,
         )
+        try:
+            dfc_rel = dfc_file.relative_to(dfc_dir)
+        except ValueError:  # pragma: no cover - fallback for unexpected layouts
+            dfc_rel = dfc_file.name
+        logger.info("Loading dFC file %s", dfc_rel)
         with np.load(dfc_file) as z:
             if "dfc" not in z.files:
                 parser.error(f"File {dfc_file} missing 'dfc' array.")
             dfc = z["dfc"]
+        logger.info("dFC array shape: %s", dfc.shape)
 
         if dfc.ndim == 4:
             n_animals, n_regions, _, _ = dfc.shape
@@ -452,6 +516,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         if args.dry_run:
+            logger.info("[dry-run] Planned output %s", out_path.relative_to(speed_root))
             outputs.append(out_path)
             continue
 
@@ -490,7 +555,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             metadata=json.dumps(metadata),
         )
         outputs.append(out_path)
-        logger.info("Saved %s", out_path)
+        first_speed = speeds[0] if speeds.size and isinstance(speeds[0], np.ndarray) else None
+        tau_dim = first_speed.shape[0] if first_speed is not None and first_speed.ndim >= 1 else tau_range_arr.size
+        edge_dim = first_speed.shape[1] if first_speed is not None and first_speed.ndim >= 2 else 0
+        logger.info(
+            "Saved %s (animals=%s, tau=%s, edges=%s)",
+            out_path.relative_to(speed_root),
+            speeds.size,
+            tau_dim,
+            edge_dim,
+        )
 
     if args.dry_run:
         logger.info("Dry run complete; planned %d outputs.", len(outputs))
