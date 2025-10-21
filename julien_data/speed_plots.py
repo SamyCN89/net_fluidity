@@ -16,6 +16,7 @@ If --subset-name is omitted, the script will auto-detect a merged PKL under path
 """
 #%%
 import argparse
+import logging
 from pathlib import Path
 import pickle
 import sys
@@ -24,6 +25,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 from itertools import combinations
 from scipy.stats import spearmanr
+from typing import Iterable, Sequence
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+from scripts.bootstrap.compute_speed_bootstrap import (
+    BootstrapConfig,
+    load_dataset_context,
+    load_per_animal_from_npz,
+    _find_region_folders,
+    _list_window_files,
+    _pool_windows_indices,
+    _resolve_group_columns,
+    _concat_per_animal,
+)
+from shared_code.fun_bootstrap import pool_per_animal
+from scripts.bootstrap.compute_speed_bootstrap import build_groups_from_columns
+from shared_code.fun_loaddata import load_timeseries_bundle
+from scripts.dfc.dfc_compute import _canonical_dataset
+
+LOGGER = logging.getLogger(__name__)
+
 
 # Robust import of DFCAnalysis (prefer src package during migration)
 try:
@@ -376,10 +401,91 @@ def run_plot(subset_name: str | None = None,
              equal_method: str = "kde",
              n_per_animal: int | None = None,
              replace: bool = False,
-             normalize_density: bool = True):
+             normalize_density: bool = True,
+             dataset_name: str = "julien_caillette",
+             pooled_only: bool = False):
     """Run plotting end-to-end with parameters (usable from Jupyter)."""
+    original_dataset = dataset_name
+    try:
+        dataset_name = _canonical_dataset(dataset_name)
+    except ValueError as exc:
+        raise ValueError(
+            f"Unsupported dataset '{original_dataset}'. Expected names like 'julien' or 'ines'."
+        ) from exc
+
+    use_legacy_flow = dataset_name == "julien_caillette"
+    use_pooled_only = pooled_only or not use_legacy_flow
+    if use_pooled_only and not pooled_only and not use_legacy_flow:
+        LOGGER.info(
+            "Dataset %s does not ship legacy merged PKLs; switching to pooled-only workflow.",
+            dataset_name,
+        )
+
+    if use_pooled_only:
+        tau_idx = tau if tau is not None else -1
+        pool_subset = subset_name or "all"
+        LOGGER.info(
+            "Running pooled-only speed plots for dataset=%s subset=%s tau_index=%s",
+            dataset_name,
+            pool_subset,
+            tau_idx,
+        )
+        pooled_results = plot_dataset_all_windows(
+            dataset_name=dataset_name,
+            subset=pool_subset,
+            tau_index=tau_idx,
+            include_all_pool=True,
+            include_groups=groups,
+            pool_threshold="median",
+            plot_all_animals=True,
+            tr=tr,
+        )
+        figures_found = False
+        save_dir: Path | None = None
+        ctx = None
+        if savefig:
+            try:
+                ctx = load_dataset_context(dataset_name, tr_hint=tr)
+            except FileNotFoundError as err:
+                LOGGER.error("%s", err)
+                raise
+            subset_dir = Path(ctx.paths["speed"])
+            if pool_subset:
+                subset_dir = subset_dir / pool_subset
+            subset_dir.mkdir(parents=True, exist_ok=True)
+            save_dir = subset_dir / "pooled_plots"
+            save_dir.mkdir(parents=True, exist_ok=True)
+
+        tau_label = "all" if tau_idx < 0 else str(tau_idx)
+        for pool_name, details in pooled_results.items():
+            if not isinstance(details, dict):
+                continue
+            fig_list = details.get("figures", [])
+            if not fig_list:
+                continue
+            figures_found = True
+            if save_dir is not None:
+                for idx, fig in enumerate(fig_list):
+                    filename = f"{dataset_name}_{pool_subset}_tau{tau_label}_{pool_name}_{idx:02d}.png"
+                    fig.savefig(save_dir / filename, dpi=200)
+        if figures_found:
+            plt.show()
+        else:
+            LOGGER.warning(
+                "No figures produced for pooled-only plotting (dataset=%s subset=%s tau=%s)",
+                dataset_name,
+                pool_subset,
+                tau_label,
+            )
+        result: dict[str, object] = {"pooled_results": pooled_results}
+        if save_dir is not None:
+            result["save_dir"] = save_dir
+        if ctx is not None:
+            result["context"] = ctx
+        return result
+
     # Load dataset context
-    data = DFCAnalysis()
+    data = DFCAnalysis(dataset_name=dataset_name)
     if tr is None:
         data.get_metadata()
     else:
@@ -394,7 +500,12 @@ def run_plot(subset_name: str | None = None,
     save_root = Path(data.paths["speed"])  # contains subfolders
     tau_count = int(data.tau + 1)
 
-    merged_path = find_merged_file(save_root, data.n_animals, data.regions, tau_count, subset_name)
+    try:
+        merged_path = find_merged_file(save_root, data.n_animals, data.regions, tau_count, subset_name)
+    except FileNotFoundError as err:
+        LOGGER.error("%s", err)
+        LOGGER.error("Legacy merged PKL not found. Re-run with --pooled-only to use bootstrap NPZ pools instead.")
+        raise
     print("Merged speeds PKL:", merged_path)
     with open(merged_path, "rb") as fh:
         payload = pickle.load(fh)
@@ -402,6 +513,7 @@ def run_plot(subset_name: str | None = None,
     meta = payload.get("meta", {})
     print("Meta:", meta)
 
+    # Get window sizes
     window_sizes = meta.get("window_sizes")
     if window_sizes is None:
         window_sizes = list(map(int, data.time_window_range))
@@ -428,6 +540,7 @@ def run_plot(subset_name: str | None = None,
     vals = pool_window_speeds(last_window, tau=tau)
     print("Last window pooled:", vals.size, "median:", np.nanmedian(vals) if vals.size else np.nan)
 
+    # Overall distribution
     plt.figure(figsize=(7, 5))
     plot_overall_distribution(vals, window_sizes[-1])
     if savefig:
@@ -475,6 +588,400 @@ def run_plot(subset_name: str | None = None,
         "cog_df": data.cog_data_filtered,
         "merged_path": merged_path,
     }
+
+
+def plot_speed_distribution_ines(
+    subset="all",
+    window=None,
+    tau_index=3,
+    group_cols=("Genotype", "Sexe"),
+    bins=120,
+    figsize=(8, 5),
+    save_path=None,
+    ):
+    """
+    Plot the pooled dFC-speed histogram for the ines dataset.
+
+    subset      -> folder under paths['speed'] (e.g. "all", "regions-ACC-THAL")
+    window      -> window size; if None we take the largest available
+    tau_index   -> row index inside each tau stack (-1 means pool all taus)
+    group_cols  -> grouping columns from the cognitive CSV
+    bins        -> histogram bins
+    save_path   -> optional Path/str to save the figure
+    """
+    cfg = BootstrapConfig(dataset_name="ines", subset=subset, tau_index=tau_index)
+    ctx = load_dataset_context(cfg.dataset_name, tr_hint=cfg.tr)
+
+    region_dirs = _find_region_folders(Path(ctx.paths["speed"]) / (subset or ""))
+    if not region_dirs:
+        raise FileNotFoundError("No speed folders found for the given subset")
+
+    # Pick the first region folder (usually “regions-…”) and list the windows
+    windows = _list_window_files(region_dirs[0])
+    if not windows:
+        raise FileNotFoundError("No NPZ files in region folder")
+
+    if window is None:
+        window, npz_path = max(windows, key=lambda pair: pair[0])
+    else:
+        try:
+            window, npz_path = next(pair for pair in windows if pair[0] == int(window))
+        except StopIteration:
+            raise ValueError(f"Window {window} not found; available: {[w for w,_ in windows]}")
+
+    per_animal = load_per_animal_from_npz(npz_path, tau_index=tau_index)
+    pooled = pool_per_animal(per_animal, range(len(per_animal)))
+    if pooled.size == 0:
+        raise RuntimeError("Selected window/tau has no samples")
+
+    groups = build_groups_from_columns(ctx.cog_df, list(group_cols))
+
+    fig, ax = plt.subplots(figsize=figsize)
+    # ax.hist(pooled, bins=bins, alpha=0.4, density=True, label="All animals", histtype='step')
+    for grp, idxs in groups.items():
+        vals = pool_per_animal(per_animal, idxs)
+        if vals.size:
+            ax.hist(vals, bins=bins, alpha=0.5, density=True, label=str(grp), histtype="step", lw=1.7)
+
+    ax.set(
+        title=f"ines dFC speed distribution (W={window}, tau={tau_index})",
+        xlabel="Speed",
+        ylabel="Density"
+    )
+    ax.legend()
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path)
+    return fig, ax
+
+#%%
+
+
+def _normalize_group_label(label: object) -> str:
+    """Normalize group identifiers to a canonical string like 'WT-VEH'."""
+    if isinstance(label, tuple):
+        parts = [str(part).strip() for part in label if str(part).strip()]
+    else:
+        text = str(label).strip()
+        if "-" in text:
+            parts = [chunk.strip() for chunk in text.split("-")]
+        else:
+            parts = [text] if text else []
+    return "-".join(parts)
+
+
+def plot_dataset_all_windows(
+    dataset_name: str,
+    *,
+    subset: str = "all",
+    tau_index: int = 3,
+    group_cols: tuple[str, ...] | None = None,
+    group_builder=None,
+    include_groups: Sequence[str] | None = None,
+    pool_threshold: str | int | None = "median",
+    include_all_pool: bool = True,
+    figsize: tuple[float, float] = (9, 6),
+    bins: int = 150,
+    density: bool = True,
+    alpha: float = 0.35,
+    plot_all_animals: bool = False,
+    tr: int | None = None,
+) -> dict[str, dict]:
+    """Plot pooled dFC-speed distributions for every window in the dataset.
+
+    Optionally pass `tr` to resolve cognition metadata when multiple TR variants exist.
+    `include_groups` accepts a sequence of group labels such as "WT-VEH" to filter the plotted cohorts.
+    """
+    dataset_key = _canonical_dataset(dataset_name)
+    dataset_name = dataset_key
+    cfg_kwargs = dict(dataset_name=dataset_key, subset=subset, tau_index=tau_index)
+    if tr is not None:
+        cfg_kwargs["tr"] = int(tr)
+    cfg = BootstrapConfig(**cfg_kwargs)
+    ctx = load_dataset_context(cfg.dataset_name, tr_hint=cfg.tr)
+
+    speed_root = Path(ctx.paths["speed"]) / (subset or "")
+    region_dirs = _find_region_folders(speed_root)
+    if not region_dirs:
+        raise FileNotFoundError(f"No region folders in {speed_root}")
+
+    win_files = _list_window_files(region_dirs[0])
+    if not win_files:
+        raise FileNotFoundError(f"No speed NPZ files found in {region_dirs[0]}")
+    win_lookup = {int(w): path for w, path in win_files}
+
+    pools = _pool_windows_indices([w for w, _ in win_files], pool_threshold) if pool_threshold else {}
+    if include_all_pool:
+        pools.setdefault("all", [w for w, _ in win_files])
+    if not pools:
+        pools = {"all": [w for w, _ in win_files]}
+
+    resolved_cols = list(group_cols) if group_cols is not None else []
+    if group_builder is None:
+        groups, group_sets = _default_group_builder(ctx, tuple(resolved_cols) or None)
+    else:
+        groups, group_sets = group_builder(ctx, tuple(resolved_cols) or None)
+
+    if not groups:
+        raise ValueError("Could not construct any groups for plotting.")
+
+    if include_groups:
+        normalized_lookup = {_normalize_group_label(key): key for key in groups}
+        matched_keys = []
+        missing: list[str] = []
+        for requested in include_groups:
+            normalized_req = _normalize_group_label(requested)
+            if not normalized_req:
+                continue
+            match = normalized_lookup.get(normalized_req)
+            if match is None:
+                missing.append(requested)
+                continue
+            if match not in matched_keys:
+                matched_keys.append(match)
+        if matched_keys:
+            groups = {key: groups[key] for key in matched_keys}
+            filtered_sets = []
+            for labels in group_sets:
+                subset_labels = [label for label in labels if label in groups]
+                if subset_labels:
+                    filtered_sets.append(subset_labels)
+            if not filtered_sets:
+                filtered_sets = [matched_keys]
+            group_sets = filtered_sets
+            if missing:
+                LOGGER.debug(
+                    "Ignoring unmatched group filters for dataset=%s subset=%s: %s",
+                    dataset_name,
+                    subset,
+                    ", ".join(sorted(_normalize_group_label(name) for name in missing)),
+                )
+        else:
+            LOGGER.warning(
+                "No pooled groups matched requested filters %s (dataset=%s subset=%s); plotting all groups.",
+                include_groups,
+                dataset_name,
+                subset,
+            )
+
+    def pool_for(pool_windows: list[int]) -> list[np.ndarray]:
+        per_animals = []
+        for w in pool_windows:
+            npz_path = win_lookup.get(int(w))
+            if npz_path is None:
+                LOGGER.warning("Window %s not found; skipping.", w)
+                continue
+            series = load_per_animal_from_npz(
+                npz_path,
+                tau_index=tau_index if tau_index >= 0 else None,
+                n_animals=cfg.n_animals if cfg.n_animals > 0 else None,
+            )
+            if any(getattr(arr, "size", 0) > 0 for arr in series):
+                per_animals.append(series)
+        if not per_animals:
+            return []
+        return _concat_per_animal(per_animals)
+
+    results: dict[str, dict] = {}
+    LOGGER.info(
+        "Plotting pooled distributions for dataset=%s subset=%s (tau=%s) across %d pools",
+        dataset_key,
+        subset,
+        tau_index,
+        len(pools),
+    )
+    for pool_name, window_list in pools.items():
+        per_animal = pool_for(window_list)
+        if not per_animal:
+            LOGGER.warning(
+                "Skipping pool '%s' (dataset=%s, subset=%s): no samples after pooling %s windows.",
+                pool_name,
+                dataset_name,
+                subset,
+                len(window_list),
+            )
+            continue
+
+        figures = []
+        for label_group in group_sets:
+            labels = [label_group] if isinstance(label_group, str) else list(label_group)
+            fig, ax = plt.subplots(figsize=figsize)
+            if plot_all_animals:
+                all_vals = pool_per_animal(per_animal, range(len(per_animal)))
+                if all_vals.size:
+                    ax.hist(
+                        all_vals,
+                        bins=bins,
+                        density=density,
+                        alpha=0.25,
+                        color="grey",
+                        label="All animals",
+                        histtype="step",
+                        lw=2,
+                    )
+            for label in labels:
+                idxs = groups.get(label)
+                if idxs is None:
+                    LOGGER.warning("Group '%s' not present; skipping.", label)
+                    continue
+                vals = pool_per_animal(per_animal, idxs)
+                if vals.size == 0:
+                    LOGGER.debug("Group '%s' is empty in pool '%s'.", label, pool_name)
+                    continue
+                ax.hist(
+                    vals,
+                    bins=bins,
+                    density=density,
+                    alpha=alpha,
+                    label=str(label),
+                    histtype="step",
+                    lw=2,
+                )
+            ax.set(
+                title=f"{dataset_name} dFC speed – pool '{pool_name}' (tau={tau_index})",
+                xlabel="Speed",
+                ylabel="Density" if density else "Count",
+            )
+            ax.legend()
+            fig.tight_layout()
+            figures.append(fig)
+        results[pool_name] = {"windows": sorted(window_list), "figures": figures}
+    return results
+
+
+def plot_ines_all_windows(
+    group_cols=("Genotype", "Sexe"),
+    subset="all",
+    tau_index=3,
+    pool_threshold="median",
+    include_all_pool=True,
+    figsize=(9, 6),
+    bins=150,
+    density=True,
+    plot_all_animals=False,
+):
+    """Convenience wrapper that applies the pooled-window plot to the Ines dataset."""
+    return plot_dataset_all_windows(
+        dataset_name="ines",
+        subset=subset,
+        tau_index=tau_index,
+        group_cols=group_cols,
+        group_builder=_build_groups_ines,
+        pool_threshold=pool_threshold,
+        include_all_pool=include_all_pool,
+        figsize=figsize,
+        bins=bins,
+        density=density,
+        plot_all_animals=plot_all_animals,
+    )
+
+
+def _default_group_builder(ctx, requested_cols: tuple[str, ...] | None):
+    dataset_key = getattr(ctx, "dataset_key", "")
+    if requested_cols:
+        columns = list(requested_cols)
+        resolved = _resolve_group_columns(ctx.cog_df, columns)
+    else:
+        candidate_sets: list[list[str]] = []
+
+        def _add_candidates(names: Iterable[str] | None):
+            if not names:
+                return
+            cleaned = [str(n).strip() for n in names if str(n).strip()]
+            if cleaned and cleaned not in candidate_sets:
+                candidate_sets.append(cleaned)
+
+        dataset_defaults = {
+            "julien_caillette": ("Genotype", "Treatment"),
+            "ines_abdullah": ("Genotype", "Sexe"),
+        }
+        _add_candidates(dataset_defaults.get(dataset_key))
+
+        cfg = BootstrapConfig(dataset_name=dataset_key or "ines")
+        _add_candidates(str(cfg.group_cols).split(","))
+
+        heuristic_pool = ["Genotype", "Sexe", "Treatment", "Phenotype", "Phenotype_OiP", "Phenotype_RO24h"]
+        _add_candidates(heuristic_pool)
+
+        categorical_cols = [
+            str(col)
+            for col in ctx.cog_df.columns
+            if getattr(ctx.cog_df[col], "dtype", None) is not None
+            and (
+                str(ctx.cog_df[col].dtype).startswith(("object", "category"))
+                or ctx.cog_df[col].dtype == "O"
+            )
+        ]
+        _add_candidates(categorical_cols[:3])
+        _add_candidates([str(col) for col in ctx.cog_df.columns[:3]])
+
+        resolved = None
+        last_error: Exception | None = None
+        for cols in candidate_sets:
+            try:
+                resolved = _resolve_group_columns(ctx.cog_df, cols)
+                break
+            except (KeyError, ValueError) as err:
+                last_error = err
+        if resolved is None:
+            if last_error:
+                raise last_error
+            raise ValueError("Unable to determine default grouping columns for pooled plots.")
+
+    groups = build_groups_from_columns(ctx.cog_df, resolved)
+    return groups, [list(groups.keys())]
+
+
+def _build_groups_ines(ctx, _=None):
+    """Construct Ines-specific grouping masks using the preprocessed bundle."""
+    pre_dir = Path(ctx.paths["preprocessed"])
+    candidates = [
+        pre_dir / "ts_and_meta_ines_abdullah.npz",
+        pre_dir / "ts_and_meta_2m4m.npz",
+    ]
+    bundle_path = next((p for p in candidates if p.exists()), None)
+    if bundle_path is None:
+        matches = sorted(pre_dir.glob("ts_and_meta*.npz"))
+        bundle_path = matches[-1] if matches else None
+    if bundle_path is None:
+        raise FileNotFoundError(f"Could not locate a ts_and_meta bundle under {pre_dir}")
+
+    grouping_path = next((p for p in sorted(pre_dir.glob("grouping_data*.pkl")) if p.exists()), None)
+    bundle = load_timeseries_bundle(bundle_path, grouping_path)
+    mask_groups = bundle.mask_groups or ()
+    label_variables = bundle.label_variables or ()
+    if not mask_groups or not label_variables:
+        LOGGER.warning(
+            "Ines bundle %s lacks grouping masks; falling back to default genotype/treatment groups.",
+            bundle_path,
+        )
+        return _default_group_builder(ctx, ("Genotype", "Sexe"))
+
+    group_dict: dict[str, list[int]] = {}
+    label_sets: list[list[str]] = []
+    total_sets = len(label_variables)
+    for i, labels in enumerate(label_variables):
+        suffix = ""
+        if total_sets == 2:
+            suffix = " OiP" if i == 0 else " NOR"
+        elif total_sets > 2:
+            suffix = f" #{i+1}"
+        label_group: list[str] = []
+        for lbl, mask in zip(labels, mask_groups[i], strict=False):
+            mask = np.asarray(mask, dtype=bool)
+            indices = np.flatnonzero(mask)
+            if indices.size == 0:
+                continue
+            name = f"{lbl}{suffix}"
+            group_dict[name] = indices.tolist()
+            label_group.append(name)
+        if label_group:
+            label_sets.append(label_group)
+    if not label_sets:
+        label_sets = [list(group_dict.keys())]
+    return group_dict, label_sets
+
+
 #%%
 
 def main(argv=None):
@@ -504,11 +1011,20 @@ def main(argv=None):
     ap.add_argument("--n-per-animal", type=int, default=None, help="Equal length per animal when using subsample method")
     ap.add_argument("--replace", action="store_true", help="Allow replacement during subsample method")
     ap.add_argument("--normalize-density", action="store_true", help="Normalize KDEs to density; unset to sum per-animal curves")
+    ap.add_argument("--dataset", type=str, default="julien_caillette", help="Dataset key (e.g., 'julien_caillette' or 'ines_abdullah')")
+    ap.add_argument("--pooled-only", action="store_true", help="Skip legacy merged-PKL workflow and plot pooled speeds from bootstrap NPZ files only")
     if argv is None:
         args, _ = ap.parse_known_args(sys.argv[1:])  # ← key fix
     else:
         args = ap.parse_args(argv)
     groups_list = [s.strip() for s in args.groups.split(",")] if args.groups else None
+
+    try:
+        dataset_key = _canonical_dataset(args.dataset)
+    except ValueError as exc:
+        print(exc)
+        return 2
+
     # Run main plots
     ctx = run_plot(
         subset_name=args.subset_name,
@@ -525,10 +1041,17 @@ def main(argv=None):
         n_per_animal=args.n_per_animal,
         replace=args.replace,
         normalize_density=args.normalize_density,
+        dataset_name=dataset_key,
+        pooled_only=args.pooled_only,
     )
+
+    pooled_ctx = "all_speed" not in ctx
 
     # Optional: Cognition scatter
     if args.cog_scatter:
+        if pooled_ctx:
+            print("Cognition scatter is unavailable in pooled-only mode; rerun without --pooled-only.")
+            return 0
         all_speed = ctx["all_speed"]; window_sizes = ctx["window_sizes"]; groups = ctx["groups"]; cog_df = ctx["cog_df"]
         # per-animal summary over selected taus and all windows
         try:
@@ -561,6 +1084,9 @@ def main(argv=None):
 
     # Optional: Correlation vs window
     if args.corr_vs_window:
+        if pooled_ctx:
+            print("Correlation vs window is unavailable in pooled-only mode; rerun without --pooled-only.")
+            return 0
         all_speed = ctx["all_speed"]; window_sizes = ctx["window_sizes"]; groups = ctx["groups"]; cog_df = ctx["cog_df"]
         try:
             from julien_data.src.plots_utils import per_animal_summary as _pu_per_animal_summary
@@ -618,8 +1144,11 @@ def main(argv=None):
 
     # Optional QQ plots
     if args.qq:
+        if pooled_ctx:
+            print("QQ plots require the legacy merged-PKL workflow; rerun without --pooled-only.")
+            return 0
         # Reuse same context
-        data = DFCAnalysis()
+        data = DFCAnalysis(dataset_name=dataset_key)
         if args.tr is None:
             data.get_metadata()
         else:

@@ -53,6 +53,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 
 0) Raw inputs → canonical bundles
    - `scripts/preprocessing/preprocess.py` dispatches to `scripts/preprocessing/julien.py` or `scripts/preprocessing/ines.py` (based on `--dataset-name`) to align time-series and cognitive metadata, write `ts_and_meta_<dataset>.npz`, and emit grouping artefacts. Shims under `julien_data/src/preprocess.py` and `metaconnectivity/cognitive_data_ts_sorted.py` now import these central modules.
+   - See [`docs/preprocessing_checks.md`](preprocessing_checks.md) for quick snippets to inspect the generated outputs.
 
 1) Canonical bundles → DFC streams
    - `scripts/dfc/dfc_compute.py` (also re-exported by `allegiance/src/dfc_compute.py`) loads `ts` from the canonical bundle (default `ts_and_meta_<dataset>.npz`) and computes DFC per animal/window size. Use `--jobs` to parallelise per-animal computation when resources allow. See `docs/dfc_compute.md` for command examples.

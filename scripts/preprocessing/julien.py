@@ -59,13 +59,17 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 
 
+# Build dataset-specific CLI; reused by standalone execution.
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--filter-mode",
         default="exclude_shortest",
         choices=["exclude_shortest", "truncate", "none"],
-        help="How to harmonize time series lengths when only_tr is not provided.",
+        help=(
+            "How to harmonize time series lengths when only_tr is not provided "
+            "(default: exclude_shortest)."
+        ),
     )
     parser.add_argument(
         "--only-tr",
@@ -76,27 +80,36 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--dataset-name",
         default="julien_caillette",
-        help="Dataset key recognised by shared_code.fun_paths.get_paths.",
+        help=(
+            "Dataset key recognised by shared_code.fun_paths.get_paths "
+            "(default: julien_caillette)."
+        ),
     )
     parser.add_argument(
         "--timecourse-folder",
         default="time_courses_2",
-        help="Folder name containing time series MAT files.",
+        help="Folder name containing time series MAT files (default: time_courses_2).",
     )
     parser.add_argument(
         "--cognitive-data-file",
         default="mice_groups_comp_index_2.xlsx",
-        help="Excel file containing cognitive metadata.",
+        help=(
+            "Excel file containing cognitive metadata "
+            "(default: mice_groups_comp_index_2.xlsx)."
+        ),
     )
     parser.add_argument(
         "--cognitive-sheet",
         default="mice_groups_comp_index",
-        help="Sheet name within the cognitive Excel workbook.",
+        help=(
+            "Sheet name within the cognitive Excel workbook "
+            "(default: mice_groups_comp_index)."
+        ),
     )
     parser.add_argument(
         "--anat-labels-file",
         default="all_ROI_coimagine_2.txt",
-        help="Text file listing anatomical labels.",
+        help="Text file listing anatomical labels (default: all_ROI_coimagine_2.txt).",
     )
     parser.add_argument(
         "--dry-run",
@@ -155,6 +168,7 @@ def _build_metadata_table(cog_df: pd.DataFrame, matched_ids: Sequence[str]) -> p
     return cog_sorted
 
 
+# Load Julien datasets, align cognition metadata, and return artefacts ready for writing.
 def prepare_dataset(
     *,
     filter_mode: str,
@@ -175,12 +189,14 @@ def prepare_dataset(
         anat_labels_file=anat_labels_file,
     )
 
+    # Load individual MAT files and extract mouse identifiers.
     ts_list, ts_shapes, loaded_files = load_mat_timeseries(paths["timeseries"])
     if not ts_list:
         raise RuntimeError("No time series found in the configured directory.")
     ts_ids = extract_mouse_ids(loaded_files)
     logger.debug("Loaded %d time series (unique shapes: %s)", len(ts_list), sorted(set(ts_shapes)))
 
+    # Apply TR-based filtering before aligning with behavioural metadata.
     if only_tr is not None:
         ts_filtered, ts_ids_filtered = _filter_only_tr(ts_list, ts_ids, only_tr)
         effective_filter_mode = f"only_tr={only_tr}"
@@ -199,6 +215,7 @@ def prepare_dataset(
         effective_filter_mode,
     )
 
+    # Align cognition table to retained mouse IDs and clean anatomical labels.
     cog_df = pd.read_excel(paths["cog_data"], sheet_name=cognitive_sheet)
     cog_df["mouse"] = cog_df["mouse"].astype(str)
     region_labels = np.loadtxt(paths["labels"], dtype=str).tolist()
@@ -230,6 +247,7 @@ def prepare_dataset(
     regions = ts_aligned[0].shape[1]
     total_tr = int(np.unique(lengths)[-1])
 
+    # Capture reproducibility metadata alongside the time-series payload.
     metadata = {
         "mouse_metadata": cog_table.copy(),
         "region_labels": region_labels_clean,
@@ -268,11 +286,13 @@ def write_outputs(result: PreprocessResult, *, dry_run: bool) -> None:
     """Persist preprocessing artefacts to the configured output folder."""
 
     output_dir = Path(result.paths["preprocessed"])  # type: ignore[arg-type]
+    logger = logging.getLogger(__name__)
     if dry_run:
-        logging.getLogger(__name__).info("Dry-run enabled; no files written to %s", output_dir)
+        logger.info("Dry-run enabled; no files written to %s", output_dir)
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Writing Julien preprocessing outputs to %s", output_dir)
 
     n_animals = result.metadata["n_animals"]
     regions = result.metadata["regions"]
