@@ -57,7 +57,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
 
 1) Canonical bundles → DFC streams
    - `scripts/dfc/dfc_compute.py` (also re-exported by `allegiance/src/dfc_compute.py`) loads `ts` from the canonical bundle (default `ts_and_meta_<dataset>.npz`) and computes DFC per animal/window size. Use `--jobs` to parallelise per-animal computation when resources allow. See `docs/dfc_compute.md` for command examples.
-   - `scripts/speed/dfc_speed_compute.py` consumes those dFC bundles and generates per-window speed artefacts under `results/<dataset>/speed/`, preserving the legacy subset naming (`all`, `shared`, region folders). Supports ROI filtering via `--region-labels` / `--region-indices`.
+   - `scripts/speed/dfc_speed_compute.py` consumes those dFC bundles and generates per-window speed artefacts under `results/<dataset>/speed/`, preserving the legacy subset naming (`all`, `shared`, region folders). Supports ROI filtering via `--region-labels` / `--region-indices`. See `docs/speed_compute.md` for detailed usage.
 
 2) Per-window allegiance → merged allegiance
    - External step (not shown here) produces per-window allegiance artifacts per animal/window.
