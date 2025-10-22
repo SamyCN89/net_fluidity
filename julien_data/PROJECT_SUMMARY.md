@@ -1,5 +1,15 @@
 # DFC Speed Analysis from Precomputed Streams - Project Summary
 
+## 📂 Repository Organization (October 2025)
+
+**MIGRATION COMPLETED**: Scripts have been reorganized into `src/` (core pipeline) and `legacy/` (deprecated code) directories. See `MIGRATION_GUIDE.md` for details.
+
+### Current Structure
+- **`src/`**: Core standalone analysis scripts (main pipeline)
+- **`legacy/`**: Deprecated, experimental, and old versions
+- **`fig/`**: Generated figures and visualizations
+- **`results/`**: Analysis results and outputs
+
 ## 🎯 Task Completion
 
 **COMPLETED**: Successfully created a new script to compute DFC (Dynamic Functional Connectivity) speed using precomputed DFC streams instead of recomputing them from scratch, providing significant performance improvements.
