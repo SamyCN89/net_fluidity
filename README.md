@@ -15,7 +15,11 @@ Tools for dynamic functional connectivity (DFC), meta‑connectivity, and relate
   - `shared_code/fun_utils.py`: I/O, grouping, matrices, plotting helpers
   - `shared_code/fun_paths.py`: dataset/result/figures path helpers (env‑driven)
 - `metaconnectivity/`: analysis scripts and legacy/experimental functions
-- `julien_data/`: demos, plots, and figures used during development
+- `julien_data/`: Julien Caillette dataset analysis
+  - `julien_data/src/`: core standalone scripts for DFC analysis pipeline
+  - `julien_data/legacy/`: deprecated and experimental code (reference only)
+  - `julien_data/MIGRATION_GUIDE.md`: documentation of recent reorganization
+- `allegiance/src/`: allegiance matrix computation scripts
 - `test_*.py`: quick tests and comparisons between implementations
 
 ## Installation
