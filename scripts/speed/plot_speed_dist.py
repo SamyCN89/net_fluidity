@@ -19,13 +19,15 @@ from shared_code.fun_loaddata import load_timeseries_bundle
 save_fig = set_figure_params(False)
 timecourse_folder = "Timecourses_updated_03052024"
 
-# Get paths for data loading
+# Get paths for data loading ines_abdullah dataset
 paths = get_paths(
     dataset_name="ines_abdullah",
     timecourse_folder=timecourse_folder,
     cognitive_data_file="ROIs.xlsx",
     anat_labels_file="41_Allen.txt",
 )
+
+
 # Load timeseries bundle and grouping data
 bundle = load_timeseries_bundle(
     paths["preprocessed"] / "ts_and_meta_2m4m.npz",
@@ -50,7 +52,7 @@ time_windows_range = np.arange(5,100,1)
 
 speeds = []
 for w in time_windows_range:
-    filepath = f'/media/samy/Elements2/Proyectos/LauraHarsan/results/ines_abdullah/speed/all/all/speed_win{w}_lag1_tau1_animals_126_regions_41.npz'
+    filepath = f'/media/samy/Elements2/Proyectos/LauraHarsan/results/ines_abdullah/speed/all/all/speed_win{w}_lag1_tau4_animals_126_regions_41.npz'
     a = np.load(filepath, allow_pickle=True)
     s = a['speeds']
     # Flatten each animal’s array from (1, N) → (N,)

@@ -8,10 +8,9 @@ Created on Mon Oct  2 14:42:38 2023
 # %%
 import argparse
 import logging
-import sys
-import pickle
 from pathlib import Path
-import time
+import pickle
+import sys
 
 from joblib import Parallel, delayed
 import numpy as np
@@ -25,6 +24,7 @@ except ModuleNotFoundError:
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
+
 
 # %%
 # Utility function to map region labels to indices
@@ -49,7 +49,9 @@ def _map_labels_to_indices(requested_labels, region_labels):
             missing.add(lab)
     return indices, missing, mapping
 
+
 # %%
+
 
 # Compute the speed of dFC
 def dfc_speed_split(
@@ -156,14 +158,14 @@ def dfc_speed_split(
         for tau_aux in tau_range:
             fc1_indices.append(indices[:-1])  # Indices for the first FC matrix
             fc2_indices.append(
-                indices[1:] + tau_aux + time_window + vstep - 1
+                indices[1:] + tau_aux + time_window - 1
             )  # Indices for the second FC matrix
             # print(indices[:-1], indices[1:]+tau_aux+time_offset+vstep-1)
     else:
         tau_aux = tau_range
         fc1_indices.append(indices[:-1])
         fc2_indices.append(
-            indices[1:] + tau_aux + time_window + vstep - 1
+            indices[1:] + tau_aux + time_window - 1
         )  # Indices for the second FC matrix
 
     n_speeds = (len(indices) - 1) * np.size(tau_range)
@@ -374,6 +376,7 @@ def run_dfc_speed_analysis(
                 )
                 if kwargs.get("engine", "legacy") == "shared":
                     from shared_code.fun_dfcspeed import dfc_speed_multi_tau
+
                     if return_fc2:
                         fc2 = dfc_speed_multi_tau(
                             dfc_stream[animal_idx],
@@ -466,7 +469,9 @@ def run_dfc_speed_analysis(
     # Final summary of outputs
     output_files = [p for p in output_files if p]
     if output_files:
-        logger.info("Saved/updated %d window files under: %s", len(output_files), save_path)
+        logger.info(
+            "Saved/updated %d window files under: %s", len(output_files), save_path
+        )
         for p in output_files:
             logger.info("  - %s", p)
 
@@ -484,17 +489,21 @@ def run_dfc_speed_analysis(
             for p in out_paths:
                 with np.load(p, allow_pickle=True) as arr:
                     if "speeds" in arr:
-                        merged_speeds.append(arr["speeds"])  # keep object arrays per window
+                        merged_speeds.append(
+                            arr["speeds"]
+                        )  # keep object arrays per window
             if merged_speeds:
                 # Build metadata for merged artifact
                 from datetime import datetime
                 import subprocess
+
                 # Attempt to capture git commit
                 commit = None
                 try:
                     commit = (
-                        subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
-                        .stdout.strip()
+                        subprocess.run(
+                            ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+                        ).stdout.strip()
                         or None
                     )
                 except Exception:
@@ -502,16 +511,20 @@ def run_dfc_speed_analysis(
                 meta = {
                     "method": method,
                     "region_mode": region_mode,
-                    "selected_regions": [int(i) for i in selected_regions]
-                    if selected_regions is not None
-                    else None,
+                    "selected_regions": (
+                        [int(i) for i in selected_regions]
+                        if selected_regions is not None
+                        else None
+                    ),
                     "selected_labels": selected_labels,
                     "subset_name": kwargs.get("subset_name"),
                     "tau_range": [int(x) for x in np.array(tau_range).tolist()],
                     "n_animals": int(n_animals),
                     "regions_in_filenames": int(data.regions),
                     "regions_param": int(nodes),
-                    "window_sizes": [int(w) for w in np.array(time_window_range).tolist()],
+                    "window_sizes": [
+                        int(w) for w in np.array(time_window_range).tolist()
+                    ],
                     "save_dir": str(out_dir),
                     "timestamp": datetime.now().isoformat(timespec="seconds"),
                     "git_commit": commit,
@@ -551,7 +564,8 @@ def run_dfc_speed_analysis(
         except Exception as e:
             logger.warning("Failed to merge per-window outputs: %s", e)
 
-#%%
+
+# %%
 # Command-line argument parsing
 def _parse_cli_args():
     p = argparse.ArgumentParser(description="Compute dFC speed with region selection")
@@ -630,7 +644,9 @@ def _parse_cli_args():
     args, _unknown = p.parse_known_args(sys.argv[1:])
     # return p.parse_args()
     return args
-#%%
+
+
+# %%
 
 
 def main():
@@ -643,10 +659,13 @@ def main():
     data = DFCAnalysis()
     if args.tr is not None:
         from pathlib import Path as _Path
+
         preproc = _Path(data.paths["preprocessed"])  # type: ignore[index]
         cands = sorted(preproc.glob(f"metadata_animals_*_tr_{int(args.tr)}.pkl"))
         if not cands:
-            raise FileNotFoundError(f"No metadata file for tr={args.tr} under {preproc}")
+            raise FileNotFoundError(
+                f"No metadata file for tr={args.tr} under {preproc}"
+            )
         data.get_metadata(meta_filename=cands[0].name)
     else:
         data.get_metadata()
@@ -678,11 +697,18 @@ def main():
     # Resolve selected regions
     selected_regions = None
     if args.selected_region_labels:
-        wanted = [s.strip() for s in args.selected_region_labels.split(",") if s.strip()]
-        inds, missing, mapping = _map_labels_to_indices(wanted, data.region_labels_preprocessed)
+        wanted = [
+            s.strip() for s in args.selected_region_labels.split(",") if s.strip()
+        ]
+        inds, missing, mapping = _map_labels_to_indices(
+            wanted, data.region_labels_preprocessed
+        )
         # Log mapping details
         if mapping:
-            logger.info("Label→index mapping: %s", ", ".join(f"{k}:{v}" for k, v in mapping.items()))
+            logger.info(
+                "Label→index mapping: %s",
+                ", ".join(f"{k}:{v}" for k, v in mapping.items()),
+            )
         if missing:
             logger.warning("Unknown labels ignored: %s", ", ".join(sorted(missing)))
         selected_regions = inds
