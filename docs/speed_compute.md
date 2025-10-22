@@ -20,11 +20,15 @@ per-window speed artefacts under `results/<dataset>/speed/`.
 ## Core Concepts
 - **Datasets**: Pass `--dataset-name julien` or `--dataset-name ines` (aliases are
   normalised by the shared shim).
+- **Bundles**: Defaults match the canonical `ts_and_meta_<dataset>.npz`, but
+  you can point to a custom bundle with `--bundle-name`.
 - **Windows**: `--window-min/max/step` define the sliding-window sizes to consume.
   Each window expects a matching dFC NPZ file with
   `dfc_window_size=<W>_lag=<L>_tau=<T>_…`.
 - **τ offsets**: `--tau-range` accepts explicit offsets (e.g. `0,5,10`), while
   `--tau-max` expands to `[0, …, tau_max]`.
+- **Window step**: Speeds compare windows using the sliding lag from the dFC computation.
+  Additional τ offsets and `--time-offset` extend that separation.
 - **Region filters**: Use `--region-indices` or `--region-labels` to restrict the
   edges considered. `--region-mode touching` keeps edges that touch any selected
   ROI; `within` keeps only fully contained pairs.
@@ -40,12 +44,14 @@ per-window speed artefacts under `results/<dataset>/speed/`.
 ## Argument Cheat Sheet
 - `--window-min`, `--window-max`, `--window-step`: Define the window sweep (e.g.
   `--window-min 5 --window-max 25 --window-step 5`).
+- `--bundle-name`: Override the inferred bundle filename (e.g.
+  `--bundle-name ts_and_meta_julien_custom.npz`).
 - `--lag`: Lag used when generating dFC streams. Must match the parameter passed to
   `scripts/dfc/dfc_compute.py`.
 - `--tau-range`: Comma-separated τ offsets (e.g. `--tau-range 0,5,10`).
 - `--tau-max`: Generate offsets from 0 to this value (inclusive).
-- `--time-offset`: Override the default offset (window size). Example:
-  `--time-offset 10`.
+- `--time-offset`: Compare FC windows separated by a fixed TR offset. The value is
+  rounded up to the nearest multiple of the dFC lag. Example: `--time-offset 10`.
 - `--region-labels`: Filter edges using anatomical labels from the bundle (e.g.
   `--region-labels CA1_L,CA1_R`).
 - `--region-indices`: Filter by zero-based ROI indices (e.g. `--region-indices 1,4,9`).
@@ -92,6 +98,17 @@ python scripts/speed/dfc_speed_compute.py \
   --dry-run
 ```
 
+Compare windows 10 TRs apart while reusing existing dFC outputs:
+
+```bash
+python scripts/speed/dfc_speed_compute.py \
+  --dataset-name julien \
+  --window-min 9 --window-max 9 \
+  --lag 1 \
+  --tau-range 0,5 \
+  --time-offset 10
+```
+
 ---
 
 ## Output Layout
@@ -107,8 +124,8 @@ python scripts/speed/dfc_speed_compute.py \
 ---
 
 ## Logging
-- The CLI logs the bundle path, dataset alias, τ offsets, region selection, dFC
-  inputs, and the output directory.
+- The CLI logs the bundle path (including custom overrides), dataset alias, τ offsets,
+  region selection, dFC inputs, and the output directory.
 - Each processed window reports the source dFC file, shape, τ values, and the final
   speed file (including animal/tau/edge counts).
 - `--dry-run` echoes cache decisions and planned outputs without touching disk.
@@ -138,4 +155,3 @@ print(metadata["dfc_file"])
 - `docs/dfc_compute.md` — upstream dFC generation workflow.
 - `docs/allegiance_dfc_workflow.md` — overview of the legacy allegiance shim.
 - `docs/preprocessing.md` — generating the canonical bundles consumed by this CLI.
-

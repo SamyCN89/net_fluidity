@@ -19,6 +19,7 @@ Created on Fri Mar  8 15:45:43 2024
 # =============================================================================
 
 from collections import Counter
+from typing import Sequence
 import logging
 import time
 
@@ -738,6 +739,115 @@ def dfc_speed_multi_tau(
 
     speeds = np.clip(speeds, 0.0, 2.0)
     # reshape to (len(tau_range), -1)
+    return speeds.reshape(tau_arr.size, -1)
+
+
+def dfc_speed_split(
+    dfc_stream: np.ndarray,
+    *,
+    vstep: int = 1,
+    tau_range: Sequence[int] | np.ndarray = (0,),
+    method: str = "pearson",
+    return_fc2: bool = False,
+    triu_indices: tuple[np.ndarray, np.ndarray] | None = None,
+    time_offset: int = 0,
+) -> np.ndarray:
+    """Compute dFC speed using window-step offsets and optional tau shifts.
+
+    This variant mirrors the computation used in the exploratory ``data_check`` script:
+    it advances comparisons by the sliding window step (`vstep`) and applies additional
+    offsets derived from ``time_offset`` and each value in ``tau_range``.
+
+    Parameters
+    ----------
+    dfc_stream : np.ndarray
+        2D (n_pairs, n_frames) vectorized dFC stream or 3D (n_rois, n_rois, n_frames) matrices.
+    vstep : int
+        Sliding step (in frames/TRs) between consecutive windows. Must match the lag used to
+        generate the dFC stream.
+    tau_range : sequence of int
+        Additional non-negative offsets applied on top of the base window step.
+    method : {"pearson","spearman","cosine"}
+        Similarity metric for speed computation.
+    return_fc2 : bool
+        If True, return the FC2 indices used for comparisons instead of speed values.
+    triu_indices : tuple of np.ndarray, optional
+        Precomputed upper-triangle indices when working with 3D streams.
+    time_offset : int
+        Additional offset (in frames/TRs) applied before converting to window units.
+        Positive values are rounded up to the nearest multiple of ``vstep``.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (len(tau_range), T_eff) with speeds per tau. If ``return_fc2`` is True,
+        the function returns a 1D array of FC2 indices instead.
+    """
+    if not isinstance(dfc_stream, np.ndarray):
+        raise TypeError("dfc_stream must be a numpy array")
+    if dfc_stream.ndim not in (2, 3):
+        raise ValueError("dfc_stream must be 2D or 3D")
+
+    vstep_int = int(vstep)
+    if vstep_int <= 0:
+        raise ValueError("vstep must be a positive integer")
+
+    if method not in ("pearson", "spearman", "cosine"):
+        raise ValueError("Unsupported method")
+
+    tau_arr = np.atleast_1d(np.asarray(tau_range, dtype=int))
+    if tau_arr.size == 0:
+        tau_arr = np.array([0], dtype=int)
+    if (tau_arr < 0).any():
+        raise ValueError("tau_range values must be non-negative")
+
+    time_offset_int = int(time_offset)
+    if time_offset_int < 0:
+        raise ValueError("time_offset must be non-negative")
+
+    # Convert optional time offset (frames/TRs) to multiples of vstep
+    time_window = int(np.ceil(time_offset_int / vstep_int)) if time_offset_int > 0 else 0
+
+    if dfc_stream.ndim == 3:
+        n_rois = dfc_stream.shape[0]
+        if triu_indices is None:
+            triu_indices = np.triu_indices(n_rois, k=1)
+        fc_stream = dfc_stream[triu_indices[0], triu_indices[1], :]
+    else:
+        fc_stream = dfc_stream
+
+    n_frames = fc_stream.shape[1]
+    tau_max = int(tau_arr.max())
+    indices_max = n_frames - (vstep_int + tau_max + time_offset_int)
+    if indices_max <= 1:
+        raise ValueError(
+            "Not enough frames for given parameters "
+            f"(n_frames={n_frames}, vstep={vstep_int}, tau_max={tau_max}, time_offset={time_offset_int})"
+        )
+
+    indices = np.arange(indices_max, dtype=int)
+    if indices.size < 2:
+        raise ValueError("Not enough indices to compute speed (need at least two frames).")
+
+    head = indices[:-1]
+    tail = indices[1:]
+    fc1_idx = np.repeat(head[np.newaxis, :], tau_arr.size, axis=0)
+    fc2_idx = np.vstack([tail + int(tau) + time_window for tau in tau_arr])
+
+    fc1_matrices = fc_stream[:, fc1_idx.flatten()]
+    fc2_matrices = fc_stream[:, fc2_idx.flatten()]
+
+    if return_fc2:
+        return fc2_idx.flatten().astype(int)
+
+    if method == "pearson":
+        speeds = pearson_speed_vectorized(fc1_matrices, fc2_matrices)
+    elif method == "spearman":
+        speeds = spearman_speed(fc1_matrices, fc2_matrices)
+    else:  # cosine
+        speeds = cosine_speed_vectorized(fc1_matrices, fc2_matrices)
+
+    speeds = np.clip(speeds, 0.0, 2.0)
     return speeds.reshape(tau_arr.size, -1)
 
 # %%

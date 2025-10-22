@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import textwrap
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +20,7 @@ from typing import Sequence
 import numpy as np
 
 try:
-    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset
+    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset, load_timeseries
 except ModuleNotFoundError:  # pragma: no cover - allow standalone execution
     import sys
 
@@ -27,13 +28,19 @@ except ModuleNotFoundError:  # pragma: no cover - allow standalone execution
     for candidate in (ROOT, ROOT / "shared_code"):
         if str(candidate) not in sys.path:
             sys.path.insert(0, str(candidate))
-    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset  # type: ignore
+    from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset, load_timeseries  # type: ignore
 
-from shared_code.fun_dfcspeed import dfc_speed_multi_tau
+from shared_code.fun_dfcspeed import dfc_speed_split
 from shared_code.fun_paths import get_paths
-from shared_code.fun_utils import load_timeseries_data
 
 logger = logging.getLogger(__name__)
+
+
+class _HelpFormatter(
+    argparse.ArgumentDefaultsHelpFormatter,
+    argparse.RawTextHelpFormatter,
+):
+    """CLI formatter that keeps newlines and shows defaults."""
 
 
 def _sanitize_token(text: str) -> str:
@@ -179,6 +186,7 @@ def _compute_speeds_for_window(
     *,
     n_regions: int,
     window_size: int,
+    window_step: int,
     tau_range: np.ndarray,
     method: str,
     time_offset: int,
@@ -195,9 +203,9 @@ def _compute_speeds_for_window(
         )
         if pair_stream.shape[0] == 0:
             return np.empty((tau_range.size, 0), dtype=np.float32)
-        speeds = dfc_speed_multi_tau(
+        speeds = dfc_speed_split(
             pair_stream,
-            vstep=window_size,
+            vstep=window_step,
             tau_range=tau_range,
             method=method,
             time_offset=time_offset,
@@ -217,66 +225,126 @@ def _compute_speeds_for_window(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    description = textwrap.dedent(
+        """\
+        Compute dynamic functional connectivity (dFC) speed artefacts from the canonical
+        dFC bundles produced by scripts/dfc/dfc_compute.py. The CLI loads the dataset
+        bundle, finds the matching dFC NPZ files, and writes per-window speed outputs
+        under results/<dataset>/speed/.
+        """
+    )
+    epilog = textwrap.dedent(
+        """\
+        Example commands
+        ----------------
+        # Julien dataset, windows 5-25, reuse existing outputs if present
+        python scripts/speed/dfc_speed_compute.py --dataset-name julien \\
+            --subset-name shared --window-min 5 --window-max 25 --window-step 5 \\
+            --lag 1 --tau-range 0,5 --jobs 4
+
+        # Ines dataset, restrict to hippocampal ROIs by label
+        python scripts/speed/dfc_speed_compute.py --dataset-name ines \\
+            --subset-name hippocampus --region-labels CA1_L,CA1_R,CA3_L,CA3_R \\
+            --region-mode touching --tau-max 10
+
+        # Compare windows separated by 10 TRs instead of the default window size
+        python scripts/speed/dfc_speed_compute.py --dataset-name julien \\
+            --window-min 9 --window-max 9 --lag 1 \\
+            --tau-range 0,5 --time-offset 10
+
+        # Dry-run to verify file discovery without computing speeds
+        python scripts/speed/dfc_speed_compute.py --dataset-name julien \\
+            --window-min 7 --window-max 7 --lag 1 --tau-range 0,5,10 --dry-run
+        """
+    )
+    parser = argparse.ArgumentParser(
+        description=description,
+        formatter_class=_HelpFormatter,
+        epilog=epilog,
+    )
     parser.add_argument(
         "--dataset-name",
         metavar="NAME",
         default="ines",
-        help="Dataset alias to resolve (e.g. 'julien', 'ines').",
+        help=(
+            "Dataset alias resolved via scripts/dfc/dfc_compute.py "
+            "(e.g. 'julien', 'ines')."
+        ),
+    )
+    parser.add_argument(
+        "--bundle-name",
+        metavar="FILENAME",
+        default=None,
+        help=(
+            "Override the inferred preprocessed bundle (defaults follow the dataset). "
+            "Example: --bundle-name ts_and_meta_julien_custom.npz"
+        ),
     )
     parser.add_argument(
         "--subset-name",
         metavar="TOKEN",
         default="all",
-        help="Subdirectory under results/<dataset>/speed/ (e.g. 'all', 'shared').",
+        help=(
+            "Logical bucket under results/<dataset>/speed/ used to group outputs. "
+            "Example: --subset-name shared"
+        ),
     )
     parser.add_argument(
         "--window-min",
         type=int,
         default=5,
         metavar="INT",
-        help="Minimum window size to process. Example: --window-min 5",
+        help="Smallest window size to process. Example: --window-min 5",
     )
     parser.add_argument(
         "--window-max",
         type=int,
         default=5,
         metavar="INT",
-        help="Maximum window size to process (inclusive). Example: --window-max 25",
+        help="Largest window size to process (inclusive). Example: --window-max 25",
     )
     parser.add_argument(
         "--window-step",
         type=int,
         default=1,
         metavar="INT",
-        help="Window size increment. Example: --window-step 5",
+        help="Increment applied between window sizes. Example: --window-step 5",
     )
     parser.add_argument(
         "--lag",
         type=int,
         default=1,
         metavar="INT",
-        help="Lag used by scripts/dfc/dfc_compute.py (needed for filename matching).",
+        help=(
+            "Lag between sliding windows used during dFC generation. "
+            "Must match scripts/dfc/dfc_compute.py."
+        ),
     )
     parser.add_argument(
         "--dfc-tau-label",
         type=int,
         default=None,
         metavar="INT",
-        help="Tau label embedded in dFC filenames (optional). Example: --dfc-tau-label 5",
+        help=(
+            "Optional tau identifier embedded in dFC filenames. "
+            "Example: --dfc-tau-label 5"
+        ),
     )
     parser.add_argument(
         "--tau-range",
         default=None,
         metavar="INTS",
-        help="Comma-separated tau offsets for speed computation (e.g. --tau-range 0,5,10).",
+        help=(
+            "Comma-separated tau offsets (TRs) between FC matrices. "
+            "Example: --tau-range 0,5,10"
+        ),
     )
     parser.add_argument(
         "--tau-max",
         type=int,
         default=None,
         metavar="INT",
-        help="Generate tau offsets from 0 up to this value (inclusive).",
+        help="Generate tau offsets [0, ..., N] automatically. Example: --tau-max 10",
     )
     parser.add_argument(
         "--method",
@@ -289,26 +357,35 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         metavar="INT",
-        help="Extra offset applied to FC2 indices (defaults to window size). Example: --time-offset 10",
+        help=(
+            "Compare FC windows separated by this many TRs instead of the current "
+            "window size (default). Example: --time-offset 10"
+        ),
     )
     parser.add_argument(
         "--jobs",
         type=int,
         default=1,
         metavar="INT",
-        help="Number of worker threads for per-animal computation (1 = serial). Example: --jobs 4",
+        help="Worker threads for per-animal computation. Example: --jobs 4",
     )
     parser.add_argument(
         "--region-indices",
         default=None,
         metavar="LIST",
-        help="Comma-separated ROI indices to include (e.g. --region-indices 1,4,9).",
+        help=(
+            "Comma-separated zero-based ROI indices from the bundle metadata. "
+            "Example: --region-indices 1,4,9"
+        ),
     )
     parser.add_argument(
         "--region-labels",
         default=None,
         metavar="LIST",
-        help="Comma-separated ROI labels to include, matched against bundle labels.",
+        help=(
+            "Comma-separated anatomical labels from the bundle metadata. "
+            "Example: --region-labels CA1_L,CA1_R"
+        ),
     )
     parser.add_argument(
         "--region-mode",
@@ -353,6 +430,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:  # align CLI error messaging
         parser.error(str(exc))
     logger.info("Dataset resolved to '%s'", dataset)
+    if args.bundle_name:
+        logger.info("Using custom bundle name: %s", args.bundle_name)
 
     cfg = DATASET_DEFAULTS[dataset]
     paths = get_paths(
@@ -361,12 +440,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         cognitive_data_file=cfg["cognitive_data_file"],
         anat_labels_file=cfg["anat_labels_file"],
     )
-
-    bundle_path = Path(paths["preprocessed"]) / cfg["bundle_name"]
-    if not bundle_path.exists():
-        parser.error(f"Preprocessed bundle not found: {bundle_path}")
-    logger.info("Loading timeseries bundle from %s", bundle_path)
-    bundle = load_timeseries_data(bundle_path)
+    bundle, dfc_dir = load_timeseries(dataset, args.bundle_name)
+    fallback_bundle = Path(paths["preprocessed"]) / (args.bundle_name or cfg["bundle_name"])
+    bundle_path = Path(bundle.get("bundle_path", fallback_bundle))
+    logger.info("Loaded timeseries bundle from %s", bundle_path)
     anat_labels = [str(x) for x in np.asarray(bundle["anat_labels"]).ravel()]
     n_regions_bundle = int(bundle["regions"])
     mouse_ids = [str(x) for x in np.asarray(bundle.get("mouse_ids", []))]
@@ -391,6 +468,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.info("Time offset: default to window size.")
     else:
         logger.info("Time offset: using explicit value %s.", time_offset)
+    window_step = int(args.lag)
+    logger.info("Window step (lag) used for speed comparisons: %s", window_step)
 
     selected_indices, selected_labels = _parse_region_selection(
         indices=args.region_indices,
@@ -423,10 +502,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         logger.info("Region selection: all %s regions (%s edges).", n_regions_bundle, n_edges_total)
 
-    dfc_dir = Path(paths["dfc"])
+    dfc_dir = Path(dfc_dir)
     if not dfc_dir.exists():
         parser.error(f"dFC directory not found: {dfc_dir}")
-    logger.info("Expecting dFC inputs under %s", dfc_dir)
+    logger.info("Using dFC inputs from %s", dfc_dir)
     speed_root = Path(paths["speed"])
     subset_dir = speed_root / _sanitize_token(str(args.subset_name or "all"))
     subset_dir.mkdir(parents=True, exist_ok=True)
@@ -452,6 +531,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("No window sizes generated; check --window-min/max/step.")
     logger.info("Window sizes to process: %s", ", ".join(str(int(w)) for w in windows))
 
+    # Main processing loop over window sizes
     outputs: list[Path] = []
     for window_size in windows:
         dfc_file = _find_dfc_file(
@@ -464,7 +544,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             dfc_rel = dfc_file.relative_to(dfc_dir)
         except ValueError:  # pragma: no cover - fallback for unexpected layouts
             dfc_rel = dfc_file.name
-        logger.info("Loading dFC file %s", dfc_rel)
+        logger.info("Loading dFC file: %s (relative: %s)", dfc_file, dfc_rel)
         with np.load(dfc_file) as z:
             if "dfc" not in z.files:
                 parser.error(f"File {dfc_file} missing 'dfc' array.")
@@ -524,6 +604,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             dfc,
             n_regions=n_regions,
             window_size=int(window_size),
+            window_step=window_step,
             tau_range=tau_range_arr,
             method=args.method,
             time_offset=offset,
@@ -534,6 +615,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         metadata = {
             "dataset": dataset,
             "dfc_file": str(dfc_file.name),
+            "bundle": bundle_path.name,
+            "bundle_path": str(bundle_path),
             "window_size": int(window_size),
             "lag": int(args.lag),
             "tau_range": [int(x) for x in tau_range_arr.tolist()],
@@ -559,12 +642,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         tau_dim = first_speed.shape[0] if first_speed is not None and first_speed.ndim >= 1 else tau_range_arr.size
         edge_dim = first_speed.shape[1] if first_speed is not None and first_speed.ndim >= 2 else 0
         logger.info(
-            "Saved %s (animals=%s, tau=%s, edges=%s)",
+            "Saved %s (relative=%s, animals=%s, tau=%s, edges=%s)",
+            out_path,
             out_path.relative_to(speed_root),
             speeds.size,
             tau_dim,
             edge_dim,
         )
+
+    if outputs:
+        header = "Planned speed artefacts:" if args.dry_run else "Speed artefacts processed:"
+        logger.info(header)
+        for path in outputs:
+            status = "exists" if path.exists() else "planned"
+            logger.info("  %s [%s]", path, status)
 
     if args.dry_run:
         logger.info("Dry run complete; planned %d outputs.", len(outputs))

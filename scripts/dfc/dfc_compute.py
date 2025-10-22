@@ -194,6 +194,7 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
     if args.lag <= 0:
         parser.error(f"--lag must be >= 1 (got {args.lag}).")
 
+    # tau parsing
     tau_tokens = [token.strip() for token in str(args.tau).split(",") if token.strip()]
     if not tau_tokens:
         parser.error("--tau requires at least one non-negative integer.")
@@ -208,6 +209,7 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
         tau_values.append(value)
     tau_display = ", ".join(str(v) for v in tau_values)
 
+    # Load timeseries data
     data_ts, dfc_dir = load_timeseries(dataset, args.bundle_name)
     ts = data_ts["ts"]
     n_animals = data_ts["n_animals"]
