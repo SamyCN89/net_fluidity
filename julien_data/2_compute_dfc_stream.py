@@ -19,8 +19,9 @@ from shared_code.fun_dfcspeed import get_tenet4window_range
 data = DFCAnalysis()
 
 # %% Load data
+
 # Preprocessed data
-processors = -1
+# processors = -1
 meta_file = "metadata_animals_50_regions_37_tr_500.pkl"
 
 print("Loading data...")
