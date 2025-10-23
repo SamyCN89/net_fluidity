@@ -62,7 +62,8 @@ time_windows_range = np.arange(5,100,1)
 
 speeds = []
 for w in time_windows_range:
-    filepath = paths['speed'] / f'all/all/speed_win{w}_lag1_tau4_animals_48_regions_37.npz'
+    filepath = paths['speed'] / f'dmn_within/nregs-6/speed_win{w}_lag1_tau4_animals_48_regions_37.npz'
+    # filepath = paths['speed'] / f'all/all/speed_win{w}_lag1_tau4_animals_48_regions_37.npz'
     a = np.load(filepath, allow_pickle=True)
     s = a['speeds']
     # Flatten each animal’s array from (1, N) → (N,)
