@@ -4,6 +4,8 @@
 The script consumes precomputed dFC streams from ``scripts/dfc/dfc_compute.py``
 and writes per-window speed artefacts under ``results/<dataset>/speed/``.
 It replaces dataset-specific drivers such as ``julien_data/3_dfc_speed_test_v6.py``.
+
+Supports per-region execution via ``--per-region`` to mirror legacy pipelines.
 """
 
 from __future__ import annotations
@@ -107,6 +109,23 @@ def _parse_region_selection(
     if not label_names:
         label_names = [atlas_labels[i] for i in idx_unique]
     return np.asarray(idx_unique, dtype=int), label_names
+
+
+def _selection_descriptor(
+    selected_indices: np.ndarray | None,
+    selected_labels: Sequence[str],
+) -> str:
+    if selected_labels:
+        sanitized = [_sanitize_token(str(label)) for label in selected_labels]
+        if len(sanitized) == 1:
+            return f"region-{sanitized[0]}"
+        if len(sanitized) <= 5:
+            return "regions-" + "-".join(sanitized)
+        return f"nregs-{len(sanitized)}"
+    if selected_indices is not None:
+        preview = "_".join(str(int(i)) for i in selected_indices[:5])
+        return f"indices-{preview}" if preview else "indices"
+    return "all"
 
 
 def _build_pair_mask(n_regions: int, selected: np.ndarray, mode: str) -> np.ndarray:
@@ -288,6 +307,22 @@ def build_parser() -> argparse.ArgumentParser:
             "Logical bucket under results/<dataset>/speed/ used to group outputs. "
             "Example: --subset-name shared"
         ),
+    )
+    parser.add_argument(
+        "--region-subdir",
+        action="store_true",
+        help="Organise outputs into region-specific subdirectories within the subset folder.",
+    )
+    parser.add_argument(
+        "--per-region",
+        action="store_true",
+        help="Iterate over regions and produce one output chunk per ROI.",
+    )
+    parser.add_argument(
+        "--per-region-mode",
+        choices=["touching", "within"],
+        default=None,
+        help="Override edge filtering mode when running with --per-region.",
     )
     parser.add_argument(
         "--window-min",
@@ -476,31 +511,45 @@ def main(argv: Sequence[str] | None = None) -> int:
         labels=args.region_labels,
         atlas_labels=anat_labels,
     )
+    if selected_indices is not None and selected_indices.size > n_regions_bundle:
+        parser.error("Selected region indices exceed number of regions in bundle.")
+
     n_edges_total = n_regions_bundle * (n_regions_bundle - 1) // 2
-    pair_mask = None
-    if selected_indices is not None:
-        if selected_indices.size > n_regions_bundle:
-            parser.error("Selected region indices exceed number of regions in bundle.")
-        pair_mask = _build_pair_mask(n_regions_bundle, selected_indices, args.region_mode)
-        if pair_mask.size == 0:
-            logger.warning(
-                "Region selection produced zero edges; outputs will contain empty arrays."
+    if args.per_region:
+        logger.info("Per-region mode enabled; generating individual artefacts per ROI.")
+        if selected_indices is None:
+            logger.info("Regions to iterate: all %s ROIs.", n_regions_bundle)
+        else:
+            logger.info(
+                "Regions to iterate: %s ROIs from the provided selection.",
+                selected_indices.size,
             )
-        selected_edge_count = int(pair_mask.sum()) if pair_mask.size else 0
-        logger.info(
-            "Region selection: %s ROIs (%s mode) → %s edges out of %s.",
-            selected_indices.size,
-            args.region_mode,
-            selected_edge_count,
-            n_edges_total,
-        )
         if selected_labels:
             preview = ", ".join(selected_labels[:5])
             if len(selected_labels) > 5:
                 preview += ", ..."
-            logger.info("Selected labels: %s", preview)
+            logger.info("Initial selection labels: %s", preview)
     else:
-        logger.info("Region selection: all %s regions (%s edges).", n_regions_bundle, n_edges_total)
+        base_mask = None
+        if selected_indices is not None:
+            base_mask = _build_pair_mask(n_regions_bundle, selected_indices, args.region_mode)
+            if base_mask.size == 0:
+                logger.warning("Region selection produced zero edges; outputs will contain empty arrays.")
+            selected_edge_count = int(base_mask.sum()) if base_mask.size else 0
+            logger.info(
+                "Region selection: %s ROIs (%s mode) → %s edges out of %s.",
+                selected_indices.size,
+                args.region_mode,
+                selected_edge_count,
+                n_edges_total,
+            )
+            if selected_labels:
+                preview = ", ".join(selected_labels[:5])
+                if len(selected_labels) > 5:
+                    preview += ", ..."
+                logger.info("Selected labels: %s", preview)
+        else:
+            logger.info("Region selection: all %s regions (%s edges).", n_regions_bundle, n_edges_total)
 
     dfc_dir = Path(dfc_dir)
     if not dfc_dir.exists():
@@ -512,19 +561,88 @@ def main(argv: Sequence[str] | None = None) -> int:
     logger.info("Speed output root: %s", speed_root)
     logger.info("Subset directory: %s", subset_dir)
 
-    if selected_labels:
-        if len(selected_labels) == 1:
-            region_dir = subset_dir / f"region-{_sanitize_token(selected_labels[0])}"
-        elif len(selected_labels) <= 5:
-            region_dir = subset_dir / ("regions-" + "-".join(_sanitize_token(s) for s in selected_labels))
+    per_region_mode = args.per_region_mode or args.region_mode
+    if args.per_region:
+        if selected_indices is not None:
+            region_iter = [int(i) for i in selected_indices.tolist()]
         else:
-            region_dir = subset_dir / f"nregs-{len(selected_labels)}"
-    elif selected_indices is not None:
-        region_dir = subset_dir / ("indices-" + "_".join(str(int(i)) for i in selected_indices[:5]))
+            region_iter = list(range(n_regions_bundle))
+        selection_specs: list[tuple[np.ndarray | None, list[str], str]] = []
+        for idx in region_iter:
+            selection_specs.append(
+                (np.asarray([idx], dtype=int), [anat_labels[int(idx)]], per_region_mode)
+            )
     else:
-        region_dir = subset_dir / "all"
-    region_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Outputs will be written under %s", region_dir)
+        selection_specs = [(selected_indices, selected_labels, args.region_mode)]
+
+    selection_contexts: list[dict[str, object]] = []
+    total_targets = len(selection_specs)
+    for target_idx, (sel_indices, sel_labels, mode) in enumerate(
+        selection_specs, start=1
+    ):
+        labels_list = list(sel_labels)
+        descriptor = _selection_descriptor(sel_indices, labels_list)
+        if args.per_region:
+            logger.info(
+                "Per-region target %s/%s: %s", target_idx, total_targets, descriptor
+            )
+
+        if sel_indices is not None:
+            mask = _build_pair_mask(n_regions_bundle, sel_indices, mode)
+            if mask.size == 0:
+                logger.warning(
+                    "Region selection '%s' produced zero edges; outputs will contain empty arrays.",
+                    descriptor,
+                )
+            edge_count = int(mask.sum()) if mask.size else 0
+            logger.info(
+                "Region selection '%s': %s ROIs (%s mode) → %s edges out of %s.",
+                descriptor,
+                sel_indices.size,
+                mode,
+                edge_count,
+                n_edges_total,
+            )
+            if labels_list:
+                preview = ", ".join(labels_list[:5])
+                if len(labels_list) > 5:
+                    preview += ", ..."
+                logger.info("Selection labels '%s': %s", descriptor, preview)
+            current_mask: np.ndarray | None = mask
+        else:
+            current_mask = None
+            edge_count = n_edges_total
+            logger.info(
+                "Region selection '%s': all %s regions (%s edges).",
+                descriptor,
+                n_regions_bundle,
+                n_edges_total,
+            )
+
+        if args.region_subdir:
+            region_dir = subset_dir / descriptor
+        else:
+            region_dir = subset_dir
+        region_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "Outputs for selection '%s' will be written under %s",
+            descriptor,
+            region_dir,
+        )
+
+        selection_contexts.append(
+            {
+                "indices": sel_indices,
+                "labels": labels_list,
+                "mode": mode,
+                "descriptor": descriptor,
+                "pair_mask": current_mask,
+                "edge_count": edge_count,
+                "region_dir": region_dir,
+                "order": target_idx,
+                "suffix": f"_{descriptor}" if args.per_region else "",
+            }
+        )
 
     windows = np.arange(args.window_min, args.window_max + 1, args.window_step, dtype=int)
     if windows.size == 0:
@@ -562,93 +680,112 @@ def main(argv: Sequence[str] | None = None) -> int:
         tau_range_arr = tau_range.copy()
         offset = time_offset if time_offset is not None else int(window_size)
 
-        out_name = (
-            f"{args.prefix}_win{window_size}_lag{args.lag}_tau{tau_range_arr.size}_"
-            f"animals_{n_animals}_regions_{n_regions}.npz"
-        )
-        out_path = region_dir / out_name
+        for context in selection_contexts:
+            context_indices = context["indices"]
+            context_labels = context["labels"]
+            context_descriptor = context["descriptor"]
+            context_mask = context["pair_mask"]
+            context_region_dir = context["region_dir"]
+            file_suffix = context["suffix"]
 
-        if out_path.exists():
-            if args.cache == "skip":
-                logger.info("[cache] Skipping existing %s", out_path)
+            out_name = (
+                f"{args.prefix}_win{window_size}_lag{args.lag}_tau{tau_range_arr.size}_"
+                f"animals_{n_animals}_regions_{n_regions}{file_suffix}.npz"
+            )
+            out_path = Path(context_region_dir) / out_name
+
+            if out_path.exists():
+                if args.cache == "skip":
+                    logger.info("[cache] Skipping existing %s", out_path)
+                    outputs.append(out_path)
+                    continue
+                if args.cache == "verify":
+                    logger.info("[cache] Verifying %s", out_path)
+                    with np.load(out_path, allow_pickle=True) as existing:
+                        if "tau_range" in existing and not np.array_equal(existing["tau_range"], tau_range_arr):
+                            logger.warning(
+                                "[cache] tau_range mismatch for %s; recomputing.",
+                                out_path.name,
+                            )
+                        else:
+                            logger.info("[cache] Verified %s; skipping recompute.", out_path.name)
+                            outputs.append(out_path)
+                            continue
+
+            logger.info(
+                "Processing window=%s (lag=%s, tau=%s) selection=%s for %s animals → %s",
+                window_size,
+                args.lag,
+                ",".join(map(str, tau_range_arr)),
+                context_descriptor,
+                n_animals,
+                out_path.relative_to(speed_root),
+            )
+
+            if args.dry_run:
+                logger.info(
+                    "[dry-run] Planned output %s", out_path.relative_to(speed_root)
+                )
                 outputs.append(out_path)
                 continue
-            if args.cache == "verify":
-                logger.info("[cache] Verifying %s", out_path)
-                with np.load(out_path, allow_pickle=True) as existing:
-                    if "tau_range" in existing and not np.array_equal(existing["tau_range"], tau_range_arr):
-                        logger.warning(
-                            "[cache] tau_range mismatch for %s; recomputing.",
-                            out_path.name,
-                        )
-                    else:
-                        logger.info("[cache] Verified %s; skipping recompute.", out_path.name)
-                        outputs.append(out_path)
-                        continue
+            mask_arg = context_mask if isinstance(context_mask, np.ndarray) else None
+            speeds = _compute_speeds_for_window(
+                dfc,
+                n_regions=n_regions,
+                window_size=int(window_size),
+                window_step=window_step,
+                tau_range=tau_range_arr,
+                method=args.method,
+                time_offset=offset,
+                jobs=max(1, int(args.jobs)),
+                pair_mask=mask_arg,
+            )
 
-        logger.info(
-            "Processing window=%s (lag=%s, tau=%s) for %s animals → %s",
-            window_size,
-            args.lag,
-            ",".join(map(str, tau_range_arr)),
-            n_animals,
-            out_path.relative_to(speed_root),
-        )
+            selected_indices_payload = (
+                context_indices.tolist() if isinstance(context_indices, np.ndarray) else None
+            )
+            metadata = {
+                "dataset": dataset,
+                "dfc_file": str(dfc_file.name),
+                "bundle": bundle_path.name,
+                "bundle_path": str(bundle_path),
+                "window_size": int(window_size),
+                "lag": int(args.lag),
+                "tau_range": [int(x) for x in tau_range_arr.tolist()],
+                "method": args.method,
+                "time_offset": int(offset),
+                "subset": str(args.subset_name or "all"),
+                "region_mode": context["mode"],
+                "selected_indices": selected_indices_payload,
+                "selected_labels": context_labels,
+                "selection_descriptor": context_descriptor,
+                "per_region": bool(args.per_region),
+                "created": datetime.utcnow().isoformat() + "Z",
+            }
+            if args.per_region:
+                metadata["per_region_order"] = int(context["order"])
+                metadata["per_region_total"] = total_targets
+            if mouse_ids:
+                metadata["mouse_ids"] = mouse_ids
 
-        if args.dry_run:
-            logger.info("[dry-run] Planned output %s", out_path.relative_to(speed_root))
+            np.savez_compressed(
+                out_path,
+                speeds=speeds,
+                tau_range=tau_range_arr.astype(int),
+                metadata=json.dumps(metadata),
+            )
             outputs.append(out_path)
-            continue
-
-        speeds = _compute_speeds_for_window(
-            dfc,
-            n_regions=n_regions,
-            window_size=int(window_size),
-            window_step=window_step,
-            tau_range=tau_range_arr,
-            method=args.method,
-            time_offset=offset,
-            jobs=max(1, int(args.jobs)),
-            pair_mask=pair_mask,
-        )
-
-        metadata = {
-            "dataset": dataset,
-            "dfc_file": str(dfc_file.name),
-            "bundle": bundle_path.name,
-            "bundle_path": str(bundle_path),
-            "window_size": int(window_size),
-            "lag": int(args.lag),
-            "tau_range": [int(x) for x in tau_range_arr.tolist()],
-            "method": args.method,
-            "time_offset": int(offset),
-            "subset": str(args.subset_name or "all"),
-            "region_mode": args.region_mode,
-            "selected_indices": selected_indices.tolist() if selected_indices is not None else None,
-            "selected_labels": selected_labels,
-            "created": datetime.utcnow().isoformat() + "Z",
-        }
-        if mouse_ids:
-            metadata["mouse_ids"] = mouse_ids
-
-        np.savez_compressed(
-            out_path,
-            speeds=speeds,
-            tau_range=tau_range_arr.astype(int),
-            metadata=json.dumps(metadata),
-        )
-        outputs.append(out_path)
-        first_speed = speeds[0] if speeds.size and isinstance(speeds[0], np.ndarray) else None
-        tau_dim = first_speed.shape[0] if first_speed is not None and first_speed.ndim >= 1 else tau_range_arr.size
-        edge_dim = first_speed.shape[1] if first_speed is not None and first_speed.ndim >= 2 else 0
-        logger.info(
-            "Saved %s (relative=%s, animals=%s, tau=%s, edges=%s)",
-            out_path,
-            out_path.relative_to(speed_root),
-            speeds.size,
-            tau_dim,
-            edge_dim,
-        )
+            first_speed = speeds[0] if speeds.size and isinstance(speeds[0], np.ndarray) else None
+            tau_dim = first_speed.shape[0] if first_speed is not None and first_speed.ndim >= 1 else tau_range_arr.size
+            edge_dim = first_speed.shape[1] if first_speed is not None and first_speed.ndim >= 2 else 0
+            logger.info(
+                "Saved %s (relative=%s, animals=%s, tau=%s, edges=%s)",
+                out_path,
+                out_path.relative_to(speed_root),
+                speeds.size,
+                tau_dim,
+                edge_dim,
+            )
 
     if outputs:
         header = "Planned speed artefacts:" if args.dry_run else "Speed artefacts processed:"

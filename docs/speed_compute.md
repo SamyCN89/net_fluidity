@@ -36,6 +36,11 @@ per-window speed artefacts under `results/<dataset>/speed/`.
   `speed_win<W>_lag<L>_tau<N>_animals_<A>_regions_<R>.npz` to a subset directory
   under `results/<dataset>/speed/`. Files include the speed tensors, the τ offsets,
   and metadata describing the run.
+- **Per-region loops**: `--per-region` iterates over each ROI (optionally constrained
+  by `--region-labels` / `--region-indices`) and writes one artefact per region. Use
+  `--per-region-mode within|touching` to override the edge filter for those runs.
+- **Region directories**: By default, outputs land directly in the subset folder.
+  Pass `--region-subdir` to re-enable nested region folders.
 - **Dry runs**: `--dry-run` prints the planned inputs/outputs and cache decisions
   without computing speeds.
 
@@ -55,6 +60,9 @@ per-window speed artefacts under `results/<dataset>/speed/`.
 - `--region-labels`: Filter edges using anatomical labels from the bundle (e.g.
   `--region-labels CA1_L,CA1_R`).
 - `--region-indices`: Filter by zero-based ROI indices (e.g. `--region-indices 1,4,9`).
+- `--per-region`: Loop over the selected (or all) ROIs and emit one NPZ per region.
+- `--per-region-mode`: Override the region mask used during `--per-region` execution.
+- `--region-subdir`: Place outputs inside region-specific folders instead of the subset root.
 - `--cache`: `skip` existing files, `verify` basic metadata, or `overwrite`.
 - `--dry-run`: Display the plan without writing outputs.
 
@@ -109,6 +117,20 @@ python scripts/speed/dfc_speed_compute.py \
   --time-offset 10
 ```
 
+Generate one artefact per ROI (touching edges) for a hippocampal subset:
+
+```bash
+python scripts/speed/dfc_speed_compute.py \
+  --dataset-name ines \
+  --subset-name hippocampus \
+  --window-min 11 --window-max 11 \
+  --lag 1 \
+  --tau-range 0,5 \
+  --region-labels CA1_L,CA1_R,CA3_L,CA3_R \
+  --per-region \
+  --per-region-mode touching
+```
+
 ---
 
 ## Output Layout
@@ -118,8 +140,10 @@ python scripts/speed/dfc_speed_compute.py \
   - `tau_range`: the τ offsets used in the computation.
   - `metadata`: a JSON-encoded dictionary with dataset, window, lag, τ, selection,
     and timestamp details.
-- Region-filtered runs create nested directories such as `regions-CA1_L-CA1_R` or
-  `indices-1_4_9`.
+- Region-filtered runs can create nested directories (with `--region-subdir`) such as
+  `regions-CA1_L-CA1_R` or `indices-1_4_9`. Without the flag, files are written
+  directly in the subset folder and are suffixed with the region descriptor during
+  `--per-region` runs (e.g. `_region-CA1_L`).
 
 ---
 

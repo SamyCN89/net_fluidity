@@ -3,6 +3,7 @@
 #%%
 
 from cProfile import label
+import grp
 from multiprocessing import pool
 from os import path
 import time
@@ -37,6 +38,7 @@ bundle = load_timeseries_bundle(
 cog_data = load_cognitive_data(paths["preprocessed"] / "cog_data_sorted_2m4m.csv")
 
 # Extract relevant data from bundle
+ts = bundle.ts
 n_animals = bundle.n_animals
 total_tr = bundle.total_tr
 anat_labels = bundle.anat_labels
@@ -44,6 +46,56 @@ regions = bundle.n_regions
 # Create masks for each region group
 mask_groups = bundle.mask_groups
 label_variables = bundle.label_variables
+#%%
+import pandas as pd
+import numpy as np
+
+# --- Your original wide DataFrame ---
+# df has 63 rows, columns like 'OiP_2M', 'OiP_4M', 'RO24h_2M', 'RO24h_4M', etc.
+
+# --- Build age-specific versions in the correct order ---
+df_2m = cog_data[['Name','Sexe','Genotype','OiP_2M','RO24h_2M','TC_2M',
+            'Phenotype_OiP','Phenotype_RO24h']].copy()
+df_2m['Age'] = '2M'
+df_2m = df_2m.rename(columns={'OiP_2M':'OiP','RO24h_2M':'RO24h','TC_2M':'TC'})
+
+df_4m = cog_data[['Name','Sexe','Genotype','OiP_4M','RO24h_4M','TC_4M',
+            'Phenotype_OiP','Phenotype_RO24h']].copy()
+df_4m['Age'] = '4M'
+df_4m = df_4m.rename(columns={'OiP_4M':'OiP','RO24h_4M':'RO24h','TC_4M':'TC'})
+
+# --- Concatenate in order: 2M block first, then 4M ---
+df_long = pd.concat([df_2m, df_4m], ignore_index=True)
+
+# --- Optional: sanity check alignment ---
+# assert len(df_long) == data.shape[0], "Mismatch: DataFrame rows != number of animals in array"
+# assert all(df_long.loc[:62, 'Age'] == '2M') and all(df_long.loc[63:, 'Age'] == '4M')
+
+print(df_long.head(4))
+print(df_long.tail(4))
+
+
+#%%
+
+group_sexe = df_long.groupby('Sexe').groups
+group_age = df_long.groupby('Age').groups
+group_genotype = df_long.groupby('Genotype').groups
+group_phenotype_oip = df_long.groupby('Phenotype_OiP').groups
+group_phenotype_nor = df_long.groupby('Phenotype_RO24h').groups
+
+group_sexe_age = df_long.groupby(['Sexe', 'Age']).groups
+group_sexe_genotype = df_long.groupby(['Sexe', 'Genotype']).groups
+group_sexe_phenotype_oip = df_long.groupby(['Sexe', 'Phenotype_OiP']).groups
+group_sexe_phenotype_nor = df_long.groupby(['Sexe', 'Phenotype_RO24h']).groups
+
+group_age_genotype = df_long.groupby(['Age', 'Genotype']).groups
+group_age_phenotype_oip = df_long.groupby(['Age', 'Phenotype_OiP']).groups
+group_age_phenotype_nor = df_long.groupby(['Age', 'Phenotype_RO24h']).groups
+
+group_sexe_age_genotype = df_long.groupby(['Sexe', 'Age', 'Genotype']).groups
+group_sexe_age_phenotype_oip = df_long.groupby(['Sexe', 'Age', 'Phenotype_OiP']).groups
+group_sexe_age_phenotype_nor = df_long.groupby(['Sexe', 'Age', 'Phenotype_RO24h']).groups
+
 #%%
 
 # -------- speed loading --------
@@ -255,7 +307,8 @@ elif pool_split=='third':
 #%%
 # Group speeds by label
 all_speeds_grp_hist = {}
-for label, indices in group_dict.items():
+# for label, indices in group_dict.items():
+for label, indices in group_age_genotype.items():
     group_speeds = []
     for animal_s in animal_speeds:
         group_vals = np.concatenate([animal_s[j][indices] for j in range(len(time_windows_range))])
@@ -338,34 +391,34 @@ plt.show()
 #%%
 # Plot distribution by region groups
 # for label, hist in all_speeds_grp_hist.items():
-for label_big in label_sets:
-    plt.figure(figsize=(8, 6))
-    plt.subplot(1, 2, 1)
-    for label in label_big:
-        hist = all_speeds_grp_hist[label]
-        plt.plot(bin_edge[:-1], hist,
-                lw=1, alpha=0.4,
-                label=label)
-    plt.title(f"Distribution of dFC Speed")
-    plt.xlabel("Speed")
-    plt.ylabel("Frequency")
-    plt.legend()
-    plt.tight_layout()
+# for label_big in label_sets:
 
-    plt.subplot(1, 2, 2)
-    for label in label_big:
-        hist = all_speeds_grp_hist[label]
-        plt.plot(bin_edge[:-1], hist,
-                # Alternative plotting method
-                # plt.plot(hist[1][:-1], hist[0],
-                lw=1, alpha=0.4,
-                label=label)
-    plt.title(f"Distribution of dFC Speed (Log Scale)")
-    plt.xlabel("Speed")
-    plt.ylabel("Frequency")
-    plt.yscale('log')
-    plt.legend()
-    plt.tight_layout()
+plt.figure(figsize=(8, 6))
+plt.subplot(1, 2, 1)
+for label in group_age_genotype:
+    hist = all_speeds_grp_hist[label]
+    plt.plot(bin_edge[:-1], hist,
+            lw=1, alpha=0.4,
+            label=label)
+plt.title(f"Distribution of dFC Speed")
+plt.xlabel("Speed")
+plt.ylabel("Frequency")
+plt.legend()
+plt.tight_layout()
+plt.subplot(1, 2, 2)
+for label in group_age_genotype:
+    hist = all_speeds_grp_hist[label]
+    plt.plot(bin_edge[:-1], hist,
+            # Alternative plotting method
+            # plt.plot(hist[1][:-1], hist[0],
+            lw=1, alpha=0.4,
+            label=label)
+plt.title(f"Distribution of dFC Speed (Log Scale)")
+plt.xlabel("Speed")
+plt.ylabel("Frequency")
+plt.yscale('log')
+plt.legend()
+plt.tight_layout()
 
 #%%
 # Plot distribution by region groups for short and long windows
