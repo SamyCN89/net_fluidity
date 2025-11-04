@@ -134,10 +134,10 @@ def classify_phenotypes(df, metric_prefix="OiP", threshold=0.2):
         raise ValueError(f"DataFrame must contain columns '{col_2m}' and '{col_4m}'.")
 
     # Define boolean masks for each phenotype category
-    good = (df[col_2m] >= threshold) & (df[col_4m] >= threshold)
-    learners = (df[col_2m] < threshold) & (df[col_4m] >= threshold)
-    impaired = (df[col_2m] >= threshold) & (df[col_4m] < threshold)
-    bad = (df[col_2m] < threshold) & (df[col_4m] < threshold)
+    good = (abs(df[col_2m]) >= threshold) & (abs(df[col_4m]) >= threshold)
+    learners = (abs(df[col_2m]) < threshold) & (abs(df[col_4m]) >= threshold)
+    impaired = (abs(df[col_2m]) >= threshold) & (abs(df[col_4m]) < threshold)
+    bad = (abs(df[col_2m]) < threshold) & (abs(df[col_4m]) < threshold)
 
     # Use numpy.select to assign phenotype labels; fallback is 'undefined'
     labels = np.select(

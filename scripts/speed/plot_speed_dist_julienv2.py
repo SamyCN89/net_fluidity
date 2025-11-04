@@ -1,4 +1,6 @@
 # %% ========================== IMPORTS & CONFIG ==========================
+
+import time
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 import json
@@ -55,7 +57,7 @@ def load_speed_stack(
     """Return list S where S[j][i] is 1D np.array of samples for animal i at window j."""
     speeds: list[np.ndarray] = []
     for w in time_windows_range:
-        a = np.load(paths_speed_root.format(w=w), allow_pickle=True)
+        a = np.load(paths_speed_root.format(w=w, n_animals=n_animals, regions=regions), allow_pickle=True)
         s = a["speeds"]
         s_flat = [np.asarray(x, dtype=float).ravel() for x in s]
         speeds.append(s_flat)
@@ -215,11 +217,11 @@ def get_group_animals_over_windows(
 def plot_group_median_vs_window(
     ax: plt.Axes,
     time_windows_range: Sequence[int],
-    group_genotype_treatment: dict[tuple[str, str], Sequence[int]],
+    group_data: dict[tuple[str, str], Sequence[int]],
     speeds: list[np.ndarray],
 ) -> None:
     """Mean of per-animal medians vs window (group curve)."""
-    for (genotype, treatment), indices in group_genotype_treatment.items():
+    for (genotype, treatment), indices in group_data.items():
         y = []
         for j in range(len(time_windows_range)):
             per_animal_medians = [float(np.median(speeds[j][i])) for i in indices]
@@ -260,7 +262,8 @@ def plot_group_histograms(
 
 
 # %% ========================== LOAD DATA ==========================
-dataset_name = "julien"
+dataset_name = "ines"
+# dataset_name = "julien"
 save_fig = set_figure_params(True)
 dataset = _canonical_dataset(dataset_name)
 cfg = DATASET_DEFAULTS[dataset]
@@ -289,17 +292,22 @@ loaddir_cog_data = str(
     / "cog_data_filtered_animals_{n_animals}_regions_{regions}_tr_{total_tr}.csv"
 )
 # loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_48_regions_37.npz")
-loaddir_speed = str(
-    speed_root / "dmn_within/nregs-6/speed_win{w}_lag1_tau4_animals_48_regions_37.npz"
-)
+# loaddir_speed = str(speed_root / "dmn_within/nregs-6/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
+loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
 
 # Output location for group histograms
 # outdir_save_group_hists = speed_root / f"{dataset}_pool_{POOL_SPLIT}_bins{BINS_HIST}" / f"pooled_group_hists__{seg_name}.npz"
+# bootstrap CI folder
+bootstrap_folder = paths["speed"] / "bootstrap"
+bootstrap_folder.mkdir(parents=True, exist_ok=True)
+
+outdir_speed_bootstrap_cis = str(bootstrap_folder / f"bootstrap_cis_{POOL_SPLIT}_bins{BINS_HIST}.npz")
 
 # Savedir location
 # time window plots
 time_window_folder = paths["f_speed"] / "time_windows"
 time_window_folder.mkdir(parents=True, exist_ok=True)
+
 
 savedir_dfc_speed_per_animal = str(
     time_window_folder
@@ -354,8 +362,47 @@ if dataset_name == "julien":
     group_treatment = cog_data.groupby("treatment").groups
     group_genotype = cog_data.groupby("genotype").groups
     group_genotype_treatment = cog_data.groupby(["genotype", "treatment"]).groups
+    group_data = group_genotype_treatment
+
+elif dataset_name == "ines":
+    df_2m = cog_data[['Name','Sexe','Genotype','OiP_2M','RO24h_2M','TC_2M',
+            'Phenotype_OiP','Phenotype_RO24h']].copy()
+    df_2m['Age'] = '2M'
+    df_2m = df_2m.rename(columns={'OiP_2M':'oip','RO24h_2M':'ro24h','TC_2M':'tc'})
+
+    df_4m = cog_data[['Name','Sexe','Genotype','OiP_4M','RO24h_4M','TC_4M',
+                'Phenotype_OiP','Phenotype_RO24h']].copy()
+    df_4m['Age'] = '4M'
+    df_4m = df_4m.rename(columns={'OiP_4M':'oip','RO24h_4M':'ro24h','TC_4M':'tc'})
+
+    df_long = pd.concat([df_2m, df_4m], ignore_index=True)
+
+    df_long['Sexe'] = df_long['Sexe'].map({'F':'female','M':'male'})
+
+    group_sexe = df_long.groupby('Sexe').groups
+    group_age = df_long.groupby('Age').groups
+    group_genotype = df_long.groupby('Genotype').groups
+    group_phenotype_oip = df_long.groupby('Phenotype_OiP').groups
+    group_phenotype_nor = df_long.groupby('Phenotype_RO24h').groups
+
+    group_sexe_age = df_long.groupby(['Sexe', 'Age']).groups
+    group_sexe_genotype = df_long.groupby(['Sexe', 'Genotype']).groups
+    group_sexe_phenotype_oip = df_long.groupby(['Sexe', 'Phenotype_OiP']).groups
+    group_sexe_phenotype_nor = df_long.groupby(['Sexe', 'Phenotype_RO24h']).groups
+
+    group_age_genotype = df_long.groupby(['Age', 'Genotype']).groups
+    group_age_phenotype_oip = df_long.groupby(['Age', 'Phenotype_OiP']).groups
+    group_age_phenotype_nor = df_long.groupby(['Age', 'Phenotype_RO24h']).groups
+
+    group_sexe_age_genotype = df_long.groupby(['Sexe', 'Age', 'Genotype']).groups
+    group_sexe_age_phenotype_oip = df_long.groupby(['Sexe', 'Age', 'Phenotype_OiP']).groups
+    group_sexe_age_phenotype_nor = df_long.groupby(['Sexe', 'Age', 'Phenotype_RO24h']).groups
+    group_data = group_sexe_age_genotype
+
+#%%
 
 
+#%%
 # Basic dimensions
 n_windows = len(speeds)
 n_animals = len(speeds[0])
@@ -404,9 +451,17 @@ for seg_name, w_range in ranges.items():
     H_per_segment[seg_name] = H * 2
     # per-group average histogram over animals
     group_means: dict[tuple[str, str], np.ndarray] = {}
-    for gt, idxs in group_genotype_treatment.items():
+    for gt, idxs in group_data.items():
         group_means[gt] = np.mean(H[idxs], axis=0) if len(idxs) else np.zeros(BINS_HIST)
     group_means_by_segment[seg_name] = group_means
+
+#%% ========================== POOLING & BOOTSTRAP ==========================
+
+
+
+
+
+
 
 # Optional pooled hist per group (values aggregated across animals & windows)
 animal_speeds = [[speeds[j][i] for j in range(n_windows)] for i in range(n_animals)]
@@ -418,7 +473,7 @@ for seg_name, w_range in ranges.items():
     pooled_group_hist_i = {}
     pooled_group_speed_i = {}
     group_speed = {}
-    for gt, idxs in group_genotype_treatment.items():
+    for gt, idxs in group_data.items():
         # Get group animal speeds over selected windows
         group_speed_i = get_group_animals_over_windows(animal_speeds, idxs, w_range)
         group_speed[gt] = group_speed_i
@@ -433,16 +488,7 @@ for seg_name, w_range in ranges.items():
     group_speed_by_segment[seg_name] = group_speed
 
 #%%
-# Bootstrap per group speed histograms
-from scipy.stats import bootstrap
 
-for seg_name, w_range in ranges.items():
-    pooled_group_hist_i = {}
-    pooled_group_speed_i = {}
-    for gt, idxs in group_genotype_treatment.items():
-        print(pooled_group_speed_by_segment[seg_name][gt].shape)
-        group_flat_speed = pooled_group_speed_by_segment[seg_name][gt]
-        res=bootstrap((group_flat_speed,), np.percentile, n_resamples=10,)
 #%%
 
 
@@ -462,8 +508,6 @@ def bootstrap_percentiles(data, percentiles_, n_resamples=2000, chunk_size=200, 
     low, high = np.percentile(boot_all, [2.5, 97.5], axis=0)
     return low, high
 #%%
-
-
 from joblib import Parallel, delayed
 
 def flatten_numeric(x) -> np.ndarray:
@@ -492,6 +536,8 @@ def _bootstrap_chunk_proc(x: np.ndarray, q: np.ndarray, m: int, seed: int) -> np
     samples = x[idx]                         # (n, m)
     return np.percentile(samples, q, axis=0).T  # (m, K)
 
+
+
 def bootstrap_parallel(
     data,
     percentiles,
@@ -506,11 +552,15 @@ def bootstrap_parallel(
     Parallel 95% CIs for given percentiles of `data`.
     Returns (low, high), each shape (len(percentiles),).
     """
+    # print random state
+
     x = flatten_numeric(data)
     q = np.asarray(percentiles, dtype=float).ravel()
+
     if x.size == 0:
         nan = np.full(q.shape, np.nan, float); return nan, nan
 
+    # optional downsampling
     if downsample_n and x.size > downsample_n:
         x = np.random.default_rng(random_state).choice(x, size=downsample_n, replace=False)
 
@@ -518,6 +568,7 @@ def bootstrap_parallel(
     offsets = list(range(0, n_resamples, chunk_size))
     ss = np.random.SeedSequence(random_state) if random_state is not None else np.random.SeedSequence()
     seeds = [int(s.entropy) for s in ss.spawn(len(offsets))]
+
 
     # run chunks in parallel
     chunks = Parallel(n_jobs=n_jobs, prefer=prefer)(
@@ -527,6 +578,7 @@ def bootstrap_parallel(
         for i, off in enumerate(offsets)
     )
 
+    # combine results
     boot_all = np.vstack(chunks)                         # (n_resamples, len(q))
     return boot_all
 
@@ -556,6 +608,116 @@ def bootstrap_percentiles_parallel(
     )
     low, high = np.percentile(boot_all, [2.5, 97.5], axis=0)
     return low, high
+#%%
+# ---------- CI SAVE HELPERS ----------
+def _gt_key(gt: tuple[str, str]) -> str:
+    return f"{gt[0]}__{gt[1]}"
+
+def save_bootstrap_cis_npz(
+    base_dir: Path,
+    dataset: str,
+    meta: dict,
+    percentiles: np.ndarray,
+    ci_low_mean: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_high_mean: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_low_btr: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_high_btr: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_low_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_high_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
+):
+    """
+    Writes one NPZ per segment with keys:
+      - 'percentiles'
+      - '{group}__hier_low', '{group}__hier_high'
+      - '{group}__classic_low', '{group}__classic_high'
+      - '{group}__classic_down_low', '{group}__classic_down_high'
+    """
+    out_dir = base_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # store meta snapshot for the CI pack (won’t overwrite your other meta)
+    (out_dir / "meta_ci.json").write_text(json.dumps(meta, indent=2))
+
+    # write one file per segment
+    seg_names = sorted(set(ci_low_mean.keys()) |
+                       set(ci_high_mean.keys()) |
+                       set(ci_low_btr.keys()) |
+                       set(ci_high_btr.keys()) |
+                       set(ci_low_btr_downsample.keys()) |
+                       set(ci_high_btr_downsample.keys()))
+
+    for seg in seg_names:
+        pack = {"percentiles": np.asarray(percentiles, dtype=float)}
+
+        # helper to add a whole dict-of-groups with a prefix
+        def add_side(side_dict: dict[str, dict[tuple[str, str], np.ndarray]],
+                     suffix: str):
+            if seg not in side_dict:
+                return
+            for gt, arr in side_dict[seg].items():
+                pack[f"{_gt_key(gt)}__{suffix}"] = np.asarray(arr, dtype=float)
+
+        add_side(ci_low_mean, "hier_low")
+        add_side(ci_high_mean, "hier_high")
+        add_side(ci_low_btr, "classic_low")
+        add_side(ci_high_btr, "classic_high")
+        add_side(ci_low_btr_downsample, "classic_down_low")
+        add_side(ci_high_btr_downsample, "classic_down_high")
+
+        np.savez_compressed(out_dir / f"cis__{seg}.npz", **pack)
+    print(f"[INFO] Saved bootstrap CI NPZ packs to: {out_dir} , cis__{seg}.npz")
+
+def save_bootstrap_cis_parquet(
+    base_dir: Path,
+    dataset: str,
+    meta: dict,
+    percentiles: np.ndarray,
+    ci_low_mean: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_high_mean: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_low_btr: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_high_btr: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_low_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
+    ci_high_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
+):
+    """
+    Long-form Parquet with columns:
+      segment, group, percentile, method, bound, value
+    where method ∈ {'hier', 'classic', 'classic_down'}
+          bound  ∈ {'low', 'high'}
+    """
+    if pd is None:
+        print("[WARN] pandas not available; skipping CI parquet save.")
+        return
+
+    out_dir = base_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    def add_rows(container: dict[str, dict[tuple[str, str], np.ndarray]],
+                 method: str, bound: str):
+        for seg, per_group in container.items():
+            for gt, arr in per_group.items():
+                g = _gt_key(gt)
+                for p, v in zip(percentiles, np.asarray(arr, dtype=float), strict=False):
+                    rows.append({
+                        "segment": seg,
+                        "group": g,
+                        "percentile": float(p),
+                        "method": method,
+                        "bound": bound,
+                        "value": float(v),
+                    })
+
+    add_rows(ci_low_mean, "hier", "low")
+    add_rows(ci_high_mean, "hier", "high")
+    add_rows(ci_low_btr, "classic", "low")
+    add_rows(ci_high_btr, "classic", "high")
+    add_rows(ci_low_btr_downsample, "classic_down", "low")
+    add_rows(ci_high_btr_downsample, "classic_down", "high")
+
+    df = pd.DataFrame(rows)
+    df.to_parquet(out_dir / "cis_longform.parquet", index=False)
+    print(f"[INFO] Saved bootstrap CI Parquet to: {out_dir} , cis_longform.parquet")
 
 #%%
 
@@ -571,8 +733,8 @@ for seg_name, w_range in ranges.items():
     pooled_group_speed_i = {}
     ci_low_mean_i = {}
     ci_high_mean_i = {}
-    for gt, idxs in group_genotype_treatment.items():
-        idxs = group_genotype_treatment[gt]
+    for gt, idxs in group_data.items():
+        idxs = group_data[gt]
         print('Speed shape:', np.shape(group_speed_by_segment[seg_name][gt][0]), seg_name, gt)
         group_speed_i = group_speed_by_segment[seg_name][gt][0]
         group_speed_n = len(group_speed_i)
@@ -613,19 +775,23 @@ for seg_name, w_range in ranges.items():
 #%%
 # Classic resampling of distribution: Assumes that the distributions of a group's speeds are identical across animals
 
-
 def group_pool_bt_classic_resampling(ranges,
                                      pooled_group_speed_by_segment,
-                                     group_genotype_treatment):
+                                     group_data,
+                                     seed=np.random.default_rng(),
+                                     downsample_n=None):
     """Classic bootstrap resampling of pooled group speeds."""
     # Bootstrap per group speed histograms
 
     # pooling loops segments
+    ci_low_mean = {}
+    ci_high_mean = {}
+
     for seg_name, w_range in ranges.items():
-        pooled_group_hist_i = {}
-        pooled_group_speed_i = {}
         # Group loops
-        for gt, idxs in group_genotype_treatment.items():
+        ci_low_i = {}
+        ci_high_i = {}
+        for gt, idxs in group_data.items():
             print(pooled_group_speed_by_segment[seg_name][gt].shape, seg_name, gt)
             group_flat_speed = pooled_group_speed_by_segment[seg_name][gt]
 
@@ -635,88 +801,326 @@ def group_pool_bt_classic_resampling(ranges,
                                                             percentiles_,
                                                             n_resamples=n_resamples,
                                                             chunk_size=chunk_size,
-                                                            random_state=0,
-                                                            n_jobs=8)
+                                                            random_state=seed,
+                                                            n_jobs=8,
+                                                            downsample_n=downsample_n)
             end = time.time()
-            print(f"Classic BT resampling took {end - start:.2f} seconds: {seg_name} {gt}")
-        # Store results
-        ci_low_mean[seg_name][gt] = ci_low
-        ci_high_mean[seg_name][gt] = ci_high
+
+            # Print timing
+            if not downsample_n:
+                print(f"Classic BT resampling took {end - start:.2f} seconds: {seg_name} {gt}")
+            else:
+                print(f"Downsampled Classic BT resampling took {end - start:.2f} seconds: {seg_name} {gt}")
+            # Store results per group
+            ci_low_i[gt] = ci_low
+            ci_high_i[gt] = ci_high
+        #store results per segment
+        ci_low_mean[seg_name] = ci_low_i
+        ci_high_mean[seg_name] = ci_high_i
+    return ci_low_mean, ci_high_mean
 
 #%%
-import time
-
-seg_name = 'short'
-gt = ('WT','VEH')
 downsample_n = 150_000
 
-ci_low_mean_i = ci_low_mean[seg_name][gt]
-ci_high_mean_i = ci_high_mean[seg_name][gt]
+# Classic bootstrap resampling
+ci_low_btr, ci_high_btr = group_pool_bt_classic_resampling(ranges,
+                                 pooled_group_speed_by_segment,
+                                 group_data)
+# Downsampled classic bootstrap resampling
+ci_low_btr_downsample, ci_high_btr_downsample = group_pool_bt_classic_resampling(ranges,
+                                 pooled_group_speed_by_segment,
+                                 group_data,
+                                 downsample_n=downsample_n)
+
+#%%
+# ----- SAVE CI ARTIFACTS -----
+# base_dir = Path(paths["speed"])  # you already define this earlier
+# enrich meta a tiny bit so the CI pack is reproducible
+meta_ci = dict(meta)
+meta_ci.update({
+    "percentiles_len": int(len(percentiles_)),
+})
+
+# Always save NPZ; parquet depends on SAVE_MODE['parquet']
+save_bootstrap_cis_npz(
+    Path(outdir_speed_bootstrap_cis),
+    dataset,
+    meta_ci,
+    percentiles_,
+    ci_low_mean,
+    ci_high_mean,
+    ci_low_btr,
+    ci_high_btr,
+    ci_low_btr_downsample,
+    ci_high_btr_downsample,
+)
+
+if SAVE_MODE.get("parquet", False):
+    save_bootstrap_cis_parquet(
+        Path(outdir_speed_bootstrap_cis),
+        dataset,
+        meta_ci,
+        percentiles_,
+        ci_low_mean,
+        ci_high_mean,
+        ci_low_btr,
+        ci_high_btr,
+        ci_low_btr_downsample,
+        ci_high_btr_downsample,
+    )
+
+print("[INFO] CI save completed.")
+
+#%%
+
+# Playground to compare the different CIs
+
+
+
+
+
+seg_name = 'short'
+gt = ('female','2M','dKI')
+
+# ci_low_mean_i = ci_low_mean[seg_name][gt]
+# ci_high_mean_i = ci_high_mean[seg_name][gt]
 
 # --- usage ---
 group_flat_speed = pooled_group_speed_by_segment[seg_name][gt]
 data = np.ravel(group_flat_speed)
 
 start = time.time()
-ci_low_btr, ci_high_btr = bootstrap_percentiles_parallel(data, percentiles_,n_resamples=n_resamples,
+ci_low_btr2, ci_high_btr2 = bootstrap_percentiles_parallel(data, percentiles_,n_resamples=n_resamples,
                                                          chunk_size=chunk_size,
-                                                         random_state=0,
+                                                         random_state=np.random.randint(0,1_000_000,n_resamples),
                                                          n_jobs=8)
 end = time.time()
 print(f"Classic BT resampling took {end - start:.2f} seconds")
 
 start = time.time()
-ci_low_btr_downsample, ci_high_btr_downsample = bootstrap_percentiles_parallel(data, percentiles_,n_resamples=n_resamples,
+ci_low_btr2_downsample, ci_high_btr2_downsample = bootstrap_percentiles_parallel(data, percentiles_,n_resamples=n_resamples,
                                                          chunk_size=chunk_size,
-                                                         random_state=0,
+                                                         random_state=np.random.randint(0,1_000_000,n_resamples),
                                                          n_jobs=8,
-                                                         downsample_n=downsample_n)
+                                                         downsample_n= len(data)//5)
 end = time.time()
 print(f"Downsampled Classic BT resampling took {end - start:.2f} seconds")
+#%%
+#Repeat for downsampled
+
+repeat = 60
+
+ci_low_btr2_downsample_repeats = np.empty((len(percentiles_), repeat), dtype=float)
+ci_high_btr2_downsample_repeats = np.empty((len(percentiles_), repeat), dtype=float)
+
+for rp in range(repeat):
+    print(f"Repeat {rp+1}/{repeat}")
+    start = time.time()
+    ci_low_btr2_downsample_rp, ci_high_btr2_downsample_rp = bootstrap_percentiles_parallel(data, percentiles_,n_resamples=n_resamples,
+                                                            chunk_size=chunk_size,
+                                                            random_state=rp,
+                                                            n_jobs=8,
+                                                            downsample_n= len(data)//5)
+    ci_low_btr2_downsample_repeats[:, rp] = ci_low_btr2_downsample_rp
+    ci_high_btr2_downsample_repeats[:, rp] = ci_high_btr2_downsample_rp
+    end = time.time()
+    print(f"Downsampled Classic BT resampling repeat {rp+1}/{repeat} took {end - start:.2f} seconds")
+
+
+#%%
+def bootstrap_single(
+    data,
+    percentiles,
+    n_resamples: int = 2000,
+    chunk_size:   int = 200,
+    n_jobs:       int = -1,
+    random_state: int | None = 0,
+    downsample_n: int | None = None,
+    prefer:       str = "processes",  # "threads" also allowed
+):
+    """
+    Parallel 95% CIs for given percentiles of `data`.
+    Returns (low, high), each shape (len(percentiles),).
+    """
+    # print random state
+
+    x = flatten_numeric(data)
+    q = np.asarray(percentiles, dtype=float).ravel()
+
+    if x.size == 0:
+        nan = np.full(q.shape, np.nan, float); return nan, nan
+
+    # optional downsampling
+    if downsample_n and x.size > downsample_n:
+        x = np.random.default_rng(random_state).choice(x, size=downsample_n, replace=False)
+
+    # plan chunks & deterministic seeds (safe for parallel)
+    offsets = list(range(0, n_resamples, chunk_size))
+    ss = np.random.SeedSequence(random_state) if random_state is not None else np.random.SeedSequence()
+    seeds = [int(s.entropy) for s in ss.spawn(len(offsets))]
+
+
+    # run chunks in parallel
+    chunks = _bootstrap_chunk_proc(x, q, min(chunk_size, n_resamples), seeds[i])
+
+    # combine results
+    boot_all = np.vstack(chunks)                         # (n_resamples, len(q))
+    return boot_all
+
+#%%
+# Repeat for downsampled
+
+
+
+def bootstrap_repeat_downsampling(
+    data: np.ndarray,
+    percentiles: np.ndarray,
+    repeat: int = 10_000,
+    n_resamples: int = 2,
+    chunk_size: int = 5,
+    n_jobs: int = 8,
+    downsample_n: int | None = None,
+    seed: int = 0,):
+
+    ci_btr_downsample_repeat = np.empty((repeat, len(percentiles_)), dtype=float)
+    start = time.time()
+    for rp in range(repeat):
+        print(f"Repeat {rp+1}/{repeat}")
+        ci_btr_downsample_repeat[rp], _ = bootstrap_parallel(data, percentiles_,n_resamples=2,
+                                                                chunk_size=chunk_size,
+                                                                random_state= np.random.randint(0,1_000_000),
+                                                                n_jobs=8,
+                                                                downsample_n= len(data)//10)
+        # ci_low_btr2_downsample_repeats2[:, rp] = ci_low_btr2_downsample_rp
+        # ci_high_btr2_downsample_repeats2[:, rp] = ci_high_btr2_downsample_rp
+    end = time.time()
+    print(f"Downsampled Classic BT resampling repeat {rp+1}/{repeat} took {end - start:.2f} seconds")
+
+    ci_low_btr2_downsample_repeat, ci_high_btr2_downsample_repeat =np.percentile(ci_btr_downsample_repeat, [0,100], axis=0)
+    return ci_low_btr2_downsample_repeat, ci_high_btr2_downsample_repeat, ci_btr_downsample_repeat
+
+ci_low_btr_downsample_repeat  = {}
+ci_high_btr_downsample_repeat = {}
+ci_btr_downsample_repeat = {}
+ci_low_btr_downsample_repeat: dict[str, dict[tuple[str, str], np.ndarray]] = {}
+ci_high_btr_downsample_repeat: dict[str, dict[tuple[str, str], np.ndarray]] = {}
+vals_btr_downsample_repeat: dict[str, dict[tuple[str, str], np.ndarray]] = {}
+
+for seg_name, w_range in ranges.items():
+    # Group loops
+    ci_low_seg: dict[tuple[str, str], np.ndarray] = {}
+    ci_high_seg: dict[tuple[str, str], np.ndarray] = {}
+    vals_seg: dict[tuple[str, str], np.ndarray] = {}
+
+    for gt, idxs in group_data.items():  # <-- use your correct grouping dict
+        print('Speed shape:', np.shape(group_speed_by_segment[seg_name][gt][0]), seg_name, gt)
+        group_flat_speed = pooled_group_speed_by_segment[seg_name][gt]
+        print('Flat speed shape:', np.shape(group_flat_speed), seg_name, gt)
+
+        data = np.ravel(group_flat_speed)
+        lo, hi, vals = bootstrap_repeat_downsampling(
+            data=data,
+            percentiles=percentiles_,
+            repeat=10_000,
+            n_resamples=2,
+            chunk_size=chunk_size,
+            n_jobs=8,
+            downsample_n=len(data)//10,
+            seed=0,
+        )
+        ci_low_seg[gt] = lo
+        ci_high_seg[gt] = hi
+        vals_seg[gt] = vals
+
+    # store dicts for the whole segment
+    ci_low_btr_downsample_repeat[seg_name]  = ci_low_seg
+    ci_high_btr_downsample_repeat[seg_name] = ci_high_seg
+    vals_btr_downsample_repeat[seg_name]    = vals_seg
+
+# ci_low_mean_i = ci_low_mean[seg_name][gt]
+# ci_high_mean_i = ci_high_mean[seg_name][gt]
+
+# --- usage ---
+
+
 
 #%%
 #plot to test the idea confidence intervals comparison
-plt.figure(figsize=(8, 5))
-plt.fill_between(percentiles_, ci_low_mean_i, ci_high_mean_i, color='blue', alpha=0.3, label='Hierarchical BT Resampling')
-plt.fill_between(percentiles_, ci_low_btr, ci_high_btr, color='orange', alpha=0.5, label='Classic BT Resampling')
-plt.fill_between(percentiles_, ci_low_btr_downsample, ci_high_btr_downsample, color='green', alpha=0.5, label='Downsampled Classic BT Resampling')
-plt.xlabel('Percentiles')
-plt.ylabel('Speed')
+# plt.figure(figsize=(8, 5))
+# plt.plot(ci_btr_downsample_repeat.T, percentiles_[:, np.newaxis], alpha=0.1)
+# # plt.colorbar(label='Percentile Value')
+# plt.ylabel('Percentiles Index')
+# plt.xlabel('Speed')
 # plt.yscale('log')
-plt.legend()
+# low, high = np.percentile(boot_all, [2.5, 97.5], axis=0)
+#%%
+
+#plot confidence intervals comparison
+plt.figure(figsize=(16, 8))
+
+for seg_name, w_range in ranges.items():
+    plt.subplot(1, len(ranges), list(ranges.keys()).index(seg_name)+1)
+    plt.title(f'Confidence Intervals Comparison - {seg_name}')
+    for gt in group_data.keys():
+        print('Plotting GT:', gt)
+        plt.fill_between(percentiles_,
+                    ci_low_btr_downsample_repeat[seg_name][gt],
+                    ci_high_btr_downsample_repeat[seg_name][gt],
+                    alpha=0.5, label=gt)
+
+    # plt.plot(percentiles_, group_flat_speed_perc, label='Pooled Group Histogram')
+    plt.xlabel('Percentiles')
+    plt.ylabel('Speed')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.ylim(2e-1,1.5e0)
+    # plt.xlim(0,3)
+
+    # plt.xscale('log')
+    plt.legend()
 plt.show()
 #%%
 
 
-#for classic resampling of distribution
-group_flat_speed_perc = np.percentile(group_flat_speed, percentiles_)
+
+for seg_name, w_range in ranges.items():
+    # Group loops
+    ci_low_i = {}
+    ci_high_i = {}
+    for gt, idxs in group_data.items():
+        print(pooled_group_speed_by_segment[seg_name][gt].shape, seg_name, gt)
+        group_flat_speed = pooled_group_speed_by_segment[seg_name][gt]
 
 
-#for each animal histogram
-animal_flat_speed_perc = np.empty((len(group_speed_by_segment[seg_name][gt][0]), len(percentiles_)), dtype=float)
+        #for classic resampling of distribution
+        group_flat_speed_perc = np.percentile(group_flat_speed, percentiles_)
 
-group_speed_by_segment_i = group_speed_by_segment[seg_name][gt][0]
-plt.figure(figsize=(8, 5))
-for i in range(len(group_speed_by_segment_i)):
-    print(f"Animal {i} speed shape: {np.shape(group_speed_by_segment_i[i])}")
-    aux_animal_s = group_speed_by_segment_i[i]
-    aux_animal_i_s_flat = [aux_animal_s[j].tolist() for j in range(len(aux_animal_s))]
-    #flatten aux_animal_i_s_flat
-    aux_animal_i_s_flat = np.array([item for sublist in aux_animal_i_s_flat for item in sublist])
-    print(f"Animal {i} flat speed shape: {np.shape(aux_animal_i_s_flat)}")
 
-    hist_aux = np.histogram(np.ravel(aux_animal_i_s_flat), bins=100, range=(group_flat_speed.min(), group_flat_speed.max()))
+        #for each animal histogram
+        animal_flat_speed_perc = np.empty((len(group_speed_by_segment[seg_name][gt][0]), len(percentiles_)), dtype=float)
 
-    plt.plot(hist_aux[1][:-1], hist_aux[0], label=f'Animal {i} nor {nor_index[idxs[i]]}')
-    plt.xlabel('Speed')
-    plt.ylabel('Count')
-    plt.title(f'Animal Speed Histogram - {seg_name} - {gt}')
+        group_speed_by_segment_i = group_speed_by_segment[seg_name][gt][0]
+        plt.figure(figsize=(12, 10))
+        for i in range(len(group_speed_by_segment_i)):
+            # print(f"Animal {i} speed shape: {np.shape(group_speed_by_segment_i[i])}")
+            aux_animal_s = group_speed_by_segment_i[i]
+            aux_animal_i_s_flat = [aux_animal_s[j].tolist() for j in range(len(aux_animal_s))]
+            #flatten aux_animal_i_s_flat
+            aux_animal_i_s_flat = np.array([item for sublist in aux_animal_i_s_flat for item in sublist])
+            # print(f"Animal {i} flat speed shape: {np.shape(aux_animal_i_s_flat)}")
 
-    aux_animal_i_perc = np.percentile(aux_animal_i_s_flat, percentiles_)
-    print(f"Animal {i} percentiles: {aux_animal_i_perc}")
-    animal_flat_speed_perc[i] = aux_animal_i_perc
-plt.legend()
-plt.show()
+            hist_aux = np.histogram(np.ravel(aux_animal_i_s_flat), bins=100, range=(group_flat_speed.min(), group_flat_speed.max()))
+
+            plt.plot(hist_aux[1][:-1], hist_aux[0], '.-', label=f'Animal {i} nor {nor_index[idxs[i]]}')
+            plt.xlabel('Speed')
+            plt.ylabel('Count')
+            plt.title(f'Animal Speed Histogram - {seg_name} - {gt}')
+
+            aux_animal_i_perc = np.percentile(aux_animal_i_s_flat, percentiles_)
+            # print(f"Animal {i} percentiles: {aux_animal_i_perc}")
+            animal_flat_speed_perc[i] = aux_animal_i_perc
+        plt.legend()
+        plt.show()
 #%%
 #plot aux_animal_i_s_flat histogram
 plt.figure(figsize=(8, 5))
@@ -728,38 +1132,48 @@ plt.show()
 
 #%%
 # aux_hist_perc = pooled_group_hists_by_segment[seg_name][gt]
+seg_name = 'short'
+gt = ('WT','VEH')
+group_flat_speed = pooled_group_speed_by_segment[seg_name][gt]
+group_flat_speed_perc = np.percentile(group_flat_speed, percentiles_)
 
 # Plot pooled group histogram
 plt.figure(figsize=(8, 5))
 plt.plot(percentiles_, group_flat_speed_perc, label='Pooled Group Histogram')
-plt.fill_between(percentiles_, ci_low_btr, ci_high_btr, color='orange', alpha=0.5, label='Classic BT Resampling CI')
+plt.fill_between(percentiles_, ci_low_btr2, ci_high_btr2, color='orange', alpha=0.5, label='Classic BT Resampling CI')
+plt.fill_between(percentiles_, ci_low_btr2_downsample, ci_high_btr2_downsample, color='green', alpha=0.5, label='Downsampled Classic BT Resampling CI')
+plt.fill_between(percentiles_, ci_low_mean_i, ci_high_mean_i, color='blue', alpha=0.5, label='Hierarchical BT Resampling CI')
+plt.fill_between(percentiles_,
+                 ci_low_btr2_downsample_repeats.mean(axis=1),
+                 ci_high_btr2_downsample_repeats.mean(axis=1),
+                 color='red', alpha=0.5, label='Downsampled Classic BT Resampling CI (mean over repeats)')
 
 plt.xlabel('Percentiles')
 plt.ylabel('Speed')
 plt.title(f'Pooled Group Histogram for {seg_name} - {gt}')
-plt.xlim(0,)
-plt.ylim(0.07,0.15)
-# plt.yscale('log')
+plt.xlim(0,4)
+# plt.ylim(0.07,0.15)
+plt.yscale('log')
 plt.legend()
 plt.show()
 
-print(ci_low_btr, group_flat_speed_perc, ci_high_btr)
+# print(ci_low_btr2, group_flat_speed_perc, ci_high_btr2)
 
 #%%
 for i in percentiles_:
-    # print(f"Percentile {np.round(i, 3)}: {np.round(group_flat_speed_perc[int(i)], 3)} (CI: {np.round(ci_low_btr[int(i)], 3)}, {np.round(ci_high_btr[int(i)], 3)})")
+    # print(f"Percentile {np.round(i, 3)}: {np.round(group_flat_speed_perc[int(i)], 3)} (CI: {np.round(ci_low_btr2[int(i)], 3)}, {np.round(ci_high_btr2[int(i)], 3)})")
     if i==100.:
         continue
     else:
-        # print(f"Percentile {np.round(i, 3)}: {np.round(group_flat_speed_perc[int(i)], 3)} (CI: {np.round(ci_low_btr[int(i)], 3)}, {np.round(ci_high_btr[int(i)], 3)})")
-        print(ci_low_btr[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr[int(i)])
+        # print(f"Percentile {np.round(i, 3)}: {np.round(group_flat_speed_perc[int(i)], 3)} (CI: {np.round(ci_low_btr2[int(i)], 3)}, {np.round(ci_high_btr2[int(i)], 3)})")
+        print(ci_low_btr2[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr2[int(i)])
         aux_ci_test = (
-            ci_low_btr[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr[int(i)]
+            ci_low_btr2[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr2[int(i)]
         )
-aux_ci_test = [(ci_low_btr[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr[int(i)]) for i in percentiles_ if i!=100.]
+aux_ci_test = [(ci_low_btr2[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr2[int(i)]) for i in percentiles_ if i!=100.]
 print('Classic BT resampling inside CI',np.sum(aux_ci_test)/(len(percentiles_)-1))
 
-aux_ci_test = [(ci_low_btr_downsample[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr_downsample[int(i)]) for i in percentiles_ if i!=100.]
+aux_ci_test = [(ci_low_btr2_downsample[int(i)]<=group_flat_speed_perc[int(i)]<=ci_high_btr2_downsample[int(i)]) for i in percentiles_ if i!=100.]
 print('Downsampled Classic BT resampling inside CI',np.sum(aux_ci_test)/(len(percentiles_)-1))
 
 aa=0  # test for animal 0
@@ -767,8 +1181,6 @@ for aa in range(len(group_speed_by_segment[seg_name][gt][0])):
     aux_ci_test = [(ci_low_mean_i[int(i)]<=animal_flat_speed_perc[aa, int(i)]<=ci_high_mean_i[int(i)]) for i in percentiles_ if i!=100.]
     print(f'Animal {aa} classic BT resampling inside CI:',np.sum(aux_ci_test)/(len(percentiles_)-1))
 #%%
-
-
 
 
 
@@ -896,7 +1308,7 @@ if save_fig:
 # %%
 # 2) Group curve (mean of per-animal medians)
 fig2, ax2 = plt.subplots(figsize=(8, 6))
-plot_group_median_vs_window(ax2, time_windows_range, group_genotype_treatment, speeds)
+plot_group_median_vs_window(ax2, time_windows_range, group_data, speeds)
 if save_fig:
     outpath_fig2 = savedir_dfc_speed_group_median_vs_window.format(
         n_animals=n_animals, regions=regions, total_tr=total_tr
@@ -909,7 +1321,7 @@ if save_fig:
 fig, axs = plt.subplots(2, 3, figsize=(11, 8), sharex=True)
 axes = axs.ravel()
 titles = ["1st pct", "5th pct", "Median", "95th pct", "99th pct"]
-for (genotype, treatment), indices in group_genotype_treatment.items():
+for (genotype, treatment), indices in group_data.items():
     color = combo_color(genotype, treatment)
     s1, s5, sm, s95, s99 = [], [], [], [], []
     for j in range(len(time_windows_range)):
@@ -1244,7 +1656,7 @@ meta = make_meta(
     POOL_SPLIT,
     time_windows_range,
     ranges,
-    group_genotype_treatment,
+    group_data,
     BINS_HIST,
     RNG_SEED,
 )
@@ -1283,7 +1695,7 @@ print("[INFO] Save completed. Modes:", SAVE_MODE)
 
 #     # average over animals per group -> a histogram curve per group
 #     group_means: dict[tuple[str, str], np.ndarray] = {}
-#     for gt, idxs in group_genotype_treatment.items():
+#     for gt, idxs in group_data.items():
 #         print(f"Processing group: {gt} with indices: {idxs}")
 #         group_means[gt] = np.mean(H_per_animal[idxs], axis=0) if len(idxs) else np.zeros(BINS_HIST)
 
@@ -1307,7 +1719,7 @@ print("[INFO] Save completed. Modes:", SAVE_MODE)
 # # 2) POOLED histograms by group, per segment (flatten all values over animals & windows)
 # for seg_name, w_range in ranges.items():
 #     pooled_group: dict[tuple[str, str], np.ndarray] = {}
-#     for gt, idxs in group_genotype_treatment.items():
+#     for gt, idxs in group_data.items():
 #         pooled_group[gt] = pooled_group_histogram(
 #             animal_speeds, idxs, w_range, BINS_HIST, (all_speeds_min, all_speeds_max)
 #         )
@@ -1379,7 +1791,7 @@ savedir_corr_plots.mkdir(parents=True, exist_ok=True)
 results_dir = str(savedir_corr_plots)
 os.makedirs(results_dir, exist_ok=True)
 
-group_keys = list(group_genotype_treatment.keys())
+group_keys = list(group_data.keys())
 pairs = list(combinations(group_keys, 2))
 
 # Bootstrap Δρ plots
@@ -1391,8 +1803,8 @@ for speed_seg_name, speeds_ppsegment in speeds_percentile_per_segment.items():
     for group_a, group_b in pairs:
         print(f"\n=== Comparing {group_a} vs {group_b} in pool {speed_seg_name} ===")
 
-        idx_a = group_genotype_treatment[group_a]
-        idx_b = group_genotype_treatment[group_b]
+        idx_a = group_data[group_a]
+        idx_b = group_data[group_b]
 
         # Skip if any group has too few animals
         if len(idx_a) < 3 or len(idx_b) < 3:
@@ -1477,7 +1889,7 @@ for speed_seg_name, speeds_ppsegment in speeds_percentile_per_segment.items():
         f"[INFO] Processing segment: {speed_seg_name} with shape {speeds_ppsegment.shape}"
     )
 
-    for group_a, group_b in combinations(group_genotype_treatment.keys(), 2):
+    for group_a, group_b in combinations(group_data.keys(), 2):
         fname_base = f"{group_a[0]}_{group_a[1]}__vs__{group_b[0]}_{group_b[1]}_{speed_seg_name}".replace(
             "'", ""
         )
@@ -1489,8 +1901,8 @@ for speed_seg_name, speeds_ppsegment in speeds_percentile_per_segment.items():
         )
 
         # Skip if one group too small or not computed
-        idx_a = group_genotype_treatment[group_a]
-        idx_b = group_genotype_treatment[group_b]
+        idx_a = group_data[group_a]
+        idx_b = group_data[group_b]
         if len(idx_a) < 3 or len(idx_b) < 3:
             continue
 
@@ -1601,7 +2013,7 @@ for speed_seg_name, speeds_ppsegment in speeds_percentile_per_segment.items():
     for (
         gt,
         idxs,
-    ) in group_genotype_treatment.items():  # e.g. {"WT": [0,1,...], "Mut": [24,...]}
+    ) in group_data.items():  # e.g. {"WT": [0,1,...], "Mut": [24,...]}
         r_means, ci_lows, ci_highs, p_vals = [], [], [], []
 
         for i in range(speeds_ppsegment.shape[0]):
