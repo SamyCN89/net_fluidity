@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Preprocessing helpers for the Ines (meta-connectivity) dataset."""
-
+# %%
 from __future__ import annotations
 
 import argparse
-import logging
-import pickle
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
+import logging
 from pathlib import Path
-from typing import Dict, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -48,18 +48,18 @@ ANAT_SHEET = "41_Allen"
 
 @dataclass
 class GroupingPayload:
-    mask_groups: Tuple[Sequence[np.ndarray], ...]
-    label_groups: Tuple[Sequence[str], ...]
-    mask_groups_per_sex: Tuple[Sequence[np.ndarray], ...]
-    label_groups_per_sex: Tuple[Sequence[str], ...]
-    extra_group_maps: Dict[str, Dict[Tuple[str, ...], np.ndarray]]
+    mask_groups: tuple[Sequence[np.ndarray], ...]
+    label_groups: tuple[Sequence[str], ...]
+    mask_groups_per_sex: tuple[Sequence[np.ndarray], ...]
+    label_groups_per_sex: tuple[Sequence[str], ...]
+    extra_group_maps: dict[str, dict[tuple[str, ...], np.ndarray]]
 
 
 @dataclass
 class PrepResult:
     ts: np.ndarray
     cog_data: pd.DataFrame
-    metadata: Dict[str, np.ndarray]
+    metadata: dict[str, np.ndarray]
     grouping: GroupingPayload
     paths: Mapping[str, Path]
 
@@ -68,12 +68,16 @@ def _parse_folder_overrides(overrides: Iterable[str]) -> MutableMapping[str, str
     folder_map: MutableMapping[str, str] = {}
     for item in overrides:
         if "=" not in item:
-            raise ValueError(f"Folder override must be of the form key=value (got {item!r})")
+            raise ValueError(
+                f"Folder override must be of the form key=value (got {item!r})"
+            )
         key, value = item.split("=", 1)
         key = key.strip()
         value = value.strip()
         if not key or not value:
-            raise ValueError(f"Folder override key/value cannot be empty (got {item!r})")
+            raise ValueError(
+                f"Folder override key/value cannot be empty (got {item!r})"
+            )
         folder_map[key] = value
     return folder_map
 
@@ -81,9 +85,11 @@ def _parse_folder_overrides(overrides: Iterable[str]) -> MutableMapping[str, str
 parse_folder_overrides = _parse_folder_overrides
 
 
-def _group_indices(df: pd.DataFrame, columns: Sequence[str]) -> Dict[Tuple[str, ...], np.ndarray]:
+def _group_indices(
+    df: pd.DataFrame, columns: Sequence[str]
+) -> dict[tuple[str, ...], np.ndarray]:
     grouped = df.reset_index().groupby(list(columns))["index"]
-    mapping: Dict[Tuple[str, ...], np.ndarray] = {}
+    mapping: dict[tuple[str, ...], np.ndarray] = {}
     for raw_key, index_series in grouped:
         if isinstance(raw_key, tuple):
             key = tuple(str(value) for value in raw_key)
@@ -99,8 +105,8 @@ def prepare_cognitive_dataset(
     dataset_name: str = "ines_abdullah",
     timecourse_folder: str = "Timecourses_updated_03052024",
     cognitive_data_file: str = "ROIs.xlsx",
-    anat_labels_file: Optional[str] = "41_Allen.txt",
-    folders: Optional[Mapping[str, str]] = None,
+    anat_labels_file: str | None = "41_Allen.txt",
+    folders: Mapping[str, str] | None = None,
     transient: int = 50,
     threshold: float = 0.2,
 ) -> PrepResult:
@@ -117,6 +123,7 @@ def prepare_cognitive_dataset(
     if folders:
         folders_map.update(folders)
 
+    # Load cognitive metadata and anatomical labels.
     LOGGER.info("Loading cognitive tables from %s", paths["cog_data"])
     cog_data_df = pd.read_excel(paths["cog_data"], sheet_name=COG_SHEET)
     data_roi = pd.read_excel(paths["cog_data"], sheet_name=ANAT_SHEET).to_numpy()
@@ -127,16 +134,21 @@ def prepare_cognitive_dataset(
         period: filename_sort_mat(str(timeseries_root / folder))
         for period, folder in folders_map.items()
     }
-    hash_numbers = {period: extract_hash_numbers(filenames[period]) for period in filenames}
+    hash_numbers = {
+        period: extract_hash_numbers(filenames[period]) for period in filenames
+    }
     common_ids, idx_2m, idx_4m = np.intersect1d(
         hash_numbers["2mois"],
         hash_numbers["4mois"],
         return_indices=True,
     )
     if len(common_ids) == 0:
-        raise RuntimeError("No intersection between 2m and 4m recordings; cannot proceed.")
+        raise RuntimeError(
+            "No intersection between 2m and 4m recordings; cannot proceed."
+        )
     LOGGER.info("Found %d animals with both 2m and 4m recordings", len(common_ids))
 
+    # Compute derived cognitive metrics.
     cog_data_df["oip_4m-2m"] = cog_data_df["OiP_4M"] - cog_data_df["OiP_2M"]
     cog_data_df["oip_4m+2m"] = cog_data_df["OiP_4M"] + cog_data_df["OiP_2M"]
     cog_data_df["ro24h_4m-2m"] = cog_data_df["RO24h_4M"] - cog_data_df["RO24h_2M"]
@@ -144,24 +156,30 @@ def prepare_cognitive_dataset(
 
     # Restrict cognition table to animals with usable recordings at both ages.
     cog_data_filtered = (
-        cog_data_df[cog_data_df["Name"].isin(common_ids)]
-        .sort_values(by="Name")
-        .copy()
+        cog_data_df[cog_data_df["Name"].isin(common_ids)].sort_values(by="Name").copy()
     )
+    # Keep only animals passing quality control at both ages.
     cog_data_filtered = cog_data_filtered[
         (cog_data_filtered["TC_2M"] == "ok") & (cog_data_filtered["TC_4M"] == "ok")
     ].copy()
 
-    intersection = np.intersect1d(common_ids, cog_data_filtered["Name"], return_indices=True)
+    # Load time-series for the filtered set of animals.
+    intersection = np.intersect1d(
+        common_ids, cog_data_filtered["Name"], return_indices=True
+    )
     idx_int_2m = idx_2m[intersection[1]]
     idx_int_4m = idx_4m[intersection[1]]
 
     files_2m = np.array(filenames["2mois"])[idx_int_2m]
     files_4m = np.array(filenames["4mois"])[idx_int_4m]
 
-    LOGGER.info("Loading %d 2m time-series from %s", len(files_2m), folders_map["2mois"])
+    LOGGER.info(
+        "Loading %d 2m time-series from %s", len(files_2m), folders_map["2mois"]
+    )
     ts_2m = load_matdata(str(timeseries_root), folders_map["2mois"], files_2m)
-    LOGGER.info("Loading %d 4m time-series from %s", len(files_4m), folders_map["4mois"])
+    LOGGER.info(
+        "Loading %d 4m time-series from %s", len(files_4m), folders_map["4mois"]
+    )
     ts_4m = load_matdata(str(timeseries_root), folders_map["4mois"], files_4m)
 
     # Clip transient TRs from the start of each recording.
@@ -253,7 +271,9 @@ def prepare_cognitive_dataset(
 
     extra_group_maps = {
         "by_sex_genotype": _group_indices(cog_data_filtered, ["Sexe", "Genotype"]),
-        "by_sex_phenotype_oip": _group_indices(cog_data_filtered, ["Sexe", "Phenotype_OiP"]),
+        "by_sex_phenotype_oip": _group_indices(
+            cog_data_filtered, ["Sexe", "Phenotype_OiP"]
+        ),
         "by_sex_phenotype_ro24h": _group_indices(
             cog_data_filtered, ["Sexe", "Phenotype_RO24h"]
         ),
@@ -288,7 +308,9 @@ def prepare_cognitive_dataset(
     )
 
 
-def write_outputs(result: PrepResult, *, dry_run: bool = False, write_extra_groups: bool = True) -> PrepResult:
+def write_outputs(
+    result: PrepResult, *, dry_run: bool = False, write_extra_groups: bool = True
+) -> PrepResult:
     """Persist preprocessing artefacts to disk."""
 
     output_dir = Path(result.paths["preprocessed"])
@@ -299,15 +321,28 @@ def write_outputs(result: PrepResult, *, dry_run: bool = False, write_extra_grou
     output_dir.mkdir(parents=True, exist_ok=True)
     LOGGER.info("Writing Ines preprocessing outputs to %s", output_dir)
 
-    cog_csv = output_dir / "cog_data_sorted_2m4m.csv"
+    # Metadata summary values.
+    n_animals = result.metadata["n_animals"]
+    regions = result.metadata["regions"]
+    total_tr = result.metadata["total_tr"]
+
+    # Cognitive metadata.
+    cog_csv = (
+        output_dir
+        / f"cog_data_filtered_animals_{n_animals}_regions_{regions}_tr_{total_tr}.csv"
+    )
     LOGGER.info("Writing cognitive metadata to %s", cog_csv)
     result.cog_data.to_csv(cog_csv, index=False)
 
+    # Time-series bundle.
     ts_npz = output_dir / "ts_and_meta_2m4m.npz"
     LOGGER.info("Writing time-series bundle to %s", ts_npz)
     np.savez(ts_npz, ts=result.ts, **result.metadata)
 
-    canonical_npz = output_dir / f"ts_and_meta_{result.metadata['dataset_name'].item()}.npz"
+    # Canonical time-series bundle.
+    canonical_npz = (
+        output_dir / f"ts_and_meta_{result.metadata['dataset_name'].item()}.npz"
+    )
     LOGGER.info("Writing canonical bundle to %s", canonical_npz)
     np.savez(
         canonical_npz,
@@ -368,7 +403,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PERIOD=FOLDER",
         help="Override default folder mapping (e.g. --folder 2mois=Lot3_2mois).",
     )
-    parser.add_argument("--transient", type=int, default=50, help="Timepoints to drop from the start (default: 50).")
+    parser.add_argument(
+        "--transient",
+        type=int,
+        default=50,
+        help="Timepoints to drop from the start (default: 50).",
+    )
     parser.add_argument(
         "--threshold",
         type=float,
@@ -394,10 +434,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> PrepResult:
+def main(argv: Sequence[str] | None = None) -> PrepResult:
     parser = build_parser()
     args = parser.parse_args(argv)
-    logging.basicConfig(level=getattr(logging, args.log_level), format="%(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=getattr(logging, args.log_level), format="%(levelname)s - %(message)s"
+    )
 
     folder_overrides = _parse_folder_overrides(args.folder) if args.folder else None
     result = prepare_cognitive_dataset(
@@ -409,7 +451,9 @@ def main(argv: Optional[Sequence[str]] = None) -> PrepResult:
         transient=args.transient,
         threshold=args.threshold,
     )
-    write_outputs(result, dry_run=args.dry_run, write_extra_groups=not args.no_extra_groups)
+    write_outputs(
+        result, dry_run=args.dry_run, write_extra_groups=not args.no_extra_groups
+    )
 
     LOGGER.info(
         "Preprocessing bundle ready under %s (dry_run=%s)",
@@ -421,3 +465,5 @@ def main(argv: Optional[Sequence[str]] = None) -> PrepResult:
 
 if __name__ == "__main__":
     main()
+
+# %%

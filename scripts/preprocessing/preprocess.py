@@ -37,6 +37,37 @@ def _canonical_dataset(name: str) -> str:
     raise ValueError(f"Unsupported dataset '{name}'. Expected something like 'julien' or 'ines'.")
 
 
+_IPYKERNEL_ARG_PREFIXES = (
+    "--ip=",
+    "--stdin=",
+    "--control=",
+    "--hb=",
+    "--Session.",
+    "--iopub=",
+    "--shell=",
+    "--transport=",
+)
+
+
+def _prune_notebook_args(extras: Sequence[str]) -> list[str]:
+    """Remove IPython/kernel launcher flags from argparse leftovers."""
+
+    cleaned: list[str] = []
+    skip_next = False
+    for token in extras:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "-f":
+            # ipykernel passes "-f <json>"
+            skip_next = True
+            continue
+        if any(token.startswith(prefix) for prefix in _IPYKERNEL_ARG_PREFIXES):
+            continue
+        cleaned.append(token)
+    return cleaned
+
+
 # Build the preprocessing CLI and expose dataset-specific options.
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -136,7 +167,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Skip writing exploratory grouping_data_new.pkl bundle.",
     )
     # argparse swallows notebook args; parse_known_args keeps compatibility.
-    return parser.parse_known_args(argv)[0]
+    args, extras = parser.parse_known_args(argv)
+    leftovers = _prune_notebook_args(extras)
+    if leftovers:
+        parser.error(f"Unrecognized arguments: {' '.join(leftovers)}")
+    return args
 
 #%%
 # CLI adapters dispatching to dataset-specific preprocessors.

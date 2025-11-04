@@ -14,6 +14,9 @@ from shared_code.fun_utils import load_cognitive_data, set_figure_params
 from shared_code.fun_paths import get_paths
 from shared_code.fun_loaddata import load_timeseries_bundle
 
+import pandas as pd
+import numpy as np
+
 #%%
 # --------- Load data ---------
 
@@ -35,7 +38,8 @@ bundle = load_timeseries_bundle(
     paths["preprocessed"] / "grouping_data_oip.pkl",
 )
 # Load cognitive data
-cog_data = load_cognitive_data(paths["preprocessed"] / "cog_data_sorted_2m4m.csv")
+# cog_data = load_cognitive_data(paths["preprocessed"] / "cog_data_sorted_2m4m.csv")
+cog_data = load_cognitive_data(paths["preprocessed"] / f"cog_data_filtered_animals_{n_animals}_regions_{regions}_tr_{total_tr}.csv")
 
 # Extract relevant data from bundle
 ts = bundle.ts
@@ -47,8 +51,6 @@ regions = bundle.n_regions
 mask_groups = bundle.mask_groups
 label_variables = bundle.label_variables
 #%%
-import pandas as pd
-import numpy as np
 
 # --- Your original wide DataFrame ---
 # df has 63 rows, columns like 'OiP_2M', 'OiP_4M', 'RO24h_2M', 'RO24h_4M', etc.
