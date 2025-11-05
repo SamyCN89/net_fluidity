@@ -26,3 +26,4 @@ dependencies:
       - git+https://github.com/fiuneuro/brainconn.git
       - webcolors
       - statannotations
+      - python-dotenv

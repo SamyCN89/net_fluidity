@@ -10,17 +10,50 @@ Created on Fri Mar  8 15:56:50 2024
 # Samy Castro March 2024
 # =============================================================================
 
-from collections.abc import Mapping, MutableMapping, Sequence
+import os
+import re
+from pathlib import Path
+import socket
 from dataclasses import dataclass
 import logging
-import os
-from pathlib import Path
 import pickle
-import re
 from typing import Any
+from collections.abc import Mapping, MutableMapping, Sequence
 
 import numpy as np
 from scipy.io import loadmat
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # safe fallback if python-dotenv not installed
+#%%
+# ==============================================
+# AUTO-ENVIRONMENT DETECTION & LOADER
+# ==============================================
+
+# 1. Load .env if available
+repo_root = Path(__file__).resolve().parents[2]
+dotenv_path = repo_root / ".env"
+if load_dotenv and dotenv_path.exists():
+    load_dotenv(dotenv_path, override=False)
+
+# 2. Auto-detect environment and set PATHS_ROOT
+hostname = socket.gethostname().lower()
+
+if "funsymania" in hostname:
+    default_root = "/mnt/sdc/samy"
+elif "funsy" in hostname:  # catches funsystra, funsystem, etc.
+    default_root = str(Path.home() / "mnt/funsymania_sdc/samy")
+else:
+    default_root = "/media/samy/Elements2/Proyectos/LauraHarsan"
+
+PATHS_ROOT = Path(os.environ.get("PATHS_ROOT", default_root))
+
+# Export for downstream code
+os.environ["PATHS_ROOT"] = str(PATHS_ROOT)
+
+print(f"[info] Using PATHS_ROOT={PATHS_ROOT}")  # optional for debugging
 
 # from .fun_dfcspeed import compute4window_new
 
