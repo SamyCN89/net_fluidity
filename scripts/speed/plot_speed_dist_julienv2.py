@@ -1041,9 +1041,22 @@ for seg_name, w_range in ranges.items():
 # ci_high_mean_i = ci_high_mean[seg_name][gt]
 
 # --- usage ---
+#%%
+# Save ci_low_btr_downsample_repeat , ci_high_btr_downsample_repeat , ci_btr_downsample_repeat
+import pickle
+with open(Path(bootstrap_folder) / 'ci_btr_downsample_repeat.pkl', 'wb') as f:
+    pickle.dump({
+        'ci_low_btr_downsample_repeat': ci_low_btr_downsample_repeat,
+        'ci_high_btr_downsample_repeat': ci_high_btr_downsample_repeat,
+        'ci_btr_downsample_repeat': vals_btr_downsample_repeat,
+    }, f)
 
-
-
+# Load ci_low_btr_downsample_repeat , ci_high_btr_downsample_repeat , ci_btr_downsample_repeat
+with open(Path(bootstrap_folder) / 'ci_btr_downsample_repeat.pkl', 'rb') as f:
+    data_loaded = pickle.load(f)
+    ci_low_btr_downsample_repeat = data_loaded['ci_low_btr_downsample_repeat']
+    ci_high_btr_downsample_repeat = data_loaded['ci_high_btr_downsample_repeat']
+    ci_btr_downsample_repeat = data_loaded['ci_btr_downsample_repeat']  
 #%%
 #plot to test the idea confidence intervals comparison
 # plt.figure(figsize=(8, 5))
@@ -1111,7 +1124,7 @@ for seg_name, w_range in ranges.items():
 
             hist_aux = np.histogram(np.ravel(aux_animal_i_s_flat), bins=100, range=(group_flat_speed.min(), group_flat_speed.max()))
 
-            plt.plot(hist_aux[1][:-1], hist_aux[0], '.-', label=f'Animal {i} nor {nor_index[idxs[i]]}')
+            plt.plot(hist_aux[1][:-1], hist_aux[0], '.-', label=f'Animal {i}')# nor {nor_index[idxs[i]]}')
             plt.xlabel('Speed')
             plt.ylabel('Count')
             plt.title(f'Animal Speed Histogram - {seg_name} - {gt}')
