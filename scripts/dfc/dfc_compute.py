@@ -13,7 +13,8 @@ from __future__ import annotations
 import argparse
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -38,6 +39,31 @@ DATASET_DEFAULTS: Dict[str, Dict[str, str]] = {
         "bundle_name": "ts_and_meta_julien_caillette.npz",
     },
 }
+
+
+def _compute_window_task(payload: Tuple[int, np.ndarray, int, int, str]) -> Tuple[int, np.ndarray]:
+    """Worker entry point returning (animal_idx, dfc_array)."""
+
+    idx, ts_single, window_size, lag, format_data = payload
+    result = ts2dfc_stream(ts_single, window_size=window_size, lag=lag, format_data=format_data)
+    return idx, result
+
+
+def _compute_window_batch_task(
+    payload: Tuple[int, np.ndarray, Tuple[int, ...], int, str]
+) -> Tuple[int, Dict[int, np.ndarray]]:
+    """Worker entry point computing multiple windows for a single animal."""
+
+    idx, ts_single, window_sizes, lag, format_data = payload
+    outputs: Dict[int, np.ndarray] = {}
+    for window_size in window_sizes:
+        outputs[window_size] = ts2dfc_stream(
+            ts_single,
+            window_size=window_size,
+            lag=lag,
+            format_data=format_data,
+        )
+    return idx, outputs
 
 
 def _canonical_dataset(name: str) -> str:
@@ -137,6 +163,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of worker threads for per-animal DFC computation (1 = serial). Example: --jobs 4",
     )
     parser.add_argument(
+        "--parallel-backend",
+        choices=["thread", "process"],
+        default="thread",
+        help="Executor backend to use when --jobs>1 (default: thread).",
+    )
+    parser.add_argument(
+        "--chunksize",
+        type=int,
+        default=None,
+        metavar="INT",
+        help="Optional chunksize hint for executor.map (higher can improve process pools).",
+    )
+    parser.add_argument(
+        "--batch-per-animal",
+        action="store_true",
+        help="When set with --jobs>1, each worker processes all requested windows for one animal to reduce scheduling overhead.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Inspect bundle metadata and planned outputs without computing or writing DFC files.",
@@ -193,6 +237,8 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
 
     if args.lag <= 0:
         parser.error(f"--lag must be >= 1 (got {args.lag}).")
+    if args.batch_per_animal and args.jobs <= 1:
+        parser.error("--batch-per-animal requires --jobs > 1.")
 
     # tau parsing
     tau_tokens = [token.strip() for token in str(args.tau).split(",") if token.strip()]
@@ -253,68 +299,129 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
         args.lag,
     )
 
+    map_kwargs = {}
+    backend = args.parallel_backend
+    if backend == "process" and args.chunksize:
+        map_kwargs["chunksize"] = args.chunksize
+
     start = time.time()
-    for tau in tau_values:
-        logger.info("Processing tau=%s", tau)
-        for w in win_range:
-            frames = (ts.shape[1] - w) // args.lag + 1
-            if frames <= 0:
-                logger.warning("Window %s exceeds timeseries length for lag=%s; skipping.", w, args.lag)
-                continue
-            filename = (
-                f"dfc_window_size={w}_lag={args.lag}_tau={tau}_"
-                f"animals={n_animals}_regions={n_regions}.npz"
-            )
-            fpath = dfc_dir / filename
+    executor_cm = nullcontext()
+    if args.jobs > 1:
+        executor_cls = ThreadPoolExecutor if backend == "thread" else ProcessPoolExecutor
+        executor_cm = executor_cls(max_workers=args.jobs)
 
-            if args.dry_run:
-                if fpath.exists():
-                    logger.info(
-                        "[dry-run] %s exists for tau=%s; cache policy '%s' would apply.", fpath, tau, args.cache
-                    )
-                else:
-                    logger.info("[dry-run] Would compute window=%s tau=%s -> %s", w, tau, fpath)
-                continue
-
-            if fpath.exists():
-                if args.cache == "skip":
-                    logger.info("[cache] Skipping existing %s", fpath)
+    with executor_cm as executor:
+        for tau in tau_values:
+            logger.info("Processing tau=%s", tau)
+            windows_to_compute: List[Tuple[int, Path]] = []
+            window_start: Dict[int, float] = {}
+            for w in win_range:
+                frames = (ts.shape[1] - w) // args.lag + 1
+                if frames <= 0:
+                    logger.warning("Window %s exceeds timeseries length for lag=%s; skipping.", w, args.lag)
                     continue
-                if args.cache in {"load", "verify"}:
-                    try:
-                        arr = np.load(fpath)["dfc"]
-                        if args.cache == "load":
-                            logger.info("[cache] Loaded %s shape=%s", fpath, arr.shape)
-                            continue
-                        if tuple(arr.shape) == expected_shape(ts, w, args.lag, args.format):
-                            logger.info("[cache] Verified %s; skipping", fpath)
-                            continue
-                        logger.warning(
-                            "[cache] Shape mismatch for %s (%s != %s); recomputing",
+                filename = (
+                    f"dfc_window_size={w}_lag={args.lag}_tau={tau}_"
+                    f"animals={n_animals}_regions={n_regions}.npz"
+                )
+                fpath = dfc_dir / filename
+
+                if args.dry_run:
+                    if fpath.exists():
+                        logger.info(
+                            "[dry-run] %s exists for tau=%s; cache policy '%s' would apply.",
                             fpath,
-                            arr.shape,
-                            expected_shape(ts, w, args.lag, args.format),
+                            tau,
+                            args.cache,
                         )
-                    except Exception as exc:  # pragma: no cover
-                        logger.warning("[cache] Failed to read %s (%s); recomputing", fpath, exc)
+                    else:
+                        logger.info("[dry-run] Would compute window=%s tau=%s -> %s", w, tau, fpath)
+                    continue
 
-            t0 = time.time()
-            indices = range(n_animals)
-            if args.jobs > 1:
-                logger.debug("Using threaded execution with %s workers", args.jobs)
+                if fpath.exists():
+                    if args.cache == "skip":
+                        logger.info("[cache] Skipping existing %s", fpath)
+                        continue
+                    if args.cache in {"load", "verify"}:
+                        try:
+                            arr = np.load(fpath)["dfc"]
+                            if args.cache == "load":
+                                logger.info("[cache] Loaded %s shape=%s", fpath, arr.shape)
+                                continue
+                            if tuple(arr.shape) == expected_shape(ts, w, args.lag, args.format):
+                                logger.info("[cache] Verified %s; skipping", fpath)
+                                continue
+                            logger.warning(
+                                "[cache] Shape mismatch for %s (%s != %s); recomputing",
+                                fpath,
+                                arr.shape,
+                                expected_shape(ts, w, args.lag, args.format),
+                            )
+                        except Exception as exc:  # pragma: no cover
+                            logger.warning("[cache] Failed to read %s (%s); recomputing", fpath, exc)
 
-                def _compute(idx: int) -> np.ndarray:
-                    return ts2dfc_stream(ts[idx], window_size=w, lag=args.lag, format_data=args.format)
+                windows_to_compute.append((w, fpath))
+                window_start[w] = time.time()
 
-                with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-                    dfc_list = list(pool.map(_compute, indices))
+            if args.dry_run or not windows_to_compute:
+                continue
+
+            if executor is not None and args.batch_per_animal:
+                logger.debug(
+                    "Using %s executor with %s workers (batched per animal)", backend, args.jobs
+                )
+                window_targets = {w: fpath for w, fpath in windows_to_compute}
+                window_buffers: Dict[int, List[np.ndarray | None]] = {
+                    w: [None] * n_animals for w in window_targets
+                }
+                completed_counts = {w: 0 for w in window_targets}
+                window_order = tuple(window_targets.keys())
+                indices = range(n_animals)
+                tasks = (
+                    (idx, ts[idx], window_order, args.lag, args.format)
+                    for idx in indices
+                )
+                for idx, outputs in executor.map(_compute_window_batch_task, tasks, **map_kwargs):
+                    for w, arr in outputs.items():
+                        if w not in window_targets:
+                            continue
+                        buffer = window_buffers[w]
+                        if buffer[idx] is None:
+                            buffer[idx] = arr
+                            completed_counts[w] += 1
+                            if completed_counts[w] == n_animals:
+                                dfc_arr = np.asarray(buffer, dtype=np.float32)
+                                np.savez_compressed(window_targets[w], dfc=dfc_arr)
+                                elapsed = time.time() - window_start[w]
+                                logger.info(
+                                    "Saved %s shape=%s in %.2fs",
+                                    window_targets[w],
+                                    dfc_arr.shape,
+                                    elapsed,
+                                )
+                                del window_targets[w]
+                                del window_buffers[w]
+                                del completed_counts[w]
             else:
-                dfc_list = [
-                    ts2dfc_stream(ts[i], window_size=w, lag=args.lag, format_data=args.format) for i in indices
-                ]
-            dfc_arr = np.asarray(dfc_list, dtype=np.float32)
-            np.savez_compressed(fpath, dfc=dfc_arr)
-            logger.info("Saved %s shape=%s in %.2fs", fpath, dfc_arr.shape, time.time() - t0)
+                for w, fpath in windows_to_compute:
+                    t0 = time.time()
+                    indices = range(n_animals)
+                    if executor is not None:
+                        logger.debug("Using %s executor with %s workers", backend, args.jobs)
+                        tasks = ((idx, ts[idx], w, args.lag, args.format) for idx in indices)
+                        dfc_list: List[np.ndarray | None] = [None] * n_animals
+                        for idx, arr in executor.map(_compute_window_task, tasks, **map_kwargs):
+                            dfc_list[idx] = arr
+                        if any(entry is None for entry in dfc_list):  # pragma: no cover - defensive
+                            raise RuntimeError("Parallel DFC compute returned incomplete results.")
+                    else:
+                        dfc_list = [
+                            ts2dfc_stream(ts[i], window_size=w, lag=args.lag, format_data=args.format)
+                            for i in indices
+                        ]
+                    dfc_arr = np.asarray(dfc_list, dtype=np.float32)
+                    np.savez_compressed(fpath, dfc=dfc_arr)
+                    logger.info("Saved %s shape=%s in %.2fs", fpath, dfc_arr.shape, time.time() - t0)
 
     if args.dry_run:
         logger.info("Dry run complete; no files were written.")
