@@ -57,15 +57,21 @@ This writes canonical bundles (`ts_and_meta_<dataset>.npz`) under `results/<data
 
 ### Compute dynamic FC streams
 
-Use the consolidated CLI (supports threaded execution via `--jobs`). See `docs/dfc_compute.md` for parameter reference and troubleshooting tips.
+Use the consolidated CLI (now with flexible parallel backends). See `docs/dfc_compute.md` for full parameter reference and troubleshooting tips.
 
 ```bash
 python scripts/dfc/dfc_compute.py \
   --dataset-name julien \
   --wmin 5 --wmax 20 --wstep 5 \
   --lag 1 --tau 5 --format 3D \
-  --jobs 4
+  --jobs 32 --parallel-backend thread --batch-per-animal
 ```
+
+Parallel tuning cheatsheet:
+- `--jobs N` controls worker count (set `N>1` to enable concurrency).
+- `--parallel-backend thread|process` chooses thread vs process executors (use `process` if the GIL becomes a bottleneck; default is `thread`).
+- `--chunksize K` hints how many tasks each process grabs per batch (useful only with the process backend; try 2–4 on large nodes).
+- `--batch-per-animal` gives each worker one animal at a time and computes all requested windows before returning—best when sweeping many window sizes or running on >32 cores.
 
 ### Compute dFC speed
 
