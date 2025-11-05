@@ -18,52 +18,44 @@ set -euo pipefail
 #   - If preprocessed files are missing, set PREPROCESS=1 to run preprocess.
 
 # --- Load environment variables from parent .env file ---
+# --- Load environment variables from parent .env file ---
 ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
 
 if [[ -f "${ENV_FILE}" ]]; then
-  export $(grep -v '^#' "${ENV_FILE}" | sed 's/[[:space:]]*#.*//' | xargs)
+  # Prefer sourcing so ${HOME} etc. expand correctly
+  # shellcheck disable=SC1090
+  set -a; source "${ENV_FILE}"; set +a
   echo "[info] Loaded environment from ${ENV_FILE}"
 else
   echo "[warn] No .env file found at ${ENV_FILE}"
 fi
 
-# --- Auto-detect environment based on hostname if not explicitly set ---
+# (remove this early echo that referenced PATHS_ROOT before it exists)
+# echo "[env] PATHS_ENV=${PATHS_ENV} | PATHS_ROOT=${PATHS_ROOT} | DATASET=${DATASET_NAME}"
+
+# --- Auto-select PATHS_ROOT based on host and environment ---
+HOSTNAME_LOWER=$(hostname | tr '[:upper:]' '[:lower:]')
+
 if [[ -z "${PATHS_ENV:-}" || "${PATHS_ENV}" == "AUTO" ]]; then
-  HOSTNAME_LOWER=$(hostname | tr '[:upper:]' '[:lower:]')
-  if [[ "${HOSTNAME_LOWER}" == *"funsyman"* ]]; then
-    PATHS_ENV="FUNSYMANIA"
-  elif [[ "${HOSTNAME_LOWER}" == *"funsystra"* ]]; then
-    PATHS_ENV="FUNSYSTRA"
-  elif [[ "${HOSTNAME_LOWER}" == *"funsystem"* ]]; then
-    PATHS_ENV="FUNSYSTEM"
+  if [[ "$HOSTNAME_LOWER" == *"funsymania"* ]]; then
+    PATHS_ENV="CLUSTER_NATIVE"
+    PATHS_ROOT="${PROJECT_ROOT_CLUSTER}"
+  elif [[ "$HOSTNAME_LOWER" == *"funsy"* ]]; then
+    PATHS_ENV="CLUSTER_SSHFS"
+    PATHS_ROOT="${PROJECT_ROOT_CLUSTER_SSHFS}"
   else
     PATHS_ENV="LOCAL"
+    PATHS_ROOT="${PROJECT_ROOT_LOCAL}"
   fi
-  echo "[info] Auto-detected PATHS_ENV=${PATHS_ENV} from hostname=${HOSTNAME_LOWER}"
 fi
 
-# --- Determine active environment and set PATHS_ROOT ---
-case "${PATHS_ENV:-LOCAL}" in
-  LOCAL)
-    PATHS_ROOT="${PROJECT_ROOT_LOCAL}"
-    ;;
-  FUNSYMANIA)
-    PATHS_ROOT="${PROJECT_ROOT_CLUSTER_FUNSYMANIA}"
-    ;;
-  FUNSYSTRA)
-    PATHS_ROOT="${PROJECT_ROOT_CLUSTER_FUNSYSTRA}"
-    ;;
-  FUNSYSTEM)
-    PATHS_ROOT="${PROJECT_ROOT_CLUSTER_FUNSYSTEM}"
-    ;;
-  *)
-    echo "[warn] Unknown PATHS_ENV=${PATHS_ENV}, defaulting to LOCAL"
-    PATHS_ROOT="${PROJECT_ROOT_LOCAL}"
-    ;;
-esac
-
+# ✅ Now it’s safe to log PATHS_ROOT
 echo "[info] Environment mode: ${PATHS_ENV}"
 echo "[info] Using PATHS_ROOT=${PATHS_ROOT}"
+export PATHS_ROOT
+echo "[env] DATASET=${DATASET_NAME}"
+
+
 # --- End load environment ---
 
 ACTION="${1:-run}"   # run | dry-run | list

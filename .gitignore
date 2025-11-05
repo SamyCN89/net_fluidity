@@ -84,3 +84,4 @@ node_modules/
 *.png
 *.jpg
 *.jpeg
+.env
