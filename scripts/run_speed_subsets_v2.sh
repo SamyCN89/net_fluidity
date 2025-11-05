@@ -21,21 +21,48 @@ set -euo pipefail
 ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
 
 if [[ -f "${ENV_FILE}" ]]; then
-  # Remove full-line and inline comments before exporting
-  # shellcheck disable=SC2046
   export $(grep -v '^#' "${ENV_FILE}" | sed 's/[[:space:]]*#.*//' | xargs)
   echo "[info] Loaded environment from ${ENV_FILE}"
 else
   echo "[warn] No .env file found at ${ENV_FILE}"
 fi
 
-
-# Select PATHS_ROOT based on environment flag
-if [[ "${PATHS_ENV:-LOCAL}" == "CLUSTER_FS" ]]; then
-  PATHS_ROOT="${PROJECT_ROOT_CLUSTER_FS}"
-else
-  PATHS_ROOT="${PROJECT_ROOT_LOCAL}"
+# --- Auto-detect environment based on hostname if not explicitly set ---
+if [[ -z "${PATHS_ENV:-}" || "${PATHS_ENV}" == "AUTO" ]]; then
+  HOSTNAME_LOWER=$(hostname | tr '[:upper:]' '[:lower:]')
+  if [[ "${HOSTNAME_LOWER}" == *"funsyman"* ]]; then
+    PATHS_ENV="FUNSYMANIA"
+  elif [[ "${HOSTNAME_LOWER}" == *"funsystra"* ]]; then
+    PATHS_ENV="FUNSYSTRA"
+  elif [[ "${HOSTNAME_LOWER}" == *"funsystem"* ]]; then
+    PATHS_ENV="FUNSYSTEM"
+  else
+    PATHS_ENV="LOCAL"
+  fi
+  echo "[info] Auto-detected PATHS_ENV=${PATHS_ENV} from hostname=${HOSTNAME_LOWER}"
 fi
+
+# --- Determine active environment and set PATHS_ROOT ---
+case "${PATHS_ENV:-LOCAL}" in
+  LOCAL)
+    PATHS_ROOT="${PROJECT_ROOT_LOCAL}"
+    ;;
+  FUNSYMANIA)
+    PATHS_ROOT="${PROJECT_ROOT_CLUSTER_FUNSYMANIA}"
+    ;;
+  FUNSYSTRA)
+    PATHS_ROOT="${PROJECT_ROOT_CLUSTER_FUNSYSTRA}"
+    ;;
+  FUNSYSTEM)
+    PATHS_ROOT="${PROJECT_ROOT_CLUSTER_FUNSYSTEM}"
+    ;;
+  *)
+    echo "[warn] Unknown PATHS_ENV=${PATHS_ENV}, defaulting to LOCAL"
+    PATHS_ROOT="${PROJECT_ROOT_LOCAL}"
+    ;;
+esac
+
+echo "[info] Environment mode: ${PATHS_ENV}"
 echo "[info] Using PATHS_ROOT=${PATHS_ROOT}"
 # --- End load environment ---
 
