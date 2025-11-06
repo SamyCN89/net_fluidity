@@ -1,8 +1,6 @@
 # %% ========================== IMPORTS & CONFIG ==========================
 
 from collections.abc import Iterable, Sequence
-from datetime import datetime
-from itertools import combinations
 import json
 from pathlib import Path
 import pickle
@@ -235,7 +233,6 @@ def flatten_group_animals_over_windows(
 def get_group_animals_over_windows(animal_speeds, indices, w_range):
     arr = np.asarray(animal_speeds, dtype=object)[list(indices)]
     return np.transpose([arr[:, j] for j in w_range], (1, 0))
-
 
 
 # %%
@@ -1185,6 +1182,7 @@ for groups_selected in groups_list:
                     "group_data": group_data,
                     "ranges": ranges,
                     "percentiles_": percentiles_,
+                    "centers": centers,
                     "ci_low_repeat": ci_low_repeat,
                     "ci_high_repeat": ci_high_repeat,
                     "ci_btr_downsample_repeat": vals_btr_downsample_repeat,
