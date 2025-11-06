@@ -1032,7 +1032,7 @@ n_resamples = 10_000
 # n_resamples = 10
 downsample_factor = 10
 seed = 42
-n_jobs = 30
+n_jobs = 60
 
 
 # %% ========================== GROUP INDICES ==========================
@@ -1120,6 +1120,7 @@ for groups_selected in groups_list:
             ci_high_repeat = data_loaded["ci_high_repeat"]
             vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
 
+
     else:
         # Downsampled classic bootstrap resampling with repeats
         ci_low_repeat, ci_high_repeat, vals_btr_downsample_repeat = (
@@ -1141,12 +1142,17 @@ for groups_selected in groups_list:
                     "ci_low_repeat": ci_low_repeat,
                     "ci_high_repeat": ci_high_repeat,
                     "ci_btr_downsample_repeat": vals_btr_downsample_repeat,
+                    "groups_selected": groups_selected,
+                    "group_data": group_data,
+                    "ranges": ranges,
+                    "percentiles_": percentiles_,
+                    "group_speed_by_segment": group_speed_by_segment,
+                    "pooled_group_speed_by_segment": pooled_group_speed_by_segment,
                 },
                 f,
             )
 
 #%%
-# Load ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
 
 
 
@@ -1235,6 +1241,7 @@ for seg_name, w_range in ranges.items():
         )
 
         group_speed_by_segment_i = group_speed_by_segment[seg_name][gt][0]
+
         plt.figure(figsize=(12, 10))
         for i in range(len(group_speed_by_segment_i)):
             # print(f"Animal {i} speed shape: {np.shape(group_speed_by_segment_i[i])}")
@@ -1262,6 +1269,7 @@ for seg_name, w_range in ranges.items():
             plt.xlabel("Speed")
             plt.ylabel("Count")
             plt.title(f"Animal Speed Histogram - {seg_name} - {gt}")
+            plt.xlim(0.1, 1.2)
 
             aux_animal_i_perc = np.percentile(aux_animal_i_s_flat, percentiles_)
             # print(f"Animal {i} percentiles: {aux_animal_i_perc}")
