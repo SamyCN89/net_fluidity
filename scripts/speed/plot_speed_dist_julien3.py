@@ -903,7 +903,7 @@ loaddir_cog_data = str(
 )
 # loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_48_regions_37.npz")
 # loaddir_speed = str(speed_root / "dmn_within/nregs-6/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
-loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
+loaddir_speed = str(speed_root / "all/speed_win{w}_lag1_tau2_animals_{n_animals}_regions_{regions}.npz")
 
 # Output location for group histograms
 # outdir_save_group_hists = speed_root / f"{dataset}_pool_{POOL_SPLIT}_bins{BINS_HIST}" / f"pooled_group_hists__{seg_name}.npz"
@@ -1028,11 +1028,11 @@ centers = 0.5 * (edges[:-1] + edges[1:])
 # ================================================================================
 
 percentiles_ = np.linspace(0, 100, 100)
-# n_resamples = 10_000
-n_resamples = 10
-downsample_factor = 40
+n_resamples = 10_000
+# n_resamples = 10
+downsample_factor = 10
 seed = 42
-n_jobs = 8
+n_jobs = 30
 
 
 # %% ========================== GROUP INDICES ==========================
