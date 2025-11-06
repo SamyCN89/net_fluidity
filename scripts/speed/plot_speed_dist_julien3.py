@@ -11,6 +11,7 @@ import time
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 import numpy as np
+from prometheus_client import g
 
 # from src import preprocess
 
@@ -1119,6 +1120,12 @@ for groups_selected in groups_list:
             ci_low_repeat = data_loaded["ci_low_repeat"]
             ci_high_repeat = data_loaded["ci_high_repeat"]
             vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
+            groups_selected = data_loaded["groups_selected"]
+            group_data = data_loaded["group_data"]
+            ranges = data_loaded["ranges"]
+            percentiles_ = data_loaded["percentiles_"]
+            group_speed_by_segment = data_loaded["group_speed_by_segment"]
+            pooled_group_speed_by_segment = data_loaded["pooled_group_speed_by_segment"]
 
 
     else:
@@ -1151,12 +1158,28 @@ for groups_selected in groups_list:
                 },
                 f,
             )
-
 #%%
 
+#% ========================== PLOTTING ==========================
 
 
-#%%
+for groups_selected in groups_list:
+    print(f"Processing grouping: {groups_selected}")
+
+    group_data = get_group_data(cog_data, dataset_name, groups_selected)
+
+    if outdir_bootstrap_repeat_aux.exists():
+        print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
+        with open(
+            outdir_bootstrap_repeat_aux,
+              "rb",
+        ) as f:
+            data_loaded = pickle.load(f)
+            ci_low_repeat = data_loaded["ci_low_repeat"]
+            ci_high_repeat = data_loaded["ci_high_repeat"]
+            vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
+
+
 # #plot group means_by_segment
 plt.figure(figsize=(16, 8))
 for seg_name, group_means in group_means_by_segment.items():
@@ -1175,6 +1198,12 @@ for seg_name, group_means in group_means_by_segment.items():
     plt.legend()
 plt.tight_layout()
 plt.show()
+
+
+
+
+
+#%%
 
 #plot pooled_group_hists_by_segment, top subplot female, bottom male
 plt.figure(figsize=(16, 8))
