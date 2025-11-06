@@ -74,20 +74,20 @@ GROUP_RECIPES = {
 
 
 # # --- Load helpers ---
-def load_speed_stack(
-    paths_speed_root: Path, time_windows_range: Sequence[int]
-) -> list[np.ndarray]:
-    """Return list S where S[j][i] is 1D np.array of samples for animal i at window j."""
-    speeds: list[np.ndarray] = []
-    for w in time_windows_range:
-        a = np.load(
-            paths_speed_root.format(w=w, n_animals=n_animals, regions=regions),
-            allow_pickle=True,
-        )
-        s = a["speeds"]
-        s_flat = [np.asarray(x, dtype=float).ravel() for x in s]
-        speeds.append(s_flat)
-    return speeds
+# def load_speed_stack(
+#     paths_speed_root: Path, time_windows_range: Sequence[int]
+# ) -> list[np.ndarray]:
+#     """Return list S where S[j][i] is 1D np.array of samples for animal i at window j."""
+#     speeds: list[np.ndarray] = []
+#     for w in time_windows_range:
+#         a = np.load(
+#             paths_speed_root.format(w=w, n_animals=n_animals, regions=regions),
+#             allow_pickle=True,
+#         )
+#         s = a["speeds"]
+#         s_flat = [np.asarray(x, dtype=float).ravel() for x in s]
+#         speeds.append(s_flat)
+#     return speeds
 
 
 # def load_speed_stack2(
@@ -106,56 +106,55 @@ def load_speed_stack(
 # # --- pooling helpers ---
 
 
-def count_samples_per_window(speeds: list[np.ndarray]) -> np.ndarray:
-    return np.array([sum(len(x) for x in speed) for speed in speeds], dtype=int)
+# def count_samples_per_window(speeds: list[np.ndarray]) -> np.ndarray:
+#     return np.array([sum(len(x) for x in speed) for speed in speeds], dtype=int)
 
 
-def cdf_split_indices(speeds: list[np.ndarray]) -> tuple[int, int, int]:
-    counts = count_samples_per_window(speeds)
-    cdf = (
-        np.cumsum(counts) / counts.sum()
-        if counts.sum() > 0
-        else np.zeros_like(counts, dtype=float)
-    )
-    i_third = int(np.searchsorted(cdf, 1.0 / 3.0))
-    i_half = int(np.searchsorted(cdf, 0.5))
-    i_two_third = int(np.searchsorted(cdf, 2.0 / 3.0))
-    i_third = max(1, i_third)
-    i_half = max(1, i_half)
-    i_two_third = max(i_third + 1, i_two_third)
-    return i_third, i_half, i_two_third
+# def cdf_split_indices(speeds: list[np.ndarray]) -> tuple[int, int, int]:
+#     counts = count_samples_per_window(speeds)
+#     cdf = (
+#         np.cumsum(counts) / counts.sum()
+#         if counts.sum() > 0
+#         else np.zeros_like(counts, dtype=float)
+#     )
+#     i_third = int(np.searchsorted(cdf, 1.0 / 3.0))
+#     i_half = int(np.searchsorted(cdf, 0.5))
+#     i_two_third = int(np.searchsorted(cdf, 2.0 / 3.0))
+#     i_third = max(1, i_third)
+#     i_half = max(1, i_half)
+#     i_two_third = max(i_third + 1, i_two_third)
+#     return i_third, i_half, i_two_third
 
 
-def select_windows(
-    pool_split: str, n_windows: int, i_third: int, i_half: int, i_two_third: int
-) -> dict[str, range]:
-    if pool_split == "all":
-        return {"all": range(0, n_windows)}
-    if pool_split == "half":
-        return {"short": range(0, i_half), "long": range(i_half, n_windows)}
-    return {
-        "short": range(0, i_third),
-        "mid": range(i_third, i_two_third),
-        "long": range(i_two_third, n_windows),
-    }
+# def select_windows(
+#     pool_split: str, n_windows: int, i_third: int, i_half: int, i_two_third: int
+# ) -> dict[str, range]:
+#     if pool_split == "all":
+#         return {"all": range(0, n_windows)}
+#     if pool_split == "half":
+#         return {"short": range(0, i_half), "long": range(i_half, n_windows)}
+#     return {
+#         "short": range(0, i_third),
+#         "mid": range(i_third, i_two_third),
+#         "long": range(i_two_third, n_windows),
+#     }
 
 
-def flatten_windows(speeds: list[np.ndarray], start: int, end: int) -> np.ndarray:
-    arrays = [
-        np.asarray(s, dtype=float).ravel() for speed in speeds[start:end] for s in speed
-    ]
-    return np.concatenate(arrays) if arrays else np.empty(0, dtype=float)
+# def flatten_windows(speeds: list[np.ndarray], start: int, end: int) -> np.ndarray:
+#     arrays = [
+#         np.asarray(s, dtype=float).ravel() for speed in speeds[start:end] for s in speed
+#     ]
+#     return np.concatenate(arrays) if arrays else np.empty(0, dtype=float)
 
 
-def global_min_max(arrs: Iterable[np.ndarray]) -> tuple[float, float]:
-    vals_min = [np.nanmin(a) for a in arrs if a.size]
-    vals_max = [np.nanmax(a) for a in arrs if a.size]
-    vmin = min(vals_min) if vals_min else 0.0
-    vmax = max(vals_max) if vals_max else 1.0
-    if vmin == vmax:
-        vmax = vmin + 1.0
-    return float(vmin), float(vmax)
-
+# def global_min_max(arrs: Iterable[np.ndarray]) -> tuple[float, float]:
+#     vals_min = [np.nanmin(a) for a in arrs if a.size]
+#     vals_max = [np.nanmax(a) for a in arrs if a.size]
+#     vmin = min(vals_min) if vals_min else 0.0
+#     vmax = max(vals_max) if vals_max else 1.0
+#     if vmin == vmax:
+#         vmax = vmin + 1.0
+#     return float(vmin), float(vmax)
 
 
 # # --- stats & histogram helpers ---
@@ -243,26 +242,25 @@ def global_min_max(arrs: Iterable[np.ndarray]) -> tuple[float, float]:
 
 
 # # %%
-def plot_group_median_vs_window(
-    ax: plt.Axes,
-    time_windows_range: Sequence[int],
-    group_data: dict[tuple[str, str], Sequence[int]],
-    speeds: list[np.ndarray],
-) -> None:
-    """Mean of per-animal medians vs window (group curve)."""
-    for (genotype, treatment, x), indices in group_data.items():
-        print(f"[INFO] Processing group: {genotype}, {treatment}")
-        y = []
-        for j in range(len(time_windows_range)):
-            per_animal_medians = [float(np.median(speeds[j][i])) for i in indices]
-            y.append(
-                float(np.mean(per_animal_medians)) if per_animal_medians else np.nan
-            )
-        ax.plot(time_windows_range, y, ".-", label=combo_label(genotype, treatment))
-    ax.set_xlabel("Time Window Size")
-    ax.set_ylabel("Mean of per-animal medians (dFC speed)")
-    ax.set_title("dFC Speed vs Window per Genotype–Treatment")
-    ax.legend()
+# def plot_group_median_vs_window(
+#     ax: plt.Axes,
+#     time_windows_range: Sequence[int],
+#     group_data: dict[tuple[str, str], Sequence[int]],
+#     speeds: list[np.ndarray],
+# ) -> None:
+#     """Mean of per-animal medians vs window (group curve)."""
+#     for (genotype, treatment), indices in group_data.items():
+#         y = []
+#         for j in range(len(time_windows_range)):
+#             per_animal_medians = [float(np.median(speeds[j][i])) for i in indices]
+#             y.append(
+#                 float(np.mean(per_animal_medians)) if per_animal_medians else np.nan
+#             )
+#         ax.plot(time_windows_range, y, ".-", label=combo_label(genotype, treatment))
+#     ax.set_xlabel("Time Window Size")
+#     ax.set_ylabel("Mean of per-animal medians (dFC speed)")
+#     ax.set_title("dFC Speed vs Window per Genotype–Treatment")
+#     ax.legend()
 
 
 # def plot_group_histograms(
@@ -904,8 +902,8 @@ cfg = DATASET_DEFAULTS[dataset]
 
 time_windows_range = np.arange(5, 100, 1)
 
-POOL_SPLIT = "third"  # 'half' | 'third' | 'all'
-BINS_HIST = 200
+# POOL_SPLIT = "third"  # 'half' | 'third' | 'all'
+# BINS_HIST = 200
 
 SAVE_GROUP_HISTS = True
 # %% ============= Get paths & output locations ====================
@@ -925,11 +923,11 @@ loaddir_cog_data = str(
     preprocessed_root
     / "cog_data_filtered_animals_{n_animals}_regions_{regions}_tr_{total_tr}.csv"
 )
-# loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_48_regions_37.npz")
-# loaddir_speed = str(speed_root / "dmn_within/nregs-6/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
-loaddir_speed = str(
-    speed_root / "all/speed_win{w}_lag1_tau2_animals_{n_animals}_regions_{regions}.npz"
-)
+# # loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_48_regions_37.npz")
+# # loaddir_speed = str(speed_root / "dmn_within/nregs-6/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
+# loaddir_speed = str(
+#     speed_root / "all/speed_win{w}_lag1_tau2_animals_{n_animals}_regions_{regions}.npz"
+# )
 
 # # Output location for group histograms
 # # outdir_save_group_hists = speed_root / f"{dataset}_pool_{POOL_SPLIT}_bins{BINS_HIST}" / f"pooled_group_hists__{seg_name}.npz"
@@ -995,11 +993,11 @@ cog_data = load_cognitive_data(
     loaddir_cog_data.format(n_animals=n_animals, regions=regions, total_tr=total_tr)
 )
 #%%
-#Load speed data
-speeds = load_speed_stack(
-    loaddir_speed,
-    time_windows_range,
-)
+# Load speed data
+# speeds = load_speed_stack(
+#     loaddir_speed,
+#     time_windows_range,
+# )
 
 
 # # %%
@@ -1010,10 +1008,10 @@ speeds = load_speed_stack(
 
 
 # # Precompute mean speed for each animal at each window (handy for mean-based bootstrap later)
-per_window_animal_means = [
-    np.array([float(np.mean(speeds[j][i])) for i in range(n_animals)], dtype=float)
-    for j in range(n_windows)
-]
+# per_window_animal_means = [
+#     np.array([float(np.mean(speeds[j][i])) for i in range(n_animals)], dtype=float)
+#     for j in range(n_windows)
+# ]
 
 # print(
 #     "[INFO] Data loaded. n_animals:",
@@ -1023,21 +1021,21 @@ per_window_animal_means = [
 #     "per_window_animal_means[0].shape:",
 #     per_window_animal_means[0].shape,
 # )
-# %% ========================== SPLITS IN POOLINGS & HIST SETUP ==========================
-# Get the split indices and ranges
-counts = count_samples_per_window(speeds)
-pooled_speeds_cdf = (
-    np.cumsum(counts) / np.sum(counts) if counts.sum() else np.zeros_like(counts)
-)
-i_third, i_half, i_two_third = cdf_split_indices(speeds)
-ranges = select_windows(
-    POOL_SPLIT, len(time_windows_range), i_third, i_half, i_two_third
-)
-# Get global min/max for histogram binning
-all_speeds_flat = flatten_windows(speeds, 0, len(speeds))
-all_speeds_min, all_speeds_max = global_min_max([all_speeds_flat])
-edges = np.linspace(all_speeds_min, all_speeds_max, BINS_HIST + 1)
-centers = 0.5 * (edges[:-1] + edges[1:])
+# # %% ========================== SPLITS IN POOLINGS & HIST SETUP ==========================
+# # Get the split indices and ranges
+# counts = count_samples_per_window(speeds)
+# pooled_speeds_cdf = (
+#     np.cumsum(counts) / np.sum(counts) if counts.sum() else np.zeros_like(counts)
+# )
+# i_third, i_half, i_two_third = cdf_split_indices(speeds)
+# ranges = select_windows(
+#     POOL_SPLIT, len(time_windows_range), i_third, i_half, i_two_third
+# )
+# # Get global min/max for histogram binning
+# all_speeds_flat = flatten_windows(speeds, 0, len(speeds))
+# all_speeds_min, all_speeds_max = global_min_max([all_speeds_flat])
+# edges = np.linspace(all_speeds_min, all_speeds_max, BINS_HIST + 1)
+# centers = 0.5 * (edges[:-1] + edges[1:])
 # # %%
 
 
@@ -1287,7 +1285,7 @@ for groups_selected in groups_list:
         plt.subplot(1, len(ranges), list(ranges.keys()).index(seg_name) + 1)
         plt.title(f"Confidence Intervals Comparison - {seg_name}")
         for gt in group_data.keys():
-            print("Plotting GT:", gt)
+            # print("Plotting GT:", gt)
             plt.fill_between(
                 percentiles_,
                 ci_low_repeat[seg_name][gt],
@@ -1369,6 +1367,66 @@ for groups_selected in groups_list:
 
 # %%
 
+# PArameters to play
+groups_selected = groups_list[0]
+group_data = get_group_data(cog_data, dataset_name, groups_selected)
+print(f"Processing grouping: {groups_selected}")
+print(f"Group data keys: {group_data.keys()}")
+
+outdir_bootstrap_repeat_aux = Path(
+    outdir_bootstrap_repeat.format(
+        groups_selected=groups_selected,
+        n_resamples=n_resamples,
+        downsample_factor=downsample_factor,
+        seed=seed,
+    )
+)
+print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
+
+if outdir_bootstrap_repeat_aux.exists():
+    print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
+    with open(
+        outdir_bootstrap_repeat_aux,
+        "rb",
+    ) as f:
+        data_loaded = pickle.load(f)
+        # metadata
+        groups_selected = data_loaded["groups_selected"]
+        group_data = data_loaded["group_data"]
+        ranges = data_loaded["ranges"]
+        percentiles_ = data_loaded["percentiles_"]
+        # bootstrap results
+        ci_low_repeat = data_loaded["ci_low_repeat"]
+        ci_high_repeat = data_loaded["ci_high_repeat"]
+        vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
+        # speed data
+        group_means_by_segment = data_loaded["group_means_by_segment"]
+        pooled_group_hists_by_segment = data_loaded["pooled_group_hists_by_segment"]
+        pooled_group_speed_by_segment = data_loaded["pooled_group_speed_by_segment"]
+        group_speed_by_segment = data_loaded["group_speed_by_segment"]
+        # --- unwrap legacy tuple structures ---
+        for seg_name, seg_dict in group_speed_by_segment.items():
+            for gt, val in seg_dict.items():
+                if isinstance(val, tuple):
+                    group_speed_by_segment[seg_name][gt] = val[0]
+
+
+
+#%%
+plt.figure(figsize=(16, 8))
+for seg_name, w_range in ranges.items():
+    plt.subplot(1, len(ranges), list(ranges.keys()).index(seg_name) + 1)
+    for gt in group_data.keys():
+        # group_speed_by_segment_i = group_speed_by_segment[seg_name][gt]
+        arr = group_speed_by_segment[seg_name][gt]  # shape: (n_animals_in_group, n_windows), dtype=object
+        n_animals_in_group = arr.shape[0]
+
+        for i in range(n_animals_in_group):
+            per_animal_windows = arr[i, :]  # object array of length n_windows
+            per_animal_flat = np.concatenate([w.ravel() for w in per_animal_windows if w is not None and np.size(w)])
+            # e.g., plot a histogram
+            h, edges = np.histogram(per_animal_flat, bins=100, range=(per_animal_flat.min(), per_animal_flat.max()))
+            plt.plot(edges[:-1], h, ".-", alpha=0.5, label=f"Animal {i}")
 
 # %%
 # ========================== PERCENTILE TRACKS ==========================
@@ -1489,7 +1547,6 @@ fig, axs = plt.subplots(2, 3, figsize=(11, 8), sharex=True)
 axes = axs.ravel()
 titles = ["1st pct", "5th pct", "Median", "95th pct", "99th pct"]
 for (genotype, treatment), indices in group_data.items():
-    print(f"[INFO] Processing group: {genotype}, {treatment}")
     color = combo_color(genotype, treatment)
     s1, s5, sm, s95, s99 = [], [], [], [], []
     for j in range(len(time_windows_range)):

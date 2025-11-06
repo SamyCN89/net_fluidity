@@ -232,13 +232,10 @@ def flatten_group_animals_over_windows(
     )
 
 
-def get_group_animals_over_windows(
-    animal_speeds: list[list[np.ndarray]], indices: Sequence[int], w_range: range
-) -> np.ndarray:
-    """Return object array shape (len(indices), len(w_range)) of arrays."""
-    arr = np.array(animal_speeds, dtype=object)[indices]
-    arrays = np.transpose([arr[:, j] for j in w_range], (1, 0))
-    return (arrays,) if arrays.size else np.array([], dtype=float)
+def get_group_animals_over_windows(animal_speeds, indices, w_range):
+    arr = np.asarray(animal_speeds, dtype=object)[list(indices)]
+    return np.transpose([arr[:, j] for j in w_range], (1, 0))
+
 
 
 # %%
@@ -495,11 +492,11 @@ def group_pool_bt_hierarchical_resampling(
         for gt, idxs in group_data.items():
             print(
                 "Speed shape:",
-                np.shape(group_speed_by_segment[seg_name][gt][0]),
+                np.shape(group_speed_by_segment[seg_name][gt]),
                 seg_name,
                 gt,
             )
-            group_speed_i = group_speed_by_segment[seg_name][gt][0]
+            group_speed_i = group_speed_by_segment[seg_name][gt]
             group_speed_n = len(group_speed_i)
 
             # resampling indices
@@ -1199,3 +1196,6 @@ for groups_selected in groups_list:
                 f,
             )
         print(f"Saved bootstrap to: {outdir_bootstrap_repeat_aux}")
+
+
+# %%
