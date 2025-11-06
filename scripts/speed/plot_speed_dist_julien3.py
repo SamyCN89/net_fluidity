@@ -903,16 +903,15 @@ loaddir_cog_data = str(
 )
 # loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_48_regions_37.npz")
 # loaddir_speed = str(speed_root / "dmn_within/nregs-6/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
-loaddir_speed = str(
-    speed_root
-    / "all/all/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz"
-)
+loaddir_speed = str(speed_root / "all/all/speed_win{w}_lag1_tau4_animals_{n_animals}_regions_{regions}.npz")
 
 # Output location for group histograms
 # outdir_save_group_hists = speed_root / f"{dataset}_pool_{POOL_SPLIT}_bins{BINS_HIST}" / f"pooled_group_hists__{seg_name}.npz"
 # bootstrap CI folder
 bootstrap_folder = paths["speed"] / "bootstrap"
 bootstrap_folder.mkdir(parents=True, exist_ok=True)
+
+outdir_bootstrap_repeat = str(bootstrap_folder / "bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl")
 
 outdir_speed_bootstrap_cis = str(
     bootstrap_folder / f"bootstrap_cis_{POOL_SPLIT}_bins{BINS_HIST}.npz"
@@ -952,6 +951,15 @@ savedir_pooled_group_hists = str(
     speed_root
     / "pooled_group_hists_{POOL_SPLIT}_bins{BINS_HIST}_animals_{n_animals}_regions{regions}_tr{total_tr}.png"
 )
+
+
+
+
+
+
+
+
+
 # %% ========================== LOAD DATA ==========================
 # Load timeseries bundle to get n_animals, n_regions, total_tr
 bundle = load_timeseries_bundle(loaddir_ts_meta)
@@ -1020,8 +1028,9 @@ centers = 0.5 * (edges[:-1] + edges[1:])
 # ================================================================================
 
 percentiles_ = np.linspace(0, 100, 100)
-n_resamples = 10_000
-downsample_factor = 10
+# n_resamples = 10_000
+n_resamples = 10
+downsample_factor = 40
 seed = 42
 n_jobs = 8
 
@@ -1033,99 +1042,108 @@ df_long = make_long_cog(cog_data, dataset_name)
 
 # pick a grouping
 # groups_selected = "age_sex_genotype"  # or "sex", "age", "phenotype_oip", ...
-groups_selected = "age_sex_phenotype_oip"  # or "sex", "age", "phenotype_oip", ...
-group_data = get_group_data(cog_data, dataset_name, groups_selected)
+
+groups_list = [
+    "age_sex",
+    "age_genotype",
+
+    "age_sex_genotype",
+    "age_sex_phenotype_oip",
+    "age_sex_phenotype_nor",
+]
+
+# groups_selected = "age_sex_phenotype_oip"  # or "sex", "age", "phenotype_oip", ...
+for groups_selected in groups_list:
+    print(f"Processing grouping: {groups_selected}")
+
+    group_data = get_group_data(cog_data, dataset_name, groups_selected)
 
 
-# %% ========================== PER-SEGMENT HISTOGRAMS ==========================
+    #  ========================== PER-SEGMENT HISTOGRAMS ==========================
 
-# Per-animal histograms & per-group mean histograms
-H_per_segment: dict[str, np.ndarray] = {}
-group_means_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
+    # Per-animal histograms & per-group mean histograms
+    H_per_segment: dict[str, np.ndarray] = {}
+    group_means_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
 
-# Build per-animal normalized histograms & per-group means
-for seg_name, w_range in ranges.items():
-    # per-animal normalized histograms
-    H = build_per_animal_normalized_hists(
-        speeds, w_range, BINS_HIST, (all_speeds_min, all_speeds_max)
-    )
-    H_per_segment[seg_name] = H
-    # per-group average histogram over animals
-    group_means: dict[tuple[str, str], np.ndarray] = {}
-    for gt, idxs in group_data.items():
-        group_means[gt] = np.mean(H[idxs], axis=0) if len(idxs) else np.zeros(BINS_HIST)
-    group_means_by_segment[seg_name] = group_means
-
-#%%
-# %% ========================== POOLING ==========================
-
-# Optional pooled hist per group (values aggregated across animals & windows)
-animal_speeds = [[speeds[j][i] for j in range(n_windows)] for i in range(n_animals)]
-pooled_group_hists_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
-pooled_group_speed_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
-group_speed_by_segment = {}
-
-for seg_name, w_range in ranges.items():
-    pooled_group_hist_i = {}
-    pooled_group_speed_i = {}
-    group_speed = {}
-    for gt, idxs in group_data.items():
-        # Get group animal speeds over selected windows
-        group_speed_i = get_group_animals_over_windows(animal_speeds, idxs, w_range)
-        group_speed[gt] = group_speed_i
-        # Flatten values for group animals over selected windows
-        flat = flatten_group_animals_over_windows(animal_speeds, idxs, w_range)
-        pooled_group_speed_i[gt] = flat
-        # Compute & normalize histogram
-        h, _ = safe_hist(flat, BINS_HIST, (all_speeds_min, all_speeds_max))
-        pooled_group_hist_i[gt] = normalize_counts_to_prob(h) * 2
-    pooled_group_hists_by_segment[seg_name] = pooled_group_hist_i
-    pooled_group_speed_by_segment[seg_name] = pooled_group_speed_i
-    group_speed_by_segment[seg_name] = group_speed
-
-# %%
-
-# Save ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
-if (Path(bootstrap_folder) / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl").exists():
-    print(f"Loading bootstrap: {Path(bootstrap_folder) / f'bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl'}.")
-    with open(
-        Path(bootstrap_folder)
-        / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl",
-        "rb",
-    ) as f:
-        data_loaded = pickle.load(f)
-        ci_low_repeat = data_loaded["ci_low_repeat"]
-        ci_high_repeat = data_loaded["ci_high_repeat"]
-        vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
-
-else:
-    # Downsampled classic bootstrap resampling with repeats
-    ci_low_repeat, ci_high_repeat, vals_btr_downsample_repeat = (
-        group_pool_bt_classic_resampling_downsampled(
-            ranges,
-            pooled_group_speed_by_segment,
-            group_data,
-            percentiles_,
-            repeat=n_resamples,
-            downsample_factor=downsample_factor,
-            seed=seed,
-            n_jobs=n_jobs,
-            verbose=1,
+    # Build per-animal normalized histograms & per-group means
+    for seg_name, w_range in ranges.items():
+        # per-animal normalized histograms
+        H = build_per_animal_normalized_hists(
+            speeds, w_range, BINS_HIST, (all_speeds_min, all_speeds_max)
         )
-    )
-    with open(
-        Path(bootstrap_folder)
-        / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl",
-        "wb",
-    ) as f:
-        pickle.dump(
-            {
-                "ci_low_repeat": ci_low_repeat,
-                "ci_high_repeat": ci_high_repeat,
-                "ci_btr_downsample_repeat": vals_btr_downsample_repeat,
-            },
-            f,
+        H_per_segment[seg_name] = H
+        # per-group average histogram over animals
+        group_means: dict[tuple[str, str], np.ndarray] = {}
+        for gt, idxs in group_data.items():
+            group_means[gt] = np.mean(H[idxs], axis=0) if len(idxs) else np.zeros(BINS_HIST)
+        group_means_by_segment[seg_name] = group_means
+
+    #  ========================== POOLING ==========================
+
+    # Optional pooled hist per group (values aggregated across animals & windows)
+    animal_speeds = [[speeds[j][i] for j in range(n_windows)] for i in range(n_animals)]
+    pooled_group_hists_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
+    pooled_group_speed_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
+    group_speed_by_segment = {}
+
+    for seg_name, w_range in ranges.items():
+        pooled_group_hist_i = {}
+        pooled_group_speed_i = {}
+        group_speed = {}
+        for gt, idxs in group_data.items():
+            # Get group animal speeds over selected windows
+            group_speed_i = get_group_animals_over_windows(animal_speeds, idxs, w_range)
+            group_speed[gt] = group_speed_i
+            # Flatten values for group animals over selected windows
+            flat = flatten_group_animals_over_windows(animal_speeds, idxs, w_range)
+            pooled_group_speed_i[gt] = flat
+            # Compute & normalize histogram
+            h, _ = safe_hist(flat, BINS_HIST, (all_speeds_min, all_speeds_max))
+            pooled_group_hist_i[gt] = normalize_counts_to_prob(h) * 2
+        pooled_group_hists_by_segment[seg_name] = pooled_group_hist_i
+        pooled_group_speed_by_segment[seg_name] = pooled_group_speed_i
+        group_speed_by_segment[seg_name] = group_speed
+
+    #
+
+    # ========================== BOOTSTRAP RESAMPLING WITH DOWNSAMPLING & REPEATS ==========================
+    outdir_bootstrap_repeat_aux = Path(outdir_bootstrap_repeat.format(groups_selected=groups_selected, n_resamples=n_resamples, downsample_factor=downsample_factor, seed=seed))
+    # Save ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
+    if outdir_bootstrap_repeat_aux.exists():
+        print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
+        with open(
+            outdir_bootstrap_repeat_aux,
+              "rb",
+        ) as f:
+            data_loaded = pickle.load(f)
+            ci_low_repeat = data_loaded["ci_low_repeat"]
+            ci_high_repeat = data_loaded["ci_high_repeat"]
+            vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
+
+    else:
+        # Downsampled classic bootstrap resampling with repeats
+        ci_low_repeat, ci_high_repeat, vals_btr_downsample_repeat = (
+            group_pool_bt_classic_resampling_downsampled(
+                ranges,
+                pooled_group_speed_by_segment,
+                group_data,
+                percentiles_,
+                repeat=n_resamples,
+                downsample_factor=downsample_factor,
+                seed=seed,
+                n_jobs=n_jobs,
+                verbose=1,
+            )
         )
+        with open(outdir_bootstrap_repeat_aux, "wb") as f:
+            pickle.dump(
+                {
+                    "ci_low_repeat": ci_low_repeat,
+                    "ci_high_repeat": ci_high_repeat,
+                    "ci_btr_downsample_repeat": vals_btr_downsample_repeat,
+                },
+                f,
+            )
 
 #%%
 # Load ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
