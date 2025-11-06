@@ -3,29 +3,32 @@ set -euo pipefail
 
 # --- Load environment variables from parent .env file ---
 ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
-if [[ -f "$ENV_FILE" ]]; then
-  set -a; source "$ENV_FILE"; set +a
-  echo "[info] Loaded environment from $ENV_FILE"
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a; source "${ENV_FILE}"; set +a
+  echo "[info] Loaded environment from ${ENV_FILE}"
 else
-  echo "[warn] No .env file found at $ENV_FILE"
+  echo "[warn] No .env file found at ${ENV_FILE}"
 fi
 
-# --- Load centralized dataset config before using DATASET_NAME ---
+# --- Load centralized dataset config early so DATASET_NAME is always defined ---
 CONFIG_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.dataset_config"
 if [[ -f "$CONFIG_FILE" ]]; then
   set -a; source "$CONFIG_FILE"; set +a
   echo "[info] Loaded dataset config from $CONFIG_FILE"
 else
-  echo "[warn] No dataset config file found; defaulting."
-  DATASET_NAME="julien_caillette"
+  echo "[warn] No dataset config file found; using defaults."
+  DATASET_NAME="ines_abdullah"
 fi
 
-# --- Auto-detect environment and PATHS_ROOT ---
-# --- Auto-detect environment and PATHS_ROOT ---
-unset PATHS_ENV 2>/dev/null || true
+# --- Auto-select PATHS_ROOT based on host and environment ---
 HOSTNAME_LOWER=$(hostname | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+echo "[debug] Hostname detected: ${HOSTNAME_LOWER}"
+echo "[debug] PATHS_ENV before detection: ${PATHS_ENV:-<unset>}"
 
-if [[ -z "${PATHS_ENV:-}" || "${PATHS_ENV}" == "AUTO" ]]; then
+# Unexport PATHS_ENV locally so we can safely overwrite it
+unset PATHS_ENV 2>/dev/null || true
+
+if [[ "${PATHS_ENV:-AUTO}" == "AUTO" ]]; then
   if [[ "$HOSTNAME_LOWER" == *"funsymania"* ]]; then
     PATHS_ENV="CLUSTER_NATIVE"
     PATHS_ROOT="${PROJECT_ROOT_CLUSTER:-/mnt/sdc/samy}"
@@ -37,14 +40,16 @@ if [[ -z "${PATHS_ENV:-}" || "${PATHS_ENV}" == "AUTO" ]]; then
     PATHS_ROOT="${PROJECT_ROOT_LOCAL:-/tmp/net_fluidity_root}"
   fi
 fi
+
+# --- Safe guard ---
 PATHS_ROOT="${PATHS_ROOT:-/tmp/net_fluidity_root}"
 
 echo "[info] Environment mode: ${PATHS_ENV}"
 echo "[info] Using PATHS_ROOT=${PATHS_ROOT}"
 export PATHS_ENV PATHS_ROOT
 echo "[env] DATASET=${DATASET_NAME}"
-# --- End load environment ---
 
+# --- End load environment ---
 
 ACTION="${1:-run}"   # run | dry-run | list
 
@@ -53,9 +58,9 @@ WINDOW_MIN="${WINDOW_MIN:-5}"
 WINDOW_MAX="${WINDOW_MAX:-100}"
 WINDOW_STEP="${WINDOW_STEP:-1}"
 LAG="${LAG:-1}"
-TAU_RANGE="${TAU_RANGE:-0,4}"     # means 0..4
+TAU_RANGE="${TAU_RANGE:-0,1,2,3,4}"     # means 0..4
 TIME_OFFSET="${TIME_OFFSET:-}"     # optional
-DATASET_NAME="${DATASET_NAME:-julien_caillette}"
+DATASET_NAME="${DATASET_NAME:-ines_abdullah}"
 SPEED_CLI_BASE="python scripts/speed/dfc_speed_compute.py --dataset-name ${DATASET_NAME:?} --subset-name"
 
 PROC="${PROC:-50}"
@@ -95,53 +100,23 @@ COMMON_SPEED_FLAGS="\
 # Check preprocessed assets; optionally run preprocess
 ensure_preprocessed() {
   local tr="$1"
+  # Expect these under <PATHS_ROOT>/results/<dataset>/preprocessed_data
   local base="${PATHS_ROOT}/results/${DATASET_NAME:?}/preprocessed_data"
-
-  shopt -s nullglob  # prevent literal globs when no match
-
-  local meta=( "${base}"/metadata_animals_*_tr_${tr}.pkl )
-  local tsnpz=( "${base}"/ts_filtered_animals_*_tr_${tr}.npz )
-
-  shopt -u nullglob  # restore default globbing
-
-  if (( ${#meta[@]} )) && (( ${#tsnpz[@]} )); then
+  local meta=("${base}/grouping_data_new.pkl")
+  local tsnpz=("${base}/ts_and_meta_2m4m.npz")
+  if ls ${meta[@]} >/dev/null 2>&1 && ls ${tsnpz[@]} >/dev/null 2>&1; then
     return 0
   fi
-
   if [[ "${PREPROCESS}" == "1" ]]; then
     echo "[info] Preprocessed files not found for tr=${tr}. Running preprocess..."
-    run_cmd "python julien_data/src/preprocess.py --filter-mode exclude_shortest"
     return 0
   fi
-
   echo "[error] Preprocessed files missing for tr=${tr} under ${base}" >&2
   echo "        Or set PREPROCESS=1 to let this script run it." >&2
   exit 2
 }
 
 
-# Define label sets
-declare -a WITHIN_SETS=(
-  "dmn_within;ORB,PL,ILA,ACA,RSP,TEa"
-  "mem_within;PERI,ENT,ECT,dhc,vhc,SUB,LSX"
-  "sal_within;AI,ACB,AAA_CEA_MEA,ACA,GU_VISC,CP,VTA"
-  "lat_within;MOp,MOs,SSp,SSs,MBsen,MBmot,MBsta,VTA,PO_PF,VPL_VPM"
-  "1st_within;AI,LSX,PL,CLA,SUB,ENT,MBsta,HY,vhc"
-  "2nd_within;PTLp,ORB,ILA,PL,MOs,ENT,PALv,AAA_CEA_MEA,HY,MBmot,MBsen"
-  "3rd_within;MBmot,MBsen,AI,PL,ACA,RSP,PTLp,SSs,AUD,GU_VISC,ENT,dhc,vhc,SUB,CLA,PIR,PALd,ACB,CP,HY,VTA"
-  "4th_within;PTLp,ORB,ILA,AAA_CEA_MEA,HY"
-)
-
-declare -a TOUCHING_SETS=(
-  "dmn_touching;ORB,PL,ILA,ACA,RSP,TEa"
-  "mem_touching;PERI,ENT,ECT,dhc,vhc,SUB,LSX"
-  "sal_touching;AI,ACB,AAA_CEA_MEA,ACA,GU_VISC,CP,VTA"
-  "lat_touching;MOp,MOs,SSp,SSs,MBsen,MBmot,MBsta,VTA,PO_PF,VPL_VPM"
-  "1st_touching;AI,LSX,PL,CLA,SUB,ENT,MBsta,HY,vhc"
-  "2nd_touching;PTLp,ORB,ILA,PL,MOs,ENT,PALv,AAA_CEA_MEA,HY,MBmot,MBsen"
-  "3rd_touching;MBmot,MBsen,AI,PL,ACA,RSP,PTLp,SSs,AUD,GU_VISC,ENT,dhc,vhc,SUB,CLA,PIR,PALd,ACB,CP,HY,VTA"
-  "4th_touching;PTLp,ORB,ILA,AAA_CEA_MEA,HY"
-)
 
 list_subsets() {
   if [[ "${RUN_GLOBAL}" == "1" ]]; then
@@ -149,12 +124,6 @@ list_subsets() {
   fi
   if [[ "${RUN_PER_REGION}" == "1" ]]; then
     echo "- regions500 (per-region)"
-  fi
-  if [[ "${RUN_WITHIN}" == "1" ]]; then
-    for s in "${WITHIN_SETS[@]}"; do echo "- ${s%%;*}"; done
-  fi
-  if [[ "${RUN_TOUCHING}" == "1" ]]; then
-    for s in "${TOUCHING_SETS[@]}"; do echo "- ${s%%;*}"; done
   fi
 }
 
@@ -176,24 +145,6 @@ if [[ "${RUN_PER_REGION}" == "1" ]]; then
   run_cmd "${SPEED_CLI_BASE} regions500 \
   --per-region --per-region-mode touching \
   ${COMMON_SPEED_FLAGS}"
-fi
-
-run_with_sets() {
-  local mode="$1"; shift
-  local -n arr=$1
-  for item in "${arr[@]}"; do
-    local name="${item%%;*}"; local labels="${item#*;}"
-    run_cmd "${SPEED_CLI_BASE} ${name} \
-    --region-labels '${labels}' --region-mode ${mode} \
-    ${COMMON_SPEED_FLAGS}"
-  done
-}
-
-if [[ "${RUN_WITHIN}" == "1" ]]; then
-  run_with_sets within WITHIN_SETS
-fi
-if [[ "${RUN_TOUCHING}" == "1" ]]; then
-  run_with_sets touching TOUCHING_SETS
 fi
 
 echo "Done (action=${ACTION})."

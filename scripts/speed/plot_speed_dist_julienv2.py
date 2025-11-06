@@ -262,8 +262,8 @@ def plot_group_histograms(
 
 
 # %% ========================== LOAD DATA ==========================
-dataset_name = "ines"
-# dataset_name = "julien"
+# dataset_name = "ines"
+dataset_name = "julien"
 save_fig = set_figure_params(True)
 dataset = _canonical_dataset(dataset_name)
 cfg = DATASET_DEFAULTS[dataset]
@@ -1056,7 +1056,7 @@ with open(Path(bootstrap_folder) / 'ci_btr_downsample_repeat.pkl', 'rb') as f:
     data_loaded = pickle.load(f)
     ci_low_btr_downsample_repeat = data_loaded['ci_low_btr_downsample_repeat']
     ci_high_btr_downsample_repeat = data_loaded['ci_high_btr_downsample_repeat']
-    ci_btr_downsample_repeat = data_loaded['ci_btr_downsample_repeat']  
+    ci_btr_downsample_repeat = data_loaded['ci_btr_downsample_repeat']
 #%%
 #plot to test the idea confidence intervals comparison
 # plt.figure(figsize=(8, 5))

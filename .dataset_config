@@ -1,0 +1,7 @@
+# .dataset_config
+DATASET_NAME=julien_caillette
+#for julien_caillette dataset TR=500 and for ines_abdullah dataset TR=450
+TR=500
+PROC=50
+PATHS_ENV=LOCAL
+
