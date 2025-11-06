@@ -1084,50 +1084,51 @@ for seg_name, w_range in ranges.items():
     group_speed_by_segment[seg_name] = group_speed
 
 # %%
-# Downsampled classic bootstrap resampling with repeats
-ci_low_repeat, ci_high_repeat, vals_btr_downsample_repeat = (
-    group_pool_bt_classic_resampling_downsampled(
-        ranges,
-        pooled_group_speed_by_segment,
-        group_data,
-        percentiles_,
-        repeat=n_resamples,
-        downsample_factor=downsample_factor,
-        seed=seed,
-        n_jobs=n_jobs,
-        verbose=1,
-    )
-)
-#%%
-# Save ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
-if Path(bootstrap_folder) / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl":
-    print("Overwriting existing bootstrap results file.")
 
-with open(
-    Path(bootstrap_folder)
-    / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl",
-    "wb",
-) as f:
-    pickle.dump(
-        {
-            "ci_low_repeat": ci_low_repeat,
-            "ci_high_repeat": ci_high_repeat,
-            "ci_btr_downsample_repeat": vals_btr_downsample_repeat,
-        },
-        f,
+# Save ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
+if (Path(bootstrap_folder) / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl").exists():
+    print(f"Loading bootstrap: {Path(bootstrap_folder) / f'bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl'}.")
+    with open(
+        Path(bootstrap_folder)
+        / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl",
+        "rb",
+    ) as f:
+        data_loaded = pickle.load(f)
+        ci_low_repeat = data_loaded["ci_low_repeat"]
+        ci_high_repeat = data_loaded["ci_high_repeat"]
+        vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
+
+else:
+    # Downsampled classic bootstrap resampling with repeats
+    ci_low_repeat, ci_high_repeat, vals_btr_downsample_repeat = (
+        group_pool_bt_classic_resampling_downsampled(
+            ranges,
+            pooled_group_speed_by_segment,
+            group_data,
+            percentiles_,
+            repeat=n_resamples,
+            downsample_factor=downsample_factor,
+            seed=seed,
+            n_jobs=n_jobs,
+            verbose=1,
+        )
     )
+    with open(
+        Path(bootstrap_folder)
+        / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl",
+        "wb",
+    ) as f:
+        pickle.dump(
+            {
+                "ci_low_repeat": ci_low_repeat,
+                "ci_high_repeat": ci_high_repeat,
+                "ci_btr_downsample_repeat": vals_btr_downsample_repeat,
+            },
+            f,
+        )
 
 #%%
 # Load ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
-with open(
-    Path(bootstrap_folder)
-    / f"bootstrap_downsample_repeat_group_{groups_selected}_nresamples_{n_resamples}_downsample_factor_{downsample_factor}_seed_{seed}.pkl",
-    "rb",
-) as f:
-    data_loaded = pickle.load(f)
-    ci_low_repeat = data_loaded["ci_low_repeat"]
-    ci_high_repeat = data_loaded["ci_high_repeat"]
-    vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
 
 
 
