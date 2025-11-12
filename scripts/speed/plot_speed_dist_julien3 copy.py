@@ -1367,7 +1367,7 @@ for groups_selected in groups_list:
 
 # %%
 
-# PArameters to play
+# Parameters to play
 groups_selected = groups_list[0]
 group_data = get_group_data(cog_data, dataset_name, groups_selected)
 print(f"Processing grouping: {groups_selected}")
