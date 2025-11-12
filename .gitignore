@@ -1,2 +1,87 @@
-*.pyc
+# --- Python base (GitHub style) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+.eggs/
+*.egg-info/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pyre/
+.pytype/
+.mypy_cache/
+.ruff_cache/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Virtual envs ---
+.venv/
+venv/
+ENV/
+env/
+.mamba/
+.conda/
+.env
 *.env
+
+# --- Editors / IDE (track only specific VS Code files below) ---
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.code-workspace
+workspaceState.state.json
+
+# --- Docs build artifacts ---
+docs/_build/
+site/
+
+# --- Logs & temp ---
+logs/
+*.log
+tmp/
+.tmp/
+
+# --- Project-specific heavy dirs ---
+allegiance/env/
+julien_data/results/
+
+# --- Large binary data often unversioned ---
+*.npz
+*.npy
+*.mat
+*.h5
+*.hdf5
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Node (if ever used) ---
+node_modules/
+
+# --- figures ---
+*.png
+*.jpg
+*.jpeg
+.env

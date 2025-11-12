@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: pytest",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Python: examples/toy_pipeline.py",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/toy_pipeline.py",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

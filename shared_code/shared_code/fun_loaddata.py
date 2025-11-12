@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Fri Mar  8 15:56:50 2024
 
@@ -11,19 +10,56 @@ Created on Fri Mar  8 15:56:50 2024
 # Samy Castro March 2024
 # =============================================================================
 
-from pathlib import Path
-import numpy as np
 import os
-from scipy.io import loadmat
-from joblib import Parallel, delayed, parallel_backend
 import re
+from pathlib import Path
+import socket
+from dataclasses import dataclass
 import logging
-from typing import Any, Union
 import pickle
+from typing import Any
+from collections.abc import Mapping, MutableMapping, Sequence
+
+import numpy as np
+from scipy.io import loadmat
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # safe fallback if python-dotenv not installed
+#%%
+# ==============================================
+# AUTO-ENVIRONMENT DETECTION & LOADER
+# ==============================================
+
+# 1. Load .env if available
+repo_root = Path(__file__).resolve().parents[2]
+dotenv_path = repo_root / ".env"
+if load_dotenv and dotenv_path.exists():
+    load_dotenv(dotenv_path, override=False)
+
+# 2. Auto-detect environment and set PATHS_ROOT
+hostname = socket.gethostname().lower()
+
+if "funsymania" in hostname:
+    default_root = "/mnt/sdc/samy"
+elif "funsy" in hostname:  # catches funsystra, funsystem, etc.
+    default_root = str(Path.home() / "mnt/funsymania_sdc/samy")
+else:
+    default_root = "/media/samy/Elements2/Proyectos/LauraHarsan"
+
+PATHS_ROOT = Path(os.environ.get("PATHS_ROOT", default_root))
+
+# Export for downstream code
+os.environ["PATHS_ROOT"] = str(PATHS_ROOT)
+
+print(f"[info] Using PATHS_ROOT={PATHS_ROOT}")  # optional for debugging
+
 # from .fun_dfcspeed import compute4window_new
 
-#%%
+# %%
 # -------- Utility functions for loading and saving raw data --------
+
 
 def load_mat_timeseries(folder: Path, verbose: bool = False) -> tuple:
     """
@@ -49,7 +85,7 @@ def load_mat_timeseries(folder: Path, verbose: bool = False) -> tuple:
     ts_list, shapes, names = [], [], []
     for fname in mat_files:
         try:
-            data = loadmat(folder / fname)['tc']
+            data = loadmat(folder / fname)["tc"]
             ts_list.append(data)
             shapes.append(data.shape)
             names.append(fname)
@@ -59,7 +95,10 @@ def load_mat_timeseries(folder: Path, verbose: bool = False) -> tuple:
         except Exception as e:
             print(f"Error loading {fname}: {e}")
     return ts_list, shapes, names
+
+
 # Load julien time series data from .mat files
+
 
 def extract_mouse_ids(filenames: list) -> list:
     """Extract mouse IDs from filenames.
@@ -79,41 +118,47 @@ def extract_mouse_ids(filenames: list) -> list:
             print(f"Warning: No match for {name}")
     return cleaned
 
+
 # =============================================================================
 # Save data functions
 # =============================================================================
-def save_pickle(obj: Any, path: Union[str, Path]) -> None:
+def save_pickle(obj: Any, path: str | Path) -> None:
     """Save a Python object to a file using pickle."""
     path = Path(path)  # always use Path object
-    with open(path, 'wb') as f:
+    with open(path, "wb") as f:
         pickle.dump(obj, f)
     logging.getLogger(__name__).info(f"Saved pickle: {path}")
 
+
 def load_pickle(path):
     """Load a Python object from a pickle file."""
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         logging.getLogger(__name__).info(f"Loaded pickle: {path}")
         return pickle.load(f)
 
-import numpy as np
 
-def load_fc2_npz(path: Union[str, Path]) -> Any:
+def load_fc2_npz(path: str | Path) -> Any:
     """Load fc2 results from a .npz file."""
     path = Path(path)
     try:
         with np.load(path, allow_pickle=True) as arr:
-            if 'fc2' in arr:
-                data = arr['fc2']
+            if "fc2" in arr:
+                data = arr["fc2"]
                 logging.getLogger(__name__).info(f"Loaded fc2 results from: {path}")
                 return data
             else:
-                logging.getLogger(__name__).warning(f"'fc2' key not found in {path}. Available keys: {arr.files}")
+                logging.getLogger(__name__).warning(
+                    f"'fc2' key not found in {path}. Available keys: {arr.files}"
+                )
                 return None
     except Exception as e:
-        logging.getLogger(__name__).error(f"Failed to load fc2 results from {path}: {e}")
+        logging.getLogger(__name__).error(
+            f"Failed to load fc2 results from {path}: {e}"
+        )
         return None
 
-#Load preprocessed data from .npz files
+
+# Load preprocessed data from .npz files
 def load_npz_dict(path_to_npz: Path) -> dict:
     """
     Load all arrays (and scalars) from an .npz file into a Python dict.
@@ -142,7 +187,122 @@ def load_npz_dict(path_to_npz: Path) -> dict:
             out[key] = arr
     data.close()
     return out
-#%%
+
+
+# =============================================================================
+# Bundled dataset loader
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class TimeSeriesBundle:
+    """
+    Container for preprocessed time series, metadata, and optional grouping masks.
+
+    Attributes
+    ----------
+    ts : np.ndarray
+        Array of shape (animals, timepoints, regions) containing the time series.
+    metadata : Mapping[str, Any]
+        Scalar attributes describing the dataset (e.g., n_animals, total_tp, regions,
+        anat_labels, is_2month_old). Keys follow the naming from the preprocessed NPZ.
+    mask_groups : tuple[np.ndarray, ...] | None
+        Grouping masks such as phenotype or genotype selectors. Defaults to None when
+        no grouping file is provided.
+    label_variables : tuple[Sequence[str], ...] | None
+        Human-readable labels matching `mask_groups`. Defaults to None when absent.
+    """
+
+    ts: np.ndarray
+    metadata: Mapping[str, Any]
+    mask_groups: tuple[np.ndarray, ...] | None = None
+    label_variables: tuple[Sequence[str], ...] | None = None
+
+    @property
+    def n_animals(self) -> int:
+        """Return the number of animals in the bundle."""
+        if "n_animals" in self.metadata:
+            return int(self.metadata["n_animals"])
+        return int(self.ts.shape[0])
+
+    @property
+    def n_regions(self) -> int:
+        """Return the number of brain regions."""
+        if "regions" in self.metadata:
+            return int(self.metadata["regions"])
+        if self.ts.ndim >= 3:
+            return int(self.ts.shape[-1])
+        raise AttributeError("Bundle does not expose region count.")
+
+    @property
+    def total_tr(self) -> int | None:
+        """Return the total number of timepoints when available."""
+        if "total_tr" in self.metadata:
+            return int(self.metadata["total_tr"])
+        return None
+
+    @property
+    def anat_labels(self) -> Sequence[str] | None:
+        """Return anatomical labels when available."""
+        if "anat_labels" in self.metadata:
+            return self.metadata["anat_labels"]
+        return None
+
+    @property
+    def is_2month_old(self) -> np.ndarray | None:
+        """Return boolean array indicating 2-month-old animals when available."""
+        if "is_2month_old" not in self.metadata:
+            return None
+        return self.metadata.get("is_2month_old")
+
+
+def load_timeseries_bundle(
+    preprocessed_npz: Path,
+    grouping_pickle: Path | None = None,
+) -> TimeSeriesBundle:
+    """
+    Load the canonical time-series bundle generated by preprocessing.
+
+    Parameters
+    ----------
+    preprocessed_npz : Path
+        Path to the `ts_and_meta_*.npz` artifact containing `ts` and metadata.
+    grouping_pickle : Path | None
+        Optional path to a pickle containing `(mask_groups, label_variables)`.
+
+    Returns
+    -------
+    TimeSeriesBundle
+        Structured container exposing time series, metadata, and optional grouping masks.
+    """
+    npz_data = load_npz_dict(preprocessed_npz)
+    if "ts" not in npz_data:
+        raise KeyError(f"'ts' key not found in {preprocessed_npz}")
+
+    ts = npz_data.pop("ts")
+    metadata: MutableMapping[str, Any] = dict(npz_data)
+
+    mask_groups = None
+    label_variables = None
+    if grouping_pickle is not None:
+        with open(grouping_pickle, "rb") as handle:
+            loaded = pickle.load(handle)
+        if isinstance(loaded, tuple) and len(loaded) == 2:
+            mask_groups, label_variables = loaded  # type: ignore[assignment]
+        else:
+            raise ValueError(
+                f"Grouping file {grouping_pickle} does not contain (mask_groups, label_variables)."
+            )
+
+    return TimeSeriesBundle(
+        ts=ts,
+        metadata=metadata,
+        mask_groups=mask_groups,
+        label_variables=label_variables,
+    )
+
+
+# %%
 def make_file_path(save_path, prefix, window_size, lag, n_animals, nodes):
     """
     Generate a consistent save path for cached files.
@@ -161,11 +321,18 @@ def make_file_path(save_path, prefix, window_size, lag, n_animals, nodes):
     if save_path:
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
-        if prefix== 'speed':
-            return save_path / f"{prefix}_window_size={window_size}_tau={lag}_animals={n_animals}_regions={nodes}.npz"
+        if prefix == "speed":
+            return (
+                save_path
+                / f"{prefix}_window_size={window_size}_tau={lag}_animals={n_animals}_regions={nodes}.npz"
+            )
         else:
-            return save_path / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
+            return (
+                save_path
+                / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
+            )
     return None
+
 
 def load_from_cache(file_path, key, logger=None, label=None):
     """
@@ -194,7 +361,7 @@ def load_from_cache(file_path, key, logger=None, label=None):
         except Exception as e:
             print(f"Failed to load cached {label or key} (reason: {e}). Recomputing...")
     return None
-        
+
 
 def save2disk(save_path, prefix, **data):
     """
@@ -208,7 +375,7 @@ def save2disk(save_path, prefix, **data):
     Returns:
         Path or None: The path where data was saved, or None if save_path not given.
     """
-    print('here')
+    print("here")
     if save_path:
         # file_path = save_path / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
         print(f"Saving {prefix} stream to: {save_path}")
@@ -216,9 +383,12 @@ def save2disk(save_path, prefix, **data):
         return save_path
     return None
 
-#%%
+
+# %%
 # Check if the prefix files exist and their sizes: using the check_and_rerun_missing_files function and get_missing_files function
-def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, size_threshold=1_000_000):
+def get_missing_files(
+    paths, prefix, time_window_range, lag, n_animals, roi, size_threshold=1_000_000
+):
     """
     Check if the prefix files exist for all specified window sizes after computing.
     If a file is empty/corrupt, it will be added to the *missing_files* list.
@@ -231,7 +401,7 @@ def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, siz
         roi (list): List of regions of interest.
         size_threshold (int): Minimum file size threshold to consider a file valid.
     Returns:
-        missing_files (list): List of time window sizes for which files are missing or invalid.     
+        missing_files (list): List of time window sizes for which files are missing or invalid.
     """
     missing_files = []
     for ws in time_window_range:
@@ -241,7 +411,9 @@ def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, siz
             missing_files.append(ws)
         # 2. Check if the file is empty or corrupt (less than 1 MB)
         else:
-            if file_path.stat().st_size < size_threshold:  # This will raise an error if the file is not valid
+            if (
+                file_path.stat().st_size < size_threshold
+            ):  # This will raise an error if the file is not valid
                 # Remove the file if it's empty or corrupt
                 print(f"File {file_path} exists but is empty or corrupt. Removing it.")
                 file_path.unlink(missing_ok=True)
@@ -249,36 +421,37 @@ def get_missing_files(paths, prefix, time_window_range, lag, n_animals, roi, siz
     return missing_files
 
 
+# %%
 
 
-#%%
-
-#%%
+# %%
 def filename_sort_mat(folder_path):
     """Read and sort MATLAB file names in a given folder path."""
-    files_name      = np.sort(os.listdir(folder_path))
+    files_name = np.sort(os.listdir(folder_path))
     return files_name
 
 
-def extract_hash_numbers(filenames, prefix='lot3_'):
+def extract_hash_numbers(filenames, prefix="lot3_"):
     """Extract hash numbers from filenames based on a given prefix."""
-    hash_numbers    = [int(name.split(prefix)[-1][:4]) for name in filenames if prefix in name]
+    hash_numbers = [
+        int(name.split(prefix)[-1][:4]) for name in filenames if prefix in name
+    ]
     return hash_numbers
+
 
 def load_matdata(folder_data, specific_folder, files_name):
     ts_list = []
-    hash_dir        = Path(folder_data) / specific_folder
+    hash_dir = Path(folder_data) / specific_folder
 
-    for idx,file_name in enumerate(files_name):
-        file_path       = hash_dir / file_name
-        
+    for _idx, file_name in enumerate(files_name):
+        file_path = hash_dir / file_name
+
         try:
-            data = loadmat(file_path)['tc']
+            data = loadmat(file_path)["tc"]
             ts_list.append(data)
         except Exception as e:
             print(f"Error loading data from {file_path}: {e}")
-    
-    
+
     # Check if the first dimension is consistent
     first_dim_size = ts_list[0].shape[0]
     if all(data.shape[0] == first_dim_size for data in ts_list):

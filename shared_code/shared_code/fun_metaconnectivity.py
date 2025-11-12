@@ -1,30 +1,27 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Wed Mar 26 00:16:53 2025
 
 @author: samy
 """
 
-import joblib
-import numpy as np
-import matplotlib.pyplot as plt
-import brainconn as bct
-import os
-import pandas as pd
+from itertools import combinations_with_replacement
+import logging
 from pathlib import Path
-import copy
 import pickle
+
+import brainconn as bct
+import joblib
+from joblib import Parallel, delayed, parallel_backend
+import numpy as np
 from tqdm import tqdm
 
-from itertools import combinations_with_replacement
-from joblib import Parallel, delayed, parallel_backend
-
 from .fun_dfcspeed import ts2dfc_stream
-from .fun_loaddata import *
-from .fun_optimization import fast_corrcoef#, fast_corrcoef_numba, fast_corrcoef_numba_parallel
+from .fun_loaddata import load_from_cache, make_file_path, save2disk
+from .fun_optimization import (
+    fast_corrcoef,
+)  # , fast_corrcoef_numba, fast_corrcoef_numba_parallel
 
-import logging
 # import time
 # from functions_analysis import *
 # from scipy.io import loadmat, savemat
@@ -34,15 +31,17 @@ import logging
 # from scipy.spatial.distance import squareform
 
 
-#%%Metaconnectivity 
+# %%Metaconnectivity
 
 logger = logging.getLogger(__name__)
 
+
 def animal_mc(ts, window_size, lag):
     """Compute MC for a single animal."""
-    dfc = ts2dfc_stream(ts, window_size, lag, format_data='2D')
+    dfc = ts2dfc_stream(ts, window_size, lag, format_data="2D")
     mc = fast_corrcoef(dfc.T)
     return mc
+
 
 def compute_metaconnectivity(ts_data, window_size=7, lag=1, save_path=None, n_jobs=-1):
     """Compute meta-connectivity matrices from time-series data using a sliding window approach.
@@ -60,7 +59,7 @@ def compute_metaconnectivity(ts_data, window_size=7, lag=1, save_path=None, n_jo
     file_path = make_file_path(save_path, "mc", window_size, lag, n_animals, nodes)
     # Load from cache if available
     if file_path is not None and file_path.exists():
-        return load_from_cache(file_path, key="mc", label='meta-connectivity')
+        return load_from_cache(file_path, key="mc", label="meta-connectivity")
 
     # Compute meta-connectivity in parallel
     with parallel_backend("loky", n_jobs=n_jobs):
@@ -71,117 +70,21 @@ def compute_metaconnectivity(ts_data, window_size=7, lag=1, save_path=None, n_jo
     # Stack results into a 3D array
     mc = np.stack(results)
     # Save results if a save path is provided
-    save2disk(file_path, prefix='mc', mc=mc)
+    save2disk(file_path, prefix="mc", mc=mc)
     if save_path:
         logger.info(f"Saving meta-connectivity to: {file_path}")
         np.savez_compressed(file_path, mc=mc)
     return mc
 
-#%%
-# Deprecated - Old version of compute_metaconnectivity function
-def compute_metaconnectivity_old(ts_data, window_size=7, lag=1, return_dfc=False, save_path=None, n_jobs=-1):
-    """
-    This function calculates meta-connectivity matrices from time-series data using 
-    a sliding window approach. It supports parallel computation and caching of results 
-    to optimize performance.
-
-    -----------
-    ts_data : np.ndarray
-        A 3D array of shape (n_animals, n_regions, n_timepoints) representing the 
-        time-series data for multiple animals and brain regions.
-    window_size : int, optional
-        The size of the sliding window used for dynamic functional connectivity (DFC) 
-        computation. Default is 7.
-    lag : int, optional
-        The lag parameter for time-series analysis. Default is 1.
-    return_dfc : bool, optional
-        If True, the function also returns the DFC stream. Default is False.
-    save_path : str or None, optional
-        The directory path where the computed meta-connectivity and DFC stream will 
-        be saved. If None, results are not saved. Default is None.
-    n_jobs : int, optional
-        The number of parallel jobs to use for computation. Use -1 to utilize all 
-        available CPU cores. Default is -1.
-
-    --------
-    mc : np.ndarray
-        A 3D array of meta-connectivity matrices for each animal.
-    dfc_stream : np.ndarray, optional
-        A 4D array of DFC streams for each animal, returned only if `return_dfc` is True.
-
-    Notes:
-    ------
-    - If a `save_path` is provided and a cached result exists, the function will load 
-      the cached data instead of recomputing it.
-    - The function uses joblib for parallel computation, with the "loky" backend.
-    - The meta-connectivity matrices are computed by correlating the DFC streams.
-
-    Examples:
-    ---------
-    # Example usage:
-    mc = compute_metaconnectivity(ts_data, window_size=10, lag=2, save_path="./cache")
-    mc, dfc_stream = compute_metaconnectivity(ts_data, return_dfc=True, n_jobs=4)
-    """
-
-    n_animals, tr_points, nodes  = ts_data.shape
-    dfc_stream  = None
-    mc          = None
-
-    # File path setup
-    save_path = Path(save_path) if save_path else None
-    file_path = (
-        save_path / f"mc_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
-        if save_path else None
-    )
-    if file_path:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        # file_path = os.path.join(save_path, f'mc_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz')
-        # os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-    # Load from cache
-    if file_path and file_path.exists():
-        print(f"Loading meta-connectivity from: {file_path}")
-        data = np.load(file_path, allow_pickle=True)
-        mc = data['mc']
-        dfc_stream = data['dfc_stream'] if return_dfc and 'dfc_stream' in data else None
-
-    else:
-        print(f"Computing meta-connectivity in parallel (window_size={window_size}, lag={lag})...")
-
-        # Parallel DFC stream computation per animal
-        with parallel_backend("loky", n_jobs=n_jobs):
-            dfc_stream_list = Parallel()(
-                delayed(ts2dfc_stream)(ts_data[i], window_size, lag, format_data='2D')
-                # for i in tqdm(range(n_animals), desc="DFC Streams")
-                for i in range(n_animals)
-            )
-        dfc_stream = np.stack(dfc_stream_list)
-
-        # Parallel MC matrices per animal
-        with parallel_backend("loky", n_jobs=n_jobs):
-            mc_list = Parallel()(
-                delayed(fast_corrcoef)(dfc.T)
-                # for dfc in tqdm(dfc_stream, desc="Meta-connectivity")
-                for dfc in dfc_stream
-                )
-        mc = np.stack(mc_list)
-
-        # Save results if path is provided
-        if file_path:
-            print(f"Saving meta-connectivity to: {file_path}")
-            if return_dfc:
-                np.savez_compressed(file_path, mc=mc, dfc_stream=dfc_stream if return_dfc else None)
-            else:
-                np.savez_compressed(file_path, mc=mc)
-    # print(f"Max RAM usage during run: {max(all_mem_use):.2f} MB")
-    return (mc, dfc_stream) if return_dfc else mc
 
 
-#%%
+
+# %%
 # =============================================================================
 # Allegiance computing functions - Using und sign Louvain method
-# Maybe add Leiden ? 
+# Maybe add Leiden ?
 # =============================================================================
+
 
 # Louvain method for community detection function
 def _run_louvain(mc_data, gamma):
@@ -190,6 +93,7 @@ def _run_louvain(mc_data, gamma):
     """
     Ci, Q = bct.modularity.modularity_louvain_und_sign(mc_data, gamma=gamma)
     return np.asanyarray(Ci, dtype=np.int32), Q
+
 
 def _build_agreement_matrix(communities):
     """
@@ -221,9 +125,10 @@ def _build_agreement_matrix(communities):
 
     for Ci in communities:
         # agreement += (Ci[:, None] == Ci[None, :])
-        agreement += (Ci[:, None] == Ci)
+        agreement += Ci[:, None] == Ci
 
     return agreement.astype(np.float32)
+
 
 def build_agreement_matrix_vectorized(communities):
     """
@@ -234,46 +139,61 @@ def build_agreement_matrix_vectorized(communities):
     """
     # communities shape: (n_runs, n_nodes)
     # compare all node pairs for each run, shape becomes (n_runs, n_nodes, n_nodes)
-    equal_matrix = (communities[:, :, None] == communities[:, None, :])
+    equal_matrix = communities[:, :, None] == communities[:, None, :]
     # Sum over runs
     agreement = np.sum(equal_matrix, axis=0)
     return agreement.astype(np.float32)
-#%%
 
-def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, cache_path=None, ref_name='', n_jobs=-1, return_='normal'):
+
+# %%
+
+
+def contingency_matrix_fun(
+    n_runs,
+    mc_data,
+    gamma_range=10,
+    gmin=0.8,
+    gmax=1.3,
+    cache_path=None,
+    ref_name="",
+    n_jobs=-1,
+    return_="normal",
+):
     """
     Compute or load a contingency matrix from community detection runs using joblib and vectorized agreement matrix.
     """
-    # Initialize parameters 
+    # Initialize parameters
     n_nodes = mc_data.shape[0]
     gamma_mod = np.linspace(gmin, gmax, gamma_range)
-    
-    # Setup cache directory 
+
+    # Setup cache directory
     if cache_path:
         cache_dir = Path(cache_path)
         cache_dir.mkdir(parents=True, exist_ok=True)
         safe_ref_name = ref_name.replace(" ", "_")
-        full_cache_path = cache_dir / f'contingency_matrix_ref={safe_ref_name}_regions={n_nodes}_nruns={n_runs}_gamma_repetitions={gamma_range}.pkl'
+        full_cache_path = (
+            cache_dir
+            / f"contingency_matrix_ref={safe_ref_name}_regions={n_nodes}_nruns={n_runs}_gamma_repetitions={gamma_range}.pkl"
+        )
         if full_cache_path.exists():
-            with full_cache_path.open('rb') as f:
+            with full_cache_path.open("rb") as f:
                 print(f"[cache] Loading contingency matrix from {full_cache_path}")
                 return pickle.load(f)
     else:
         full_cache_path = None
 
     # Prepare job list for all gamma/runs
-    job_list = [(gamma, run_id) 
-                for gamma in gamma_mod 
-                for run_id in range(n_runs)]
+    job_list = [(gamma, run_id) for gamma in gamma_mod for run_id in range(n_runs)]
 
     # Run all in parallel
     all_results = Parallel(n_jobs=n_jobs)(
-        delayed(_run_louvain)(mc_data, gamma) for gamma, _ in tqdm(job_list, desc="Running Louvain jobs")
+        delayed(_run_louvain)(mc_data, gamma)
+        for gamma, _ in tqdm(job_list, desc="Running Louvain jobs")
     )
 
     # Reshape into [gamma_index][runs]
     results_by_gamma = [[] for _ in range(gamma_range)]
-    for (gamma, _), result in zip(job_list, all_results):
+    for (gamma, _), result in zip(job_list, all_results, strict=False):
         gamma_idx = np.argmin(np.abs(gamma_mod - gamma))  # match gamma to index
         results_by_gamma[gamma_idx].append(result)
 
@@ -284,9 +204,9 @@ def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, 
     communities_mat = np.zeros((gamma_range, n_runs, n_nodes), dtype=np.float32)
 
     # Process per gamma
-    for idx, gamma in enumerate(tqdm(gamma_mod, desc="Processing gammas")):
+    for idx, _gamma in enumerate(tqdm(gamma_mod, desc="Processing gammas")):
         results = results_by_gamma[idx]
-        communities, modularities = zip(*results)
+        communities, modularities = zip(*results, strict=False)
         communities = np.array(communities, dtype=np.int32)
         communities_mat[idx] = communities
         gamma_qmod_val[idx] = modularities
@@ -296,21 +216,23 @@ def contingency_matrix_fun(n_runs, mc_data, gamma_range=10, gmin=0.8, gmax=1.3, 
         gamma_agreement_mat[idx] = agreement
         contingency_matrix += agreement
 
-    contingency_matrix /= (n_runs * gamma_range)
+    contingency_matrix /= n_runs * gamma_range
 
     # Save to cache
     if full_cache_path is not None:
-        with full_cache_path.open('wb') as f:
+        with full_cache_path.open("wb") as f:
             pickle.dump((contingency_matrix, gamma_qmod_val, gamma_agreement_mat), f)
             print(f"[cache] Saved to {full_cache_path}")
-    if return_=='normal':
+    if return_ == "normal":
         return contingency_matrix, gamma_qmod_val, gamma_agreement_mat
-    elif return_=='community':
+    elif return_ == "community":
         return contingency_matrix, gamma_qmod_val, gamma_agreement_mat, communities_mat
 
-#%%
-def allegiance_matrix_analysis(mc_data, n_runs=100, gamma_pt=10, cache_path=None, ref_name='', n_jobs=-1):
 
+# %%
+def allegiance_matrix_analysis(
+    mc_data, n_runs=100, gamma_pt=10, cache_path=None, ref_name="", n_jobs=-1
+):
     """
     Wrapper to compute allegiance communities and sorting indices.
 
@@ -335,24 +257,34 @@ def allegiance_matrix_analysis(mc_data, n_runs=100, gamma_pt=10, cache_path=None
     # print('here',cache_path)
     # contingency_matrix, gamma_mean, gamma_std = contingency_matrix_fun_old(
     contingency_matrix, _, _ = contingency_matrix_fun(
-        n_runs=n_runs, 
-        mc_data=mc_data, 
-        gamma_range=gamma_pt, 
-        cache_path=cache_path, 
+        n_runs=n_runs,
+        mc_data=mc_data,
+        gamma_range=gamma_pt,
+        cache_path=cache_path,
         ref_name=ref_name,
-        n_jobs=n_jobs
+        n_jobs=n_jobs,
     )
 
-    allegancy_communities, allegancy_modularity_q = bct.modularity.modularity_louvain_und_sign(contingency_matrix, gamma=1.2)
+    allegancy_communities, allegancy_modularity_q = (
+        bct.modularity.modularity_louvain_und_sign(contingency_matrix, gamma=1.2)
+    )
     argsort_allegancy_communities = np.argsort(allegancy_communities)
 
-    return allegancy_communities, argsort_allegancy_communities, allegancy_modularity_q, contingency_matrix
+    return (
+        allegancy_communities,
+        argsort_allegancy_communities,
+        allegancy_modularity_q,
+        contingency_matrix,
+    )
 
-def fun_allegiance_communities(mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1):
-    """ 
+
+def fun_allegiance_communities(
+    mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1
+):
+    """
     Compute allegiance communities from a single or multiple mc matrices.
 
-    
+
     Parameters:
         mc_data: 2D or 3D ndarray
         n_runs: int
@@ -364,9 +296,9 @@ def fun_allegiance_communities(mc_data, n_runs=1000, gamma_pt=100, ref_name=None
         communities, sort_idx, contingency_matrix
     """
 
-    # Load from the cache if the file already exists 
+    # Load from the cache if the file already exists
 
-    file_path = None 
+    file_path = None
     if save_path and ref_name:
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
@@ -380,15 +312,15 @@ def fun_allegiance_communities(mc_data, n_runs=1000, gamma_pt=100, ref_name=None
             # Uncomment the following lines if you want to use pickle instead of joblib
             # with file_path.open('rb') as f:
             #     return pickle.load(f)
-   
+
     # Compute the contingency matrix
     contingency_matrix, _, _ = contingency_matrix_fun(
-        n_runs=n_runs, 
-        mc_data=mc_data, 
-        gamma_range=gamma_pt, 
-        cache_path=save_path, 
-        ref_name=ref_name, 
-        n_jobs=n_jobs
+        n_runs=n_runs,
+        mc_data=mc_data,
+        gamma_range=gamma_pt,
+        cache_path=save_path,
+        ref_name=ref_name,
+        n_jobs=n_jobs,
     )
     # Compute the allegiance communities using the contingency matrix
     communities, sort_idx, _, contingency = allegiance_matrix_analysis(
@@ -396,21 +328,27 @@ def fun_allegiance_communities(mc_data, n_runs=1000, gamma_pt=100, ref_name=None
         n_runs=n_runs,
         gamma_pt=gamma_pt,
         cache_path=save_path,
-        ref_name=ref_name+'_recursive',
-        n_jobs=n_jobs
-    ) 
+        ref_name=ref_name + "_recursive",
+        n_jobs=n_jobs,
+    )
 
-    # Sort the communities 
-    # communities = communities[sort_idx] 
+    # Sort the communities
+    # communities = communities[sort_idx]
     # Save the results if save_path and ref_name are provided
     if file_path:
         print(f"[cache] Saving allegiance communities to {file_path}")
         # Save using joblib
         joblib.dump((communities, sort_idx, contingency), file_path)
-    return communities, sort_idx, contingency  # Return the communities, sorting indices, and contingency matrix
+    return (
+        communities,
+        sort_idx,
+        contingency,
+    )  # Return the communities, sorting indices, and contingency matrix
 
 
-def fun_allegiance_communities2(mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1):
+def fun_allegiance_communities2(
+    mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1
+):
     """
     Compute allegiance communities from a single or multiple meta-connectivity matrices.
 
@@ -436,16 +374,22 @@ def fun_allegiance_communities2(mc_data, n_runs=1000, gamma_pt=100, ref_name=Non
         contingency_matrix: ndarray
             Contingency matrix from Louvain runs.
     """
+
     def process_single(mc_matrix):
         communities, sort_idx, _, contingency = allegiance_matrix_analysis(
-            mc_matrix, n_runs=n_runs, gamma_pt=gamma_pt, cache_path=save_path, ref_name=ref_name, n_jobs=n_jobs
+            mc_matrix,
+            n_runs=n_runs,
+            gamma_pt=gamma_pt,
+            cache_path=save_path,
+            ref_name=ref_name,
+            n_jobs=n_jobs,
         )
         return communities, sort_idx, contingency
 
     if mc_data.ndim == 3:
         # Process multiple MC matrices
         communities_list, sort_idx_list, contingency_list = zip(
-            *(process_single(mc_data[i]) for i in range(mc_data.shape[0]))
+            *(process_single(mc_data[i]) for i in range(mc_data.shape[0])), strict=False
         )
         communities = np.mean(communities_list, axis=0)
         sort_idx = np.argsort(communities)
@@ -463,12 +407,16 @@ def fun_allegiance_communities2(mc_data, n_runs=1000, gamma_pt=100, ref_name=Non
             Path(save_path) / f"allegiance_{ref_name}.npz",
             communities=communities,
             sort_idx=sort_idx,
-            contingency=contingency_matrix
+            contingency=contingency_matrix,
         )
 
     return communities, sort_idx, contingency_matrix
-#%%
-def allegiance_wrapper_(mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1):
+
+
+# %%
+def allegiance_wrapper_(
+    mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_path=None, n_jobs=-1
+):
     """
     Compute allegiance communities from one or more MC matrices.
     """
@@ -476,11 +424,19 @@ def allegiance_wrapper_(mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_
 
     def process_single(mc_matrix):
         communities, sort_idx, _, contingency = allegiance_matrix_analysis(
-            mc_matrix, n_runs=n_runs, gamma_pt=gamma_pt, cache_path=save_path,
-            ref_name=ref_name, n_jobs=n_jobs)
+            mc_matrix,
+            n_runs=n_runs,
+            gamma_pt=gamma_pt,
+            cache_path=save_path,
+            ref_name=ref_name,
+            n_jobs=n_jobs,
+        )
         return communities, sort_idx, contingency
+
     # Compute allegiance communities for each matrix
-    allegiances = [process_single(mc) for mc in mc_data]  # Updated to call process_single
+    allegiances = [
+        process_single(mc) for mc in mc_data
+    ]  # Updated to call process_single
 
     communities = np.mean([al[0] for al in allegiances], axis=0)
     sort_idx = np.argsort(communities)
@@ -488,10 +444,10 @@ def allegiance_wrapper_(mc_data, n_runs=1000, gamma_pt=100, ref_name=None, save_
     communities = communities[sort_idx]
     # Save results if save_path and ref_name are provided
 
-
     return communities, sort_idx, contingency
 
-#%%
+
+# %%
 # Parallell cluster function of Allegiance communities
 
 
@@ -505,50 +461,61 @@ def load_merged_allegiance(paths, window_size=9, lag=1):
 
     Returns:
         tuple: A tuple containing the dfc_communities, sort_allegiances, and contingency_matrices.
-        
+
     """
-    ts = np.load(paths['sorted'] / 'ts_and_meta_2m4m.npz', allow_pickle=True)['ts']
+    ts = np.load(paths["sorted"] / "ts_and_meta_2m4m.npz", allow_pickle=True)["ts"]
     n_animals = len(ts)
     n_regions = ts[0].shape[1]
-    filename = f'window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}'
-    path = paths['allegiance'] / f'merged_allegiance_{filename}.npz'
+    filename = (
+        f"window_size={window_size}_lag={lag}_animals={n_animals}_regions={n_regions}"
+    )
+    path = paths["allegiance"] / f"merged_allegiance_{filename}.npz"
     data = np.load(path)
-    return data['dfc_communities'], data['sort_allegiances'], data['contingency_matrices']
+    return (
+        data["dfc_communities"],
+        data["sort_allegiances"],
+        data["contingency_matrices"],
+    )
 
-#%%
+
+# %%
 # =============================================================================
 # Modularity functions
 # =============================================================================
 def intramodule_indices_mask(allegancy_communities):
-    
+
     n_2 = len(allegancy_communities)
 
     # Dictionary mapping module → list of node indices in that module
     intramodules_idx = {
-        mod: np.where(mod == allegancy_communities)[0] 
-        for mod in np.unique(allegancy_communities)}
-    
+        mod: np.where(mod == allegancy_communities)[0]
+        for mod in np.unique(allegancy_communities)
+    }
+
     # Build an array of (mod, i, j) for every intra-module pair (i, j)
     # Uses combinations_with_replacement to include self-connections (i == j)
     # pairs = [(mod, list(combinations_with_replacement(intramodules_idx[1], 2))) for mod in np.unique(allegancy_communities)]
-    intramodule_indices = np.array([
-        (mod, i, j)
-        for mod in np.unique(allegancy_communities)
-        for i, j in combinations_with_replacement(intramodules_idx[mod], 2)
-        ]).T
-    
+    intramodule_indices = np.array(
+        [
+            (mod, i, j)
+            for mod in np.unique(allegancy_communities)
+            for i, j in combinations_with_replacement(intramodules_idx[mod], 2)
+        ]
+    ).T
+
     # intramodule_indices[:,intramodule_indices[0]==1]
-    
+
     mc_modules_mask = np.zeros((n_2, n_2))
-    for ind, mod in enumerate(range(1, np.max(np.unique(allegancy_communities))+1)):
+    for ind, mod in enumerate(range(1, np.max(np.unique(allegancy_communities)) + 1)):
         idx = np.abs(intramodules_idx[mod])
         mc_modules_mask[np.ix_(idx, idx)] = ind + 1
-    
+
     return intramodules_idx, intramodule_indices, mc_modules_mask
 
-#%%
+
+# %%
 # =============================================================================
-# MC FC - connectivity indices 
+# MC FC - connectivity indices
 # =============================================================================
 # The following functions are used to compute the indices of the functional connectivity (FC) and meta-connectivity (MC) matrices.
 def get_fc_mc_indices(regions, allegiance_sort=None):
@@ -558,7 +525,7 @@ def get_fc_mc_indices(regions, allegiance_sort=None):
     The function returns the indices for both FC and MC matrices.
 
     Parameters:
-    ----------     
+    ----------
     regions : int
         The number of regions in the functional connectivity matrix.
     allegiance_sort : array-like, optional
@@ -576,9 +543,9 @@ def get_fc_mc_indices(regions, allegiance_sort=None):
     # The lower triangular part is used to avoid redundancy in the connectivity matrices.
     # The k=-1 argument excludes the diagonal.
     # The fc_idx and mc_idx arrays are used to index the functional connectivity and
-    # meta-connectivity matrices, respectively.    
+    # meta-connectivity matrices, respectively.
     fc_idx = np.array(np.tril_indices(regions, k=-1)).T
-    #if sort allegiance provided, order the indices accordingly
+    # if sort allegiance provided, order the indices accordingly
     if allegiance_sort is not None:
         fc_idx = fc_idx[allegiance_sort]
     mc_idx = np.array(np.tril_indices(fc_idx.shape[0], k=-1)).T
@@ -603,16 +570,18 @@ def get_mc_region_identities(fc_idx, mc_idx):
     fc_reg_idx : (2, M) ndarray
         The reshaped indices for the functional connectivity matrix.
     """
- 
+
     fc_reg_idx = fc_idx[mc_idx]  # shape: (n_mc, 2, 2)
-    mc_reg_idx = fc_reg_idx.reshape(-1, 4).T  # shape: (4, n_mc)    
+    mc_reg_idx = fc_reg_idx.reshape(-1, 4).T  # shape: (4, n_mc)
     return mc_reg_idx, fc_reg_idx
 
-#%%
+
+# %%
 # =============================================================================
 # Identify Trimers functions
 # =============================================================================
 # Compute trimer-based mask and index for meta-connectivity matrix
+
 
 def compute_trimers_identity(regions, allegiance_sort=None):
     """
@@ -636,12 +605,12 @@ def compute_trimers_identity(regions, allegiance_sort=None):
     """
     # Get FC and MC indices
     fc_idx, mc_idx = get_fc_mc_indices(regions)
-    
+
     # Get the indices of the regions in the functional connectivity matrix
     if allegiance_sort is not None:
         # Sort the indices based on the allegiance sort order
         fc_idx = fc_idx[allegiance_sort]
-    
+
     mc_reg_idx, _ = get_mc_region_identities(fc_idx, mc_idx)
 
     # Identify trimers: rows with exactly 3 unique nodes
@@ -662,7 +631,6 @@ def compute_trimers_identity(regions, allegiance_sort=None):
     return trimer_idx, trimer_reg_id, trimer_apex
 
 
-
 def build_trimer_mask(trimer_idx, trimer_apex, n_fc_edges):
     mask = np.zeros((n_fc_edges, n_fc_edges))
     np.fill_diagonal(mask, np.nan)
@@ -673,7 +641,7 @@ def build_trimer_mask(trimer_idx, trimer_apex, n_fc_edges):
     return mask
 
 
-#%%
+# %%
 def compute_mc_nplets_mask_and_index(regions, allegiance_sort=None):
     """
     Computes a mask and index array identifying trimers in the meta-connectivity matrix.
@@ -694,24 +662,24 @@ def compute_mc_nplets_mask_and_index(regions, allegiance_sort=None):
     mc_nplets_index : ndarray
         Array of apex node identifiers for each MC edge, or np.nan if not a trimer.
     """
-    #Get indices of the functional connectivity (FC) and meta-connectivity (MC) matrices
+    # Get indices of the functional connectivity (FC) and meta-connectivity (MC) matrices
     fc_idx, mc_idx = get_fc_mc_indices(regions)
 
-    #Apply allegiance sorting if provided
+    # Apply allegiance sorting if provided
     if allegiance_sort is not None:
         fc_idx = fc_idx[allegiance_sort]
 
-    #Get the region identities for the functional connectivity (FC) and meta-connectivity (MC) matrices
+    # Get the region identities for the functional connectivity (FC) and meta-connectivity (MC) matrices
     mc_reg_idx, _ = get_mc_region_identities(fc_idx, mc_idx)
 
-    #Identify trimers: rows with exactly 3 unique nodes
+    # Identify trimers: rows with exactly 3 unique nodes
     unique_counts = np.apply_along_axis(lambda x: len(set(x)), axis=0, arr=mc_reg_idx)
     trimer_mask = unique_counts == 3
 
     trimer_idx = mc_idx[trimer_mask].T
     trimer_reg_id = mc_reg_idx[:, trimer_mask]
 
-    #Find root node: the node that appears twice
+    # Find root node: the node that appears twice
     trimer_apex = np.full(trimer_reg_id.shape[1], np.nan)
     for i in range(trimer_reg_id.shape[1]):
         vals, counts = np.unique(trimer_reg_id[:, i], return_counts=True)
@@ -719,7 +687,7 @@ def compute_mc_nplets_mask_and_index(regions, allegiance_sort=None):
         if repeated.size > 0:
             trimer_apex[i] = repeated[0]
 
-    #Build the mask and index array
+    # Build the mask and index array
     n_fc_edges = int(regions * (regions - 1) / 2)
     mask = np.zeros((n_fc_edges, n_fc_edges))
     np.fill_diagonal(mask, np.nan)
@@ -729,11 +697,17 @@ def compute_mc_nplets_mask_and_index(regions, allegiance_sort=None):
         mask[a, b] = mask[b, a] = apex_val
 
     # Get the indices of the lower triangular part of the mask
-    mc_nplets_index = mask[mc_idx[:,0], mc_idx[:,1]]
-    
+    mc_nplets_index = mask[mc_idx[:, 0], mc_idx[:, 1]]
+
     return mask, mc_nplets_index
 
-#%%
+
+def compute_trimers_genuine(mc_values, reference_values, trimer_mask):
+    """Return boolean mask where |MC| exceeds |reference| for trimer entries."""
+    return np.abs(mc_values[:, trimer_mask]) > np.abs(reference_values)
+
+
+# %%
 # def compute_trimers_identity_old(regions):
 #     """
 #     Compute the indices of trimers in the meta-connectivity matrix.
@@ -776,10 +750,11 @@ def compute_mc_nplets_mask_and_index(regions, allegiance_sort=None):
 
 #     return trimer_idx, trimer_reg_id, trimer_apex
 
+
 def trimers_by_apex(trimer_values, trimer_reg_apex):
     """
     Splits trimer MC values by apex region and group.
-    
+
     Parameters
     ----------
     mc_values : ndarray, shape (n_animals, n_trimers)
@@ -788,7 +763,7 @@ def trimers_by_apex(trimer_values, trimer_reg_apex):
         Apex region for each trimer.
     index1, index2 : boolean arrays
         Group masks (e.g., Good vs Impaired)
-    
+
     Returns
     -------
     regval_index1 : list of arrays
@@ -799,23 +774,25 @@ def trimers_by_apex(trimer_values, trimer_reg_apex):
         Unique apex region IDs, in order.
     """
     unique_apexes = np.unique(trimer_reg_apex)
-    
+
     regval = [
-        trimer_values[:, trimer_reg_apex == apex]
-        for apex in unique_apexes
-        ]  # List of shape (n_animals, n_trimers_per_apex)
+        trimer_values[:, trimer_reg_apex == apex] for apex in unique_apexes
+    ]  # List of shape (n_animals, n_trimers_per_apex)
 
     return regval
 
+
 # trimers_per_region = np.array(trimers_by_apex(trimers_mc_values, trimer_reg_apex))
 
-#%%Genuine trimers
+
+# %%Genuine trimers
 def trimers_leaves_fc(arr):
     flat = arr.flatten()
     unique, counts = np.unique(flat, return_counts=True)
     non_repeated = unique[counts == 1]
-    repeated = unique[counts == 2]
     return non_repeated
+
+
 def trimers_root_fc(arr):
     flat = arr.flatten()
     unique, counts = np.unique(flat, return_counts=True)

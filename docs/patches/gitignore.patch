@@ -1,0 +1,36 @@
+diff --git a/.gitignore b/.gitignore
+index 0000000..0000000 100644
+--- a/.gitignore
++++ b/.gitignore
+@@
+ *.pyc
+ *.env
++
++# Virtual environments and caches
++__pycache__/
++.pytest_cache/
++.ruff_cache/
++.ipynb_checkpoints/
++
+#+ OS/editor noise
++.DS_Store
++
+#+ Large/binary data
++*.npz
++*.npy
++*.mat
++*.h5
++
+#+ Build artifacts
++build/
++dist/
++*.egg-info
++
+#+ Project outputs
++outputs/
++results/
++cache/
++
+#+ Local envs and datasets
++allegiance/env/
++julien_data/results/

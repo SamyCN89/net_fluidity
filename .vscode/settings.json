@@ -1,24 +1,69 @@
 {
+  // ---- Python env & analysis ----
   "python.defaultInterpreterPath": "/home/samy/anaconda3/envs/funsy/bin/python",
-  "python.formatting.provider": "black",
-  "python.linting.enabled": true,
-  "python.linting.flake8Enabled": true,
-  "python.linting.pylintEnabled": false,
-  "editor.formatOnSave": true,
-  "files.autoSave": "afterDelay",
-  "jupyter.askForKernelRestart": false,
-  "github.copilot.enable": {
-    "*": true,
-    "plaintext": false,
-    "markdown": false,
-    "scminput": false,
-    "python": true,
-    "c": true
-  },
   "python.terminal.activateEnvironment": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.extraPaths": [
+    "shared_code",
+    "metaconnectivity",
+    "allegiance/src",
+    "julien_data"
+  ],
+  // ---- Formatting & linting (match pyproject) ----
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit",
+    "source.fixAll.ruff": "explicit"
+  },
+  "editor.defaultFormatter": "ms-python.black-formatter",
+  "black-formatter.args": [
+    "--line-length",
+    "88"
+  ],
+  "ruff.lint.enable": true,
+  "ruff.lint.select": [
+    "E",
+    "F",
+    "W",
+    "I",
+    "UP",
+    "B"
+  ],
+  "ruff.format.enable": false, // Black is the formatter
+  // ---- Testing ----
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.pytestArgs": [
+    "-q"
+  ],
+  // ---- Jupyter ----
+  "jupyter.notebookFileRoot": "${workspaceFolder}",
+  // ---- Explorer/search hygiene ----
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.ipynb_checkpoints": true,
+    "**/.ruff_cache": true,
+    "**/.pytest_cache": true,
+    "allegiance/env": true,
+    "julien_data/results": true
+  },
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/.ipynb_checkpoints": true,
+    "**/.ruff_cache": true,
+    "**/.pytest_cache": true,
+    "allegiance/env": true,
+    "julien_data/results": true
+  },
+  // ---- Misc team-safe ----
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
   "jupyter.interactiveWindow.creationMode": "perFile",
   "jupyter.interactiveWindow.textEditor.executeSelection": true,
-  "github.copilot.nextEditSuggestions.enabled": true,
-  "workbench.editor.titleScrollbarSizing": "large",
-  "python.pythonPath": "/home/samy/anaconda3/envs/funcog/bin/python"
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "chatgpt.openOnStartup": false,
+  "chatgpt.commentCodeLensEnabled": true
 }

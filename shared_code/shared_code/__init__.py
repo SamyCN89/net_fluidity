@@ -1,15 +1,12 @@
-# shared_code/shared_code/__init__.py
+"""Lightweight package init for shared_code.
 
-"""
-Shared utility functions for analysis and plotting.
+Avoid importing heavy submodules at import time to keep CLI imports fast and
+robust in minimal environments. Import submodules directly, e.g.::
+
+    from shared_code.fun_paths import get_paths
+    from shared_code.fun_plot import compute_pvalue
+
+This file intentionally does not wildcard-import submodules.
 """
 
-# Optional: expose key functions
-from .fun_bootstrap import *
-from .fun_dfcspeed import *
-from .fun_loaddata import *
-from .fun_metaconnectivity import *
-from .fun_network import *
-from .fun_optimization import *
-from .fun_utils import *
-from .fun_paths import *
+__all__ = []

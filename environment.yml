@@ -1,0 +1,29 @@
+name: funsy
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - numba
+  - numexpr
+  - joblib
+  - tqdm
+  - python-dotenv
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - networkx
+  - statsmodels
+  - openpyxl
+  - ruff
+  - pre-commit
+  - pip
+  - pip:
+      - duecredit
+      - git+https://github.com/fiuneuro/brainconn.git
+      - webcolors
+      - statannotations
+      - python-dotenv

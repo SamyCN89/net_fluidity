@@ -1,0 +1,53 @@
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+include = '\.pyi?$'
+exclude = '''
+(
+  ^/allegiance/env/
+| ^/.git/
+| ^/.venv/
+| ^/build/
+| ^/dist/
+| ^/metaconnectivity/ts1\.mat
+| \.egg-info/
+| __pycache__
+| \.pytest_cache
+)
+'''
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+extend-exclude = [
+  ".git",
+  ".venv",
+  "allegiance/env",
+  "**/__pycache__",
+  "**/.pytest_cache",
+  "build",
+  "dist",
+  "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "W",   # pycodestyle warnings
+  "I",   # isort (import sorting)
+  "UP",  # pyupgrade
+  "B",   # flake8-bugbear
+]
+ignore = [
+  # Allow longer lines in research scripts; rely on Black for wrapping.
+  "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"shared_code/shared_code/__init__.py" = ["F403"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["shared_code"]
+force-sort-within-sections = true
