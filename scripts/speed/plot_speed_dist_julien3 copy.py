@@ -1420,13 +1420,137 @@ for seg_name, w_range in ranges.items():
         # group_speed_by_segment_i = group_speed_by_segment[seg_name][gt]
         arr = group_speed_by_segment[seg_name][gt]  # shape: (n_animals_in_group, n_windows), dtype=object
         n_animals_in_group = arr.shape[0]
-
+        # per-animal loops of pooling windows
         for i in range(n_animals_in_group):
             per_animal_windows = arr[i, :]  # object array of length n_windows
             per_animal_flat = np.concatenate([w.ravel() for w in per_animal_windows if w is not None and np.size(w)])
             # e.g., plot a histogram
             h, edges = np.histogram(per_animal_flat, bins=100, range=(per_animal_flat.min(), per_animal_flat.max()))
             plt.plot(edges[:-1], h, ".-", alpha=0.5, label=f"Animal {i}")
+#%%
+
+# %%
+# --- config: choose how to aggregate ---
+
+
+WEIGH_EACH_ANIMAL_EQUALLY = True  # True = median-of-animal-medians; False = pool-all-samples
+
+
+
+plt.figure(figsize=(14, 5*len(ranges)))
+
+for si, (seg_name, w_range) in enumerate(ranges.items(), start=1):
+    plt.subplot(len(ranges), 1, si)
+
+    for gt in group_data.keys():
+        # object array: (n_animals, n_windows), each cell is a 1D array of speeds (can be None/empty)
+        arr = group_speed_by_segment[seg_name][gt]
+        n_animals, n_windows = arr.shape
+
+        # infer window sizes; replace with your own vector if you have it
+        window_sizes = np.linspace(w_range[0], w_range[1], n_windows)
+
+        if WEIGH_EACH_ANIMAL_EQUALLY:
+            # 1) per-animal median per window
+            per_animal = np.full((n_animals, n_windows), np.nan, float)
+            for i in range(n_animals):
+                for j in range(n_windows):
+                    x = arr[i, j]
+                    if x is not None and np.size(x):
+                        per_animal[i, j] = np.median(np.ravel(x))
+            # 2) group aggregation across animals (equal weight)
+            med = np.nanmedian(per_animal, axis=0)
+            q1  = np.nanpercentile(per_animal, 25, axis=0)
+            q3  = np.nanpercentile(per_animal, 75, axis=0)
+        else:
+            # pool all samples per window (animals with more samples weigh more)
+            med, q1, q3 = [], [], []
+            for j in range(n_windows):
+                pooled = np.concatenate(
+                    [np.ravel(arr[i, j]) for i in range(n_animals)
+                     if arr[i, j] is not None and np.size(arr[i, j])]
+                ) if n_animals else np.array([])
+                if pooled.size == 0:
+                    med.append(np.nan); q1.append(np.nan); q3.append(np.nan)
+                else:
+                    med.append(np.median(pooled))
+                    q1.append(np.percentile(pooled, 25))
+                    q3.append(np.percentile(pooled, 75))
+            med, q1, q3 = np.array(med), np.array(q1), np.array(q3)
+
+        # plot: median with IQR band
+        plt.plot(window_sizes, med, label=gt, linewidth=2)
+        plt.fill_between(window_sizes, q1, q3, alpha=0.2)
+
+    plt.title(f"{seg_name} — median speed vs window size")
+    plt.xlabel("Window size")
+    plt.ylabel("Speed (median)")
+    plt.legend(frameon=False)
+    plt.tight_layout()
+
+#%%
+# which quantiles to report (in percent)
+QUANTILES = [1, 5, 50, 95, 99]
+
+# choose pooling policy
+WEIGH_EACH_ANIMAL_EQUALLY = False
+# True  = per-animal median -> take percentiles across animals (equal animal weight)
+# False = pool all samples per window across animals (animals with more samples weigh more)
+
+plt.figure(figsize=(14, 5*len(ranges)))
+
+for si, (seg_name, w_range) in enumerate(ranges.items(), start=1):
+    plt.subplot(len(ranges), 1, si)
+
+    for gt in group_data.keys():
+        arr = group_speed_by_segment[seg_name][gt]  # (n_animals, n_windows) object array
+        n_animals, n_windows = arr.shape
+
+        # replace with your known vector if you have exact window sizes per segment
+        window_sizes = np.linspace(w_range[0], w_range[1], n_windows)
+
+        if WEIGH_EACH_ANIMAL_EQUALLY:
+            # per-animal median per window (equal weight per animal),
+            # then percentiles across animals of those medians
+            per_animal = np.full((n_animals, n_windows), np.nan, float)
+            for i in range(n_animals):
+                for j in range(n_windows):
+                    x = arr[i, j]
+                    if x is not None and np.size(x):
+                        per_animal[i, j] = np.median(np.ravel(x))
+
+            lines = {}
+            for q in QUANTILES:
+                y = np.nanpercentile(per_animal, q, axis=0)
+                lines[q], = plt.plot(window_sizes, y, linewidth=1.8 if q==50 else 1.0,
+                                     linestyle='-' if q==50 else '--',
+                                     label=f"{gt} q{q:02d}")
+        else:
+            # pool all raw samples per window (sample-weighted)
+            qvals = {q: np.full(n_windows, np.nan, float) for q in QUANTILES}
+            for j in range(n_windows):
+                pooled = np.concatenate([
+                    np.ravel(arr[i, j]) for i in range(n_animals)
+                    if arr[i, j] is not None and np.size(arr[i, j])
+                ]) if n_animals else np.array([])
+                if pooled.size:
+                    for q in QUANTILES:
+                        qvals[q][j] = np.percentile(pooled, q)
+
+            lines = {}
+            for q in QUANTILES:
+                lines[q], = plt.plot(window_sizes, qvals[q],
+                                     linewidth=1.8 if q==50 else 1.0,
+                                     linestyle='-' if q==50 else '--',
+                                     label=f"{gt} q{q:02d}")
+
+    plt.title(f"{seg_name} — speed quantiles vs window size")
+    plt.xlabel("Window size")
+    plt.ylabel("Speed")
+    plt.legend(frameon=False, ncol=3)
+    plt.tight_layout()
+
+
 
 # %%
 # ========================== PERCENTILE TRACKS ==========================
@@ -1632,6 +1756,7 @@ if save_fig:
     )
     plt.savefig(outpath_fig4, dpi=300)
     print(f"[INFO] Figure saved to: {outpath_fig4}")
+
 # %%
 # 5) Example: pooled histograms (all/short/mid/long)
 all_speeds_hist, bin_edge = hist_prob(
