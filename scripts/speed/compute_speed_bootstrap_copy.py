@@ -28,6 +28,7 @@ from shared_code.fun_loaddata import load_timeseries_bundle
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import load_cognitive_data, set_figure_params
 
+#%%
 DEBUG = False
 
 

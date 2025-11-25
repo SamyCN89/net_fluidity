@@ -26,7 +26,7 @@ from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset
 from shared_code.fun_loaddata import load_timeseries_bundle
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import load_cognitive_data, set_figure_params
-
+#%%
 # ----------------- User toggles -----------------
 SAVE_MODE = {
     "npz_pack": True,  # Option A
@@ -56,7 +56,7 @@ GROUP_RECIPES = {
     "genotype_treatment": ["genotype", "treatment"],  # only if those cols exist
 }
 
-
+#%%
 # # %% ========================== SMALL HELPERS ==========================
 # def combo_color(genotype: str, treatment: str) -> str:
 #     key = (genotype, treatment)
@@ -1005,7 +1005,7 @@ speeds = load_speed_stack(
 # # %%
 # # ========================== PRECOMPUTE DIMENSIONS ==========================
 # # Basic dimensions
-# n_windows = len(speeds)
+n_windows = len(speeds)
 # n_animals = len(speeds[0])
 
 
@@ -1310,7 +1310,6 @@ for groups_selected in groups_list:
     plt.show()
     # plt.savefig(speed_root / f'ci_comparison_downsampled_classic_bootstrap_{POOL_SPLIT}_bins{BINS_HIST}.png')
 
-#%%
     for seg_name, w_range in ranges.items():
         # Group loops
         ci_low_i = {}
