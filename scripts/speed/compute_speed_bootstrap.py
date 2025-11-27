@@ -48,6 +48,8 @@ GROUP_RECIPES = {
     "age_phenotype_oip": ["Age", "Phenotype_OiP"],
     "age_phenotype_nor": ["Age", "Phenotype_RO24h"],
     "sex_genotype": ["Sexe", "Genotype"],
+    "sex_phenotype_oip": ["Sexe", "Phenotype_OiP"],
+    "sex_phenotype_nor": ["Sexe", "Phenotype_RO24h"],
     # 3-way
     "age_sex_genotype": ["Sexe", "Age", "Genotype"],
     "age_sex_phenotype_oip": ["Sexe", "Age", "Phenotype_OiP"],
@@ -1064,11 +1066,21 @@ df_long = make_long_cog(cog_data, dataset_name)
 # groups_selected = "age_sex_genotype"  # or "sex", "age", "phenotype_oip", ...
 
 groups_list = [
+    "age",
+    "sex",
+    "genotype",
+    "phenotype_oip",
+    "phenotype_nor",
     "age_sex",
     "age_genotype",
     "age_sex_genotype",
     "age_sex_phenotype_oip",
     "age_sex_phenotype_nor",
+    "age_phenotype_oip",
+    "age_phenotype_nor",
+    "sex_genotype",
+    "sex_phenotype_oip",
+    "sex_phenotype_nor",
 ]
 
 # groups_selected = "age_sex_phenotype_oip"  # or "sex", "age", "phenotype_oip", ...

@@ -8,16 +8,6 @@ import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
-# from datetime import datetime
-# import dis
-# from importlib.metadata import distribution
-# from itertools import combinations
-# import json
-# from tkinter import font
-# from joblib import Parallel, delayed
-# from pyparsing import alphanums
-# from prometheus_client import g
-# from src import preprocess
 
 # Optional for Parquet saving (Option B)
 try:
@@ -29,7 +19,8 @@ from scripts.dfc.dfc_compute import DATASET_DEFAULTS, _canonical_dataset
 from shared_code.fun_loaddata import load_timeseries_bundle
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import load_cognitive_data, set_figure_params
-#%%
+
+# %%
 # ----------------- User toggles -----------------
 # SAVE_MODE = {
 #     "npz_pack": True,  # Option A
@@ -61,8 +52,50 @@ GROUP_RECIPES = {
     "genotype_treatment": ["genotype", "treatment"],  # only if those cols exist
 }
 
-#%%
+
+# fixed palette, independent of rcParams
+AGE_CONTRAST_PALETTE = [
+    "tab:blue",
+    "tab:orange",
+    "tab:green",
+    "tab:red",
+    "tab:purple",
+    "tab:brown",
+    "tab:pink",
+    "tab:gray",
+    "tab:olive",
+    "tab:cyan",
+]
+
+
+def make_age_contrast_color_map(group_keys, groups_selected: str) -> dict[str, str]:
+    """
+    Map each non-age label → a fixed color from AGE_CONTRAST_PALETTE.
+    """
+    # pure age: only one contrast
+    example_key = next(iter(group_keys))
+    if groups_selected == "age" and isinstance(example_key, str):
+        return {"4M-2M": AGE_CONTRAST_PALETTE[0]}
+
+    labels = []
+    for k in group_keys:
+        if isinstance(k, str):
+            continue
+        if "4M" not in k:
+            continue
+        lbl = age_contrast_label(k)
+        if lbl not in labels:
+            labels.append(lbl)
+
+    return {
+        lbl: AGE_CONTRAST_PALETTE[i % len(AGE_CONTRAST_PALETTE)]
+        for i, lbl in enumerate(labels)
+    }
+
+
+# %%
 # # %% ========================== SMALL HELPERS ==========================
+
 
 def load_speed_stack(
     paths_speed_root: Path, time_windows_range: Sequence[int]
@@ -80,11 +113,16 @@ def load_speed_stack(
     return speeds
 
 
-
 # # --- pooling helpers ---
 
 
 def count_samples_per_window(speeds: list[np.ndarray]) -> np.ndarray:
+    """Count total samples per time window across all animals.
+    speeds:
+        list S where S[j][i] is 1D np.array of samples for animal i at window j.
+    Returns:
+        counts: 1D np.array where counts[j] = total samples at window j across animals.
+    """
     return np.array([sum(len(x) for x in speed) for speed in speeds], dtype=int)
 
 
@@ -107,6 +145,7 @@ def cdf_split_indices(speeds: list[np.ndarray]) -> tuple[int, int, int]:
 def select_windows(
     pool_split: str, n_windows: int, i_third: int, i_half: int, i_two_third: int
 ) -> dict[str, range]:
+    """Return dict of pool name → range of window indices."""
     if pool_split == "all":
         return {"all": range(0, n_windows)}
     if pool_split == "half":
@@ -135,92 +174,7 @@ def global_min_max(arrs: Iterable[np.ndarray]) -> tuple[float, float]:
     return float(vmin), float(vmax)
 
 
-
-# # --- stats & histogram helpers ---
-# def robust_percentiles(x: np.ndarray, qs=(1, 5, 95, 99)) -> dict[int, float]:
-#     if x.size == 0 or not np.isfinite(x).any():
-#         return {int(q): np.nan for q in qs}
-#     x = x[np.isfinite(x)]
-#     ps = np.percentile(x, qs)
-#     return {int(q): float(p) for q, p in zip(qs, ps, strict=False)}
-
-
-# def hist_prob(x, bins, rng):
-#     h, e = np.histogram(x, bins=bins, range=rng, density=False)
-#     s = h.sum()
-#     return (h / s if s > 0 else np.zeros_like(h)), e
-
-
-# def safe_hist(
-#     x: np.ndarray, bins: int, rng: tuple[float, float]
-# ) -> tuple[np.ndarray, np.ndarray]:
-#     if x.size == 0:
-#         edges = np.linspace(rng[0], rng[1], bins + 1)
-#         return np.zeros(bins), edges
-#     return np.histogram(x.T, bins=bins, range=rng, density=False)
-
-
-# def normalize_counts_to_prob(h: np.ndarray) -> np.ndarray:
-#     s = h.sum()
-#     return (h / s) if s > 0 else np.zeros_like(h, dtype=float)
-
-
-# def build_per_animal_normalized_hists(
-#     speeds: list[np.ndarray],
-#     selected_windows: range,
-#     bins: int,
-#     hist_range: tuple[float, float],
-# ) -> np.ndarray:
-#     """Build per-animal normalized histograms over selected windows.
-
-#     speeds:
-#         list S where S[j][i] is 1D np.array of samples for animal i at window j.
-
-#     selected_windows: range of window indices to include.
-#     Returns H where H[i] is normalized histogram for animal i over selected windows.
-#     """
-#     n_animals = len(speeds[0])
-#     H = np.zeros((n_animals, bins), dtype=float)
-#     for i in range(n_animals):
-#         # Pool samples for animal i over selected windows
-#         flat_i = (
-#             np.concatenate([speeds[j][i].ravel() for j in selected_windows])
-#             if selected_windows
-#             else np.array([], dtype=float)
-#         )
-#         # Compute & normalize histogram
-#         h_i, _ = safe_hist(flat_i, bins, hist_range)
-#         H[i] = normalize_counts_to_prob(h_i)
-#     return H
-
-
-# # %%
-# def flatten_group_animals_over_windows(
-#     animal_speeds: list[list[np.ndarray]], indices: Sequence[int], w_range: range
-# ) -> np.ndarray:
-#     arrays = []
-#     for i in indices:
-#         print(f"[DEBUG] Processing animal index: {i}")
-#         arrays.extend([animal_speeds[i][j] for j in w_range])
-#         print(f"[DEBUG] Current number of arrays for animal {i}: {len(arrays)}")
-#     print(f"[DEBUG] Flattened group animals over windows: n_arrays={len(arrays)}")
-#     return (
-#         np.concatenate([a.ravel() for a in arrays])
-#         if arrays
-#         else np.array([], dtype=float)
-#     )
-
-
-# def get_group_animals_over_windows(
-#     animal_speeds: list[list[np.ndarray]], indices: Sequence[int], w_range: range
-# ) -> np.ndarray:
-#     """Return object array shape (len(indices), len(w_range)) of arrays."""
-#     arr = np.array(animal_speeds, dtype=object)[indices]
-#     arrays = np.transpose([arr[:, j] for j in w_range], (1, 0))
-#     return (arrays,) if arrays.size else np.array([], dtype=float)
-
-
-# # %%
+# %%
 def plot_group_median_vs_window(
     ax: plt.Axes,
     time_windows_range: Sequence[int],
@@ -243,542 +197,8 @@ def plot_group_median_vs_window(
     ax.legend()
 
 
-# def plot_group_histograms(
-#     ax: plt.Axes,
-#     centers: np.ndarray,
-#     group_hists: dict[tuple[str, str], np.ndarray],
-#     title: str,
-#     ylog: bool = False,
-# ) -> None:
-#     for (genotype, treatment), hist in group_hists.items():
-#         ax.plot(centers, hist, lw=1, alpha=0.7, label=combo_label(genotype, treatment))
-#     ax.set_title(title)
-#     ax.set_xlabel("Speed")
-#     ax.set_ylabel("Probability per bin")
-#     if ylog:
-#         ax.set_yscale("log")
-#     # ax.legend()
-
-
-# # ---------- BOOTSTRAP HELPERS ----------
-# # %%
-
-
-# def flatten_numeric(x) -> np.ndarray:
-#     """Flatten lists/arrays (even nested) into a clean 1D float array; drop NaN/inf."""
-#     if isinstance(x, (list, tuple)):
-#         flat = []
-#         for item in np.ravel(x, order="K"):
-#             a = np.asarray(item)
-#             if a.size:
-#                 flat.append(a.ravel())
-#         x = np.concatenate(flat) if flat else np.array([])
-#     x = np.asarray(x, dtype=float).ravel()
-#     return x[np.isfinite(x)]
-
-
-# def _bootstrap_chunk_proc(
-#     x: np.ndarray, q: np.ndarray, m: int, seed: int
-# ) -> np.ndarray:
-#     """
-#     One parallel chunk.
-#     x: (n,), q: (K,), m replicates → returns (m, K)
-#     """
-#     if m <= 0 or x.size == 0:
-#         return np.full((0, q.size), np.nan, float)
-#     rng = np.random.default_rng(seed)
-#     n = x.size
-#     # replicates as columns to avoid axis confusion
-#     idx = rng.integers(0, n, size=(n, m))  # (n, m)
-#     samples = x[idx]  # (n, m)
-#     return np.percentile(samples, q, axis=0).T  # (m, K)
-
-
-# def bootstrap_parallel(
-#     data,
-#     percentiles,
-#     n_resamples: int = 2000,
-#     chunk_size: int = 200,
-#     n_jobs: int = -1,
-#     random_state: int | None = 0,
-#     downsample_n: int | None = None,
-#     prefer: str = "processes",  # "threads" also allowed
-# ):
-#     """
-#     Parallel 95% CIs for given percentiles of `data`.
-#     Returns (low, high), each shape (len(percentiles),).
-#     """
-#     # print random state
-
-#     x = flatten_numeric(data)
-#     q = np.asarray(percentiles, dtype=float).ravel()
-
-#     if x.size == 0:
-#         nan = np.full(q.shape, np.nan, float)
-#         return nan, nan
-
-#     # optional downsampling
-#     if downsample_n and x.size > downsample_n:
-#         x = np.random.default_rng(random_state).choice(
-#             x, size=downsample_n, replace=False
-#         )
-
-#     # plan chunks & deterministic seeds (safe for parallel)
-#     offsets = list(range(0, n_resamples, chunk_size))
-#     ss = (
-#         np.random.SeedSequence(random_state)
-#         if random_state is not None
-#         else np.random.SeedSequence()
-#     )
-#     seeds = [int(s.entropy) for s in ss.spawn(len(offsets))]
-
-#     # run chunks in parallel
-#     chunks = Parallel(n_jobs=n_jobs, prefer=prefer)(
-#         delayed(_bootstrap_chunk_proc)(
-#             x, q, min(chunk_size, n_resamples - off), seeds[i]
-#         )
-#         for i, off in enumerate(offsets)
-#     )
-
-#     # combine results
-#     boot_all = np.vstack(chunks)  # (n_resamples, len(q))
-#     return boot_all
-
-
-# def bootstrap_percentiles_parallel(
-#     data,
-#     percentiles,
-#     n_resamples: int = 2000,
-#     chunk_size: int = 200,
-#     n_jobs: int = -1,
-#     random_state: int | None = 0,
-#     downsample_n: int | None = None,
-#     prefer: str = "processes",  # "threads" also allowed
-# ):
-#     """
-#     Parallel 95% CIs for given percentiles of `data`.
-#     Returns (low, high), each shape (len(percentiles),).
-#     """
-#     boot_all = bootstrap_parallel(
-#         data,
-#         percentiles,
-#         n_resamples=n_resamples,
-#         chunk_size=chunk_size,
-#         n_jobs=n_jobs,
-#         random_state=random_state,
-#         downsample_n=downsample_n,
-#         prefer=prefer,
-#     )
-#     low, high = np.percentile(boot_all, [2.5, 97.5], axis=0)
-#     return low, high
-
-
-# import numpy as np
-
-
-# # ---------- utility: efficient downsample without replacement ----------
-# def _downsample_once(x: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
-#     n = x.size
-#     if k is None or k >= n:
-#         return x
-#     # choice is faster when k ≪ n; permutation is fine when k is larger
-#     if k / n < 0.2:
-#         idx = rng.choice(n, size=k, replace=False)
-#     else:
-#         idx = rng.permutation(n)[:k]
-#     return x[idx]
-
-
-# # ---------- one repeat = one downsample + percentiles ----------
-# def _one_repeat_downsample_only(
-#     data: np.ndarray,
-#     q: np.ndarray,
-#     downsample_n: int | None,
-#     seed_seq: np.random.SeedSequence,
-# ) -> np.ndarray:
-#     rng = np.random.default_rng(seed_seq)
-#     x = np.ravel(data)
-#     if downsample_n and x.size > downsample_n:
-#         x = _downsample_once(x, downsample_n, rng)
-#     # directly compute percentiles of this downsampled draw
-#     return np.percentile(x, q)
-
-
-# def bootstrap_downsampling_repeat(
-#     data: np.ndarray,
-#     percentiles: np.ndarray,
-#     repeat: int = 10_000,
-#     downsample_n: int | None = None,
-#     seed: int | None = 0,
-#     n_jobs: int = 8,
-# ):
-#     """
-#     Perform `repeat` independent downsampling draws (without replacement),
-#     compute `percentiles` on each draw, and return the across-repeat envelope.
-
-#     Returns:
-#       ci_low_repeat, ci_high_repeat, ci_repeat
-#         - ci_repeat: (repeat, K) matrix; row r = percentiles of the r-th downsample
-#         - ci_low_repeat, ci_high_repeat: (K,), here [0th, 100th] across repeats to match your original
-#     """
-#     q = np.asarray(percentiles, dtype=float).ravel()
-#     if data.size == 0:
-#         nan = np.full(q.shape, np.nan, float)
-#         return nan, nan, np.empty((0, q.size), float)
-
-#     # robust, independent seeds per repeat
-#     base_ss = np.random.SeedSequence(None if seed is None else int(seed))
-#     child_ss = base_ss.spawn(repeat)
-
-#     rows = Parallel(n_jobs=n_jobs, prefer="processes")(
-#         delayed(_one_repeat_downsample_only)(
-#             data=data,
-#             q=q,
-#             downsample_n=downsample_n,
-#             seed_seq=child_ss[i],
-#         )
-#         for i in range(repeat)
-#     )
-#     ci_repeat = np.vstack(rows)  # (repeat, K)
-
-#     # Use [0, 100] to keep compatibility with what you were doing;
-#     # if you want classical CIs, use [2.5, 97.5] instead.
-#     ci_low_repeat, ci_high_repeat = np.percentile(ci_repeat, [0, 100], axis=0)
-#     return ci_low_repeat, ci_high_repeat, ci_repeat
-
-
-# # %% ================ GROUP BOOTSTRAP RESAMPLING HELPERS ==========================
-
-
-# def group_pool_bt_hierarchical_resampling(
-#     ranges,
-#     group_speed_by_segment,
-#     group_data,
-#     repeat=20,
-#     downsample_n=None,
-#     chunk_size=20,
-#     n_resamples=10_000,
-#     n_jobs=1,
-# ):
-#     """Hierarchical bootstrap resampling of group speeds."""
-#     # Bootstrap per group speed histograms
-
-#     ci_low_mean = {}
-#     ci_high_mean = {}
-
-#     # pooling loops segments
-#     for seg_name, w_range in ranges.items():
-#         start = time.time()
-#         ci_low_mean_i = {}
-#         ci_high_mean_i = {}
-#         # Group loops
-#         for gt, idxs in group_data.items():
-#             print(
-#                 "Speed shape:",
-#                 np.shape(group_speed_by_segment[seg_name][gt][0]),
-#                 seg_name,
-#                 gt,
-#             )
-#             group_speed_i = group_speed_by_segment[seg_name][gt][0]
-#             group_speed_n = len(group_speed_i)
-
-#             # resampling indices
-#             ci_low = np.empty((len(percentiles_), repeat), dtype=float)
-#             ci_high = np.empty((len(percentiles_), repeat), dtype=float)
-#             # print('Group speed i shape:', np.shape(group_speed_i))
-#             for _ in range(repeat):  # repeat to see variability
-#                 n_hierarchical_resampling = 8
-#                 indices_resampling = np.random.choice(
-#                     group_speed_n, size=n_hierarchical_resampling, replace=False
-#                 )
-#                 print(indices_resampling)
-
-#                 # bootstrap samples
-#                 flat_list = np.array(
-#                     np.concatenate(group_speed_i[indices_resampling].ravel()).tolist()
-#                 )
-
-#                 # bootstrap percentiles
-#                 ci_low_i, ci_high_i = bootstrap_percentiles_parallel(
-#                     flat_list,
-#                     percentiles_,
-#                     n_resamples=n_resamples,
-#                     chunk_size=chunk_size,
-#                     random_state=np.random.randint(0, 1_000_000, n_resamples),
-#                     n_jobs=n_jobs,
-#                     downsample_n=downsample_n,
-#                 )
-#                 ci_low[:, _] = ci_low_i
-#                 ci_high[:, _] = ci_high_i
-#             ci_low_mean_i[gt] = ci_low.mean(axis=1)
-#             ci_high_mean_i[gt] = ci_high.mean(axis=1)
-#         end = time.time()
-#         print(
-#             f"Hierarchical BT resampling for segment {seg_name} took {end - start:.2f} seconds"
-#         )
-#         ci_low_mean[seg_name] = ci_low_mean_i
-#         ci_high_mean[seg_name] = ci_high_mean_i
-#     return ci_low_mean, ci_high_mean
-
-
-# # Classic resampling of distribution: Assumes that the distributions of a group's speeds are identical across animals
-# def group_pool_bt_classic_resampling(
-#     ranges,
-#     pooled_group_speed_by_segment,
-#     group_data,
-#     seed=np.random.default_rng(),
-#     downsample_n=None,
-# ):
-#     """Classic bootstrap resampling of pooled group speeds."""
-#     # Bootstrap per group speed histograms
-
-#     # pooling loops segments
-#     ci_low_mean = {}
-#     ci_high_mean = {}
-
-#     for seg_name, w_range in ranges.items():
-#         # Group loops
-#         ci_low_i = {}
-#         ci_high_i = {}
-#         for gt, idxs in group_data.items():
-#             print(pooled_group_speed_by_segment[seg_name][gt].shape, seg_name, gt)
-#             group_flat_speed = pooled_group_speed_by_segment[seg_name][gt]
-
-#             data = np.ravel(group_flat_speed)
-#             start = time.time()
-#             ci_low, ci_high = bootstrap_percentiles_parallel(
-#                 data,
-#                 percentiles_,
-#                 n_resamples=n_resamples,
-#                 chunk_size=chunk_size,
-#                 random_state=seed,
-#                 n_jobs=8,
-#                 downsample_n=downsample_n,
-#             )
-#             end = time.time()
-
-#             # Print timing
-#             if not downsample_n:
-#                 print(
-#                     f"Classic BT resampling took {end - start:.2f} seconds: {seg_name} {gt}"
-#                 )
-#             else:
-#                 print(
-#                     f"Downsampled Classic BT resampling took {end - start:.2f} seconds: {seg_name} {gt}"
-#                 )
-#             # Store results per group
-#             ci_low_i[gt] = ci_low
-#             ci_high_i[gt] = ci_high
-#         # store results per segment
-#         ci_low_mean[seg_name] = ci_low_i
-#         ci_high_mean[seg_name] = ci_high_i
-#     return ci_low_mean, ci_high_mean
-
-
-# # Bootstrap downsampling with repeats
-# def group_pool_bt_classic_resampling_downsampled(
-#     ranges: dict,
-#     pooled_group_speed_by_segment: dict,  # {seg: {group: array_like}}
-#     group_data: dict,  # used for group iteration order
-#     percentiles_: np.ndarray,
-#     repeat: int = 10_000,
-#     downsample_factor: int = 10,
-#     seed: int | None = 0,
-#     n_jobs: int = 8,
-#     verbose: int = 0,
-# ):
-#     """
-#     For each (segment, group):
-#       - flatten its pooled speeds
-#       - repeatedly downsample WITHOUT replacement to N/f
-#       - compute given percentiles on each downsample
-#       - aggregate percentiles across repeats to get an envelope
-#     """
-#     q = np.asarray(percentiles_, dtype=float).ravel()
-
-#     ci_low_repeat: dict[str, dict[str, np.ndarray]] = {}
-#     ci_high_repeat: dict[str, dict[str, np.ndarray]] = {}
-#     vals_btr_downsample_repeat: dict[str, dict[str, np.ndarray]] = {}
-
-#     # spawn independent seeds per (segment, group)
-#     base_ss = np.random.SeedSequence(None if seed is None else int(seed))
-#     pair_list = [
-#         (seg_name, gt) for seg_name in ranges.keys() for gt in group_data.keys()
-#     ]
-#     child_ss = base_ss.spawn(len(pair_list))
-#     ss_iter = iter(child_ss)
-
-#     for seg_name in ranges.keys():
-#         ci_low_seg: dict[str, np.ndarray] = {}
-#         ci_high_seg: dict[str, np.ndarray] = {}
-#         vals_seg: dict[str, np.ndarray] = {}
-
-#         for gt in group_data.keys():
-#             if (
-#                 seg_name not in pooled_group_speed_by_segment
-#                 or gt not in pooled_group_speed_by_segment[seg_name]
-#             ):
-#                 raise KeyError(f"Missing data for segment '{seg_name}', group '{gt}'")
-
-#             data = np.ravel(pooled_group_speed_by_segment[seg_name][gt])
-#             # guard against zero downsample size
-#             if downsample_factor and downsample_factor > 1:
-#                 ds_n = max(1, int(len(data) // downsample_factor))
-#             else:
-#                 ds_n = None
-
-#             ss = next(ss_iter)
-#             t0 = time.time()
-#             lo, hi, vals = bootstrap_downsampling_repeat(
-#                 data=data,
-#                 percentiles=q,
-#                 repeat=repeat,
-#                 downsample_n=ds_n,
-#                 seed=ss.entropy,  # okay to use an int; we could also pass ss itself and spawn again inside
-#                 n_jobs=n_jobs,
-#             )
-#             t1 = time.time()
-
-#             ci_low_seg[gt] = lo
-#             ci_high_seg[gt] = hi
-#             vals_seg[gt] = vals
-#             if verbose:
-#                 print(
-#                     f"[{seg_name} | {gt}] n={len(data)}, downsample_n={ds_n}, repeats={repeat} in {t1-t0:.2f}s"
-#                 )
-
-#         ci_low_repeat[seg_name] = ci_low_seg
-#         ci_high_repeat[seg_name] = ci_high_seg
-#         vals_btr_downsample_repeat[seg_name] = vals_seg
-
-#     return ci_low_repeat, ci_high_repeat, vals_btr_downsample_repeat
-
-
-# # %%
-# # ---------- CI SAVE HELPERS ----------
-# def _gt_key(gt: tuple[str, str]) -> str:
-#     return f"{gt[0]}__{gt[1]}"
-
-
-# def save_bootstrap_cis_npz(
-#     base_dir: Path,
-#     dataset: str,
-#     meta: dict,
-#     percentiles: np.ndarray,
-#     ci_low_mean: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_high_mean: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_low_btr: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_high_btr: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_low_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_high_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
-# ):
-#     """
-#     Writes one NPZ per segment with keys:
-#       - 'percentiles'
-#       - '{group}__hier_low', '{group}__hier_high'
-#       - '{group}__classic_low', '{group}__classic_high'
-#       - '{group}__classic_down_low', '{group}__classic_down_high'
-#     """
-#     out_dir = base_dir
-#     out_dir.mkdir(parents=True, exist_ok=True)
-
-#     # store meta snapshot for the CI pack (won’t overwrite your other meta)
-#     (out_dir / "meta_ci.json").write_text(json.dumps(meta, indent=2))
-
-#     # write one file per segment
-#     seg_names = sorted(
-#         set(ci_low_mean.keys())
-#         | set(ci_high_mean.keys())
-#         | set(ci_low_btr.keys())
-#         | set(ci_high_btr.keys())
-#         | set(ci_low_btr_downsample.keys())
-#         | set(ci_high_btr_downsample.keys())
-#     )
-
-#     for seg in seg_names:
-#         pack = {"percentiles": np.asarray(percentiles, dtype=float)}
-
-#         # helper to add a whole dict-of-groups with a prefix
-#         def add_side(
-#             side_dict: dict[str, dict[tuple[str, str], np.ndarray]], suffix: str
-#         ):
-#             if seg not in side_dict:
-#                 return
-#             for gt, arr in side_dict[seg].items():
-#                 pack[f"{_gt_key(gt)}__{suffix}"] = np.asarray(arr, dtype=float)
-
-#         add_side(ci_low_mean, "hier_low")
-#         add_side(ci_high_mean, "hier_high")
-#         add_side(ci_low_btr, "classic_low")
-#         add_side(ci_high_btr, "classic_high")
-#         add_side(ci_low_btr_downsample, "classic_down_low")
-#         add_side(ci_high_btr_downsample, "classic_down_high")
-
-#         np.savez_compressed(out_dir / f"cis__{seg}.npz", **pack)
-#     print(f"[INFO] Saved bootstrap CI NPZ packs to: {out_dir} , cis__{seg}.npz")
-
-
-# def save_bootstrap_cis_parquet(
-#     base_dir: Path,
-#     dataset: str,
-#     meta: dict,
-#     percentiles: np.ndarray,
-#     ci_low_mean: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_high_mean: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_low_btr: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_high_btr: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_low_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
-#     ci_high_btr_downsample: dict[str, dict[tuple[str, str], np.ndarray]],
-# ):
-#     """
-#     Long-form Parquet with columns:
-#       segment, group, percentile, method, bound, value
-#     where method ∈ {'hier', 'classic', 'classic_down'}
-#           bound  ∈ {'low', 'high'}
-#     """
-#     if pd is None:
-#         print("[WARN] pandas not available; skipping CI parquet save.")
-#         return
-
-#     out_dir = base_dir
-#     out_dir.mkdir(parents=True, exist_ok=True)
-
-#     rows = []
-
-#     def add_rows(
-#         container: dict[str, dict[tuple[str, str], np.ndarray]], method: str, bound: str
-#     ):
-#         for seg, per_group in container.items():
-#             for gt, arr in per_group.items():
-#                 g = _gt_key(gt)
-#                 for p, v in zip(
-#                     percentiles, np.asarray(arr, dtype=float), strict=False
-#                 ):
-#                     rows.append(
-#                         {
-#                             "segment": seg,
-#                             "group": g,
-#                             "percentile": float(p),
-#                             "method": method,
-#                             "bound": bound,
-#                             "value": float(v),
-#                         }
-#                     )
-
-#     add_rows(ci_low_mean, "hier", "low")
-#     add_rows(ci_high_mean, "hier", "high")
-#     add_rows(ci_low_btr, "classic", "low")
-#     add_rows(ci_high_btr, "classic", "high")
-#     add_rows(ci_low_btr_downsample, "classic_down", "low")
-#     add_rows(ci_high_btr_downsample, "classic_down", "high")
-
-#     df = pd.DataFrame(rows)
-#     df.to_parquet(out_dir / "cis_longform.parquet", index=False)
-#     print(f"[INFO] Saved bootstrap CI Parquet to: {out_dir} , cis_longform.parquet")
-
-
-# # %% ================ GROUPING HELPERS ==========================
-# # Group indices from cognitive data
+# %% ================ GROUPING HELPERS ==========================
+# Group indices from cognitive data
 
 
 def make_long_cog(cog_data: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
@@ -864,7 +284,7 @@ def get_group_data(cog_data: pd.DataFrame, dataset_name: str, groups_selected: s
     return group_indices(df_long, cols)
 
 
-# # %%
+# %%
 
 # # =============================================================================
 # # -----------------------------------------------------------------------------
@@ -893,6 +313,8 @@ paths = get_paths(
     cognitive_data_file=cfg["cognitive_data_file"],
     anat_labels_file=cfg["anat_labels_file"],
 )
+
+
 # # Root locations
 speed_root = Path(paths["speed"])
 preprocessed_root = Path(paths["preprocessed"])
@@ -929,6 +351,7 @@ outdir_bootstrap_repeat = str(
 # # acceleration plots
 distribution_folder = paths["f_speed"] / "distribution"
 distribution_folder.mkdir(parents=True, exist_ok=True)
+
 # # acceleration plots
 acceleration_folder = paths["f_speed"] / "acceleration"
 acceleration_folder.mkdir(parents=True, exist_ok=True)
@@ -975,19 +398,20 @@ regions = bundle.n_regions
 cog_data = load_cognitive_data(
     loaddir_cog_data.format(n_animals=n_animals, regions=regions, total_tr=total_tr)
 )
-#%%
-#Load speed data
+# %%
+# Load speed data
 speeds = load_speed_stack(
     loaddir_speed,
     time_windows_range,
 )
-
-
-# # %%
-# # ========================== PRECOMPUTE DIMENSIONS ==========================
-# # Basic dimensions
+# Basic dimensions
 n_windows = len(speeds)
-# n_animals = len(speeds[0])
+n_animals = len(speeds[0])
+
+# speeds[j][i] = 1D np.array of all speed samples for animal i, at window j (time_windows_range)
+
+# %%
+# ========================== PRECOMPUTE DIMENSIONS ==========================
 
 
 # # Precompute mean speed for each animal at each window (handy for mean-based bootstrap later)
@@ -996,30 +420,27 @@ per_window_animal_means = [
     for j in range(n_windows)
 ]
 
-# print(
-#     "[INFO] Data loaded. n_animals:",
-#     n_animals,
-#     "n_windows:",
-#     n_windows,
-#     "per_window_animal_means[0].shape:",
-#     per_window_animal_means[0].shape,
-# )
+
 # %% ========================== SPLITS IN POOLINGS & HIST SETUP ==========================
+
 # Get the split indices and ranges
 counts = count_samples_per_window(speeds)
 pooled_speeds_cdf = (
     np.cumsum(counts) / np.sum(counts) if counts.sum() else np.zeros_like(counts)
 )
+
+# Get split indices
 i_third, i_half, i_two_third = cdf_split_indices(speeds)
 ranges = select_windows(
     POOL_SPLIT, len(time_windows_range), i_third, i_half, i_two_third
 )
+
 # Get global min/max for histogram binning
 all_speeds_flat = flatten_windows(speeds, 0, len(speeds))
 all_speeds_min, all_speeds_max = global_min_max([all_speeds_flat])
 edges = np.linspace(all_speeds_min, all_speeds_max, BINS_HIST + 1)
 centers = 0.5 * (edges[:-1] + edges[1:])
-# # %%
+# %%
 
 
 # # ================================================================================
@@ -1034,14 +455,10 @@ centers = 0.5 * (edges[:-1] + edges[1:])
 
 # percentiles_ = np.linspace(0, 100, 100)
 n_resamples = 10_000
-# # n_resamples = 10
 downsample_factor = 10
 seed = 42
-# n_jobs = 60
-
 
 # # %% ========================== GROUP INDICES ==========================
-
 # # build once
 df_long = make_long_cog(cog_data, dataset_name)
 
@@ -1049,153 +466,54 @@ df_long = make_long_cog(cog_data, dataset_name)
 # # groups_selected = "age_sex_genotype"  # or "sex", "age", "phenotype_oip", ...
 
 groups_list = [
+    "sex",
+    "age",
+    "genotype",
+    "phenotype_oip",
+    "phenotype_nor",
     "age_sex",
     "age_genotype",
+    "age_phenotype_nor",
+    "age_phenotype_oip",
     "age_sex_genotype",
     "age_sex_phenotype_oip",
     "age_sex_phenotype_nor",
-    "age_phenotype_nor",
-    "age_phenotype_oip",
 ]
 
-# # groups_selected = "age_sex_phenotype_oip"  # or "sex", "age", "phenotype_oip", ...
-# for groups_selected in groups_list:
-#     print(f"Processing grouping: {groups_selected}")
-
-#     group_data = get_group_data(cog_data, dataset_name, groups_selected)
-
-#     #  ========================== PER-SEGMENT HISTOGRAMS ==========================
-
-#     # Per-animal histograms & per-group mean histograms
-#     H_per_segment: dict[str, np.ndarray] = {}
-#     group_means_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
-
-#     # Build per-animal normalized histograms & per-group means
-#     for seg_name, w_range in ranges.items():
-#         # per-animal normalized histograms
-#         H = build_per_animal_normalized_hists(
-#             speeds, w_range, BINS_HIST, (all_speeds_min, all_speeds_max)
-#         )
-#         H_per_segment[seg_name] = H
-#         # per-group average histogram over animals
-#         group_means: dict[tuple[str, str], np.ndarray] = {}
-#         for gt, idxs in group_data.items():
-#             group_means[gt] = (
-#                 np.mean(H[idxs], axis=0) if len(idxs) else np.zeros(BINS_HIST)
-#             )
-#         group_means_by_segment[seg_name] = group_means
-
-#     #  ========================== POOLING ==========================
-
-#     # Optional pooled hist per group (values aggregated across animals & windows)
-#     animal_speeds = [[speeds[j][i] for j in range(n_windows)] for i in range(n_animals)]
-#     pooled_group_hists_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
-#     pooled_group_speed_by_segment: dict[str, dict[tuple[str, str], np.ndarray]] = {}
-#     group_speed_by_segment = {}
-
-#     for seg_name, w_range in ranges.items():
-#         pooled_group_hist_i = {}
-#         pooled_group_speed_i = {}
-#         group_speed = {}
-#         for gt, idxs in group_data.items():
-#             # Get group animal speeds over selected windows
-#             group_speed_i = get_group_animals_over_windows(animal_speeds, idxs, w_range)
-#             group_speed[gt] = group_speed_i
-#             # Flatten values for group animals over selected windows
-#             flat = flatten_group_animals_over_windows(animal_speeds, idxs, w_range)
-#             pooled_group_speed_i[gt] = flat
-#             # Compute & normalize histogram
-#             h, _ = safe_hist(flat, BINS_HIST, (all_speeds_min, all_speeds_max))
-#             pooled_group_hist_i[gt] = normalize_counts_to_prob(h) * 2
-#         pooled_group_hists_by_segment[seg_name] = pooled_group_hist_i
-#         pooled_group_speed_by_segment[seg_name] = pooled_group_speed_i
-#         group_speed_by_segment[seg_name] = group_speed
-
-#     #
-
-#     # ========================== BOOTSTRAP RESAMPLING WITH DOWNSAMPLING & REPEATS ==========================
-#     outdir_bootstrap_repeat_aux = Path(
-#         outdir_bootstrap_repeat.format(
-#             groups_selected=groups_selected,
-#             n_resamples=n_resamples,
-#             downsample_factor=downsample_factor,
-#             seed=seed,
-#         )
-#     )
-#     # Save ci_low_repeat , ci_high_repeat , ci_btr_downsample_repeat
-#     if outdir_bootstrap_repeat_aux.exists():
-#         print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
-#         with open(
-#             outdir_bootstrap_repeat_aux,
-#             "rb",
-#         ) as f:
-#             data_loaded = pickle.load(f)
-#             # metadata
-#             groups_selected = data_loaded["groups_selected"]
-#             group_data = data_loaded["group_data"]
-#             ranges = data_loaded["ranges"]
-#             percentiles_ = data_loaded["percentiles_"]
-#             # bootstrap results
-#             ci_low_repeat = data_loaded["ci_low_repeat"]
-#             ci_high_repeat = data_loaded["ci_high_repeat"]
-#             vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
-#             # speed data
-#             group_means_by_segment = data_loaded.get(
-#                 "group_means_by_segment", group_means_by_segment
-#             )
-#             pooled_group_hists_by_segment = data_loaded.get(
-#                 "pooled_group_hists_by_segment", pooled_group_hists_by_segment
-#             )
-#             pooled_group_speed_by_segment = data_loaded.get(
-#                 "pooled_group_speed_by_segment", pooled_group_speed_by_segment
-#             )
-#             group_speed_by_segment = data_loaded.get(
-#                 "group_speed_by_segment", group_speed_by_segment
-#             )
-
-#     else:
-#         # Downsampled classic bootstrap resampling with repeats
-#         ci_low_repeat, ci_high_repeat, vals_btr_downsample_repeat = (
-#             group_pool_bt_classic_resampling_downsampled(
-#                 ranges,
-#                 pooled_group_speed_by_segment,
-#                 group_data,
-#                 percentiles_,
-#                 repeat=n_resamples,
-#                 downsample_factor=downsample_factor,
-#                 seed=seed,
-#                 n_jobs=n_jobs,
-#                 verbose=1,
-#             )
-#         )
-#         with open(outdir_bootstrap_repeat_aux, "wb") as f:
-#             pickle.dump(
-#                 {
-#                     "groups_selected": groups_selected,
-#                     "group_data": group_data,
-#                     "ranges": ranges,
-#                     "percentiles_": percentiles_,
-#                     "ci_low_repeat": ci_low_repeat,
-#                     "ci_high_repeat": ci_high_repeat,
-#                     "ci_btr_downsample_repeat": vals_btr_downsample_repeat,
-#                     "group_means_by_segment": group_means_by_segment,
-#                     "pooled_group_hists_by_segment": pooled_group_hists_by_segment,
-#                     "pooled_group_speed_by_segment": pooled_group_speed_by_segment,
-#                     "group_speed_by_segment": group_speed_by_segment,
-#                 },
-#                 f,
-#             )
 # %%
+# ============================================================
+#   PLOTTING: group mean histograms (linear + log panels)
+# ============================================================
 
-# % ========================== PLOTTING ==========================
 
+def pretty_group_label(gt):
+    if isinstance(gt, tuple):
+        return " | ".join(str(x) for x in gt)
+    return str(gt)
+
+
+def age_contrast_label(gt_4m):
+    """
+    Build the label used for 4M–2M contrasts.
+    For tuple keys: drop the age ('2M'/'4M') and join other factors.
+    For pure age: just return '4M-2M'.
+    """
+    # pure age grouping will handle label separately
+    if isinstance(gt_4m, str):
+        return "4M-2M"
+
+    # tuple like ('female', '4M', 'wt', ...)
+    parts = [str(v) for v in gt_4m if v not in ("2M", "4M")]
+    return " | ".join(parts) if parts else "all"
+
+
+# %%
+# ========================== PLOTTING GROUP MEAN HISTOGRAMS ==========================
 
 for groups_selected in groups_list:
-    print(f"Processing grouping: {groups_selected}")
+    print(f"\nProcessing grouping: {groups_selected}")
 
-    group_data = get_group_data(cog_data, dataset_name, groups_selected)
-    print(f"Group data keys: {group_data.keys()}")
-
+    # --- Load bootstrap pack ---
     outdir_bootstrap_repeat_aux = Path(
         outdir_bootstrap_repeat.format(
             groups_selected=groups_selected,
@@ -1204,66 +522,289 @@ for groups_selected in groups_list:
             seed=seed,
         )
     )
+
+    if not outdir_bootstrap_repeat_aux.exists():
+        print("  -> bootstrap missing")
+        continue
+
+    with open(outdir_bootstrap_repeat_aux, "rb") as f:
+        data_loaded = pickle.load(f)
+
+    ranges = data_loaded["ranges"]
+    group_means_by_segment = data_loaded["group_means_by_segment"]
+    pooled_group_hists_by_segment = data_loaded["pooled_group_hists_by_segment"]
+    pooled_group_speed_by_segment = data_loaded["pooled_group_speed_by_segment"]
+    group_speed_by_segment = data_loaded["group_speed_by_segment"]
+
+    seg_names = list(ranges.keys())
+    n_seg = len(seg_names)
+
+    # -----------------------------
+    # Two-row figure:
+    #   Top: linear scale
+    #   Bottom: log scale
+    # -----------------------------
+    fig, axes = plt.subplots(
+        2,
+        n_seg,
+        figsize=(6 * n_seg, 8),
+        sharex=True,
+    )
+
+    # If n_seg = 1 → normalize axes to 2 lists
+    if n_seg == 1:
+        axes = np.array([axes]).reshape(2, 1)
+
+    # -----------------------------------------
+    # Prepare clean, readable color cycle
+    # -----------------------------------------
+    plt.rcParams["axes.prop_cycle"] = plt.cycler(
+        color=plt.cm.tab20(np.linspace(0, 1, 20))
+    )
+
+    for col, seg_name in enumerate(seg_names):
+        # group_means = group_means_by_segment[seg_name]
+        group_means = pooled_group_hists_by_segment[seg_name]
+
+        # ---------- TOP ROW (linear) ----------
+        ax_lin = axes[0, col]
+        ax_lin.set_title(f"{seg_name} (linear scale)", fontsize=14)
+
+        for gt, mean_hist in group_means.items():
+            ax_lin.plot(
+                centers, mean_hist, lw=1.2, alpha=0.8, label=pretty_group_label(gt)
+            )
+
+        ax_lin.set_xlabel("Speed")
+        ax_lin.set_ylabel("Density")
+        ax_lin.grid(True, which="both", ls="--", lw=0.4)
+
+        # ---------- BOTTOM ROW (log scale) ----------
+        ax_log = axes[1, col]
+        ax_log.set_title(f"{seg_name} (log scale)", fontsize=14)
+
+        for gt, mean_hist in group_means.items():
+            ax_log.plot(centers, mean_hist, lw=1.2, alpha=0.8)
+
+        ax_log.set_xlabel("Speed")
+        ax_log.set_ylabel("Density (log)")
+        ax_log.set_yscale("log")
+        ax_log.grid(True, which="both", ls="--", lw=0.4)
+
+    # -----------------------------
+    # Single consolidated legend
+    # -----------------------------
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    unique = dict(zip(labels, handles, strict=False))
+
+    fig.legend(
+        unique.values(),
+        unique.keys(),
+        title="Groups",
+        loc="center left",
+        bbox_to_anchor=(0.92, 0.5),
+        fontsize=11,
+        frameon=False,
+        handlelength=1.0,
+        handleheight=0.8,
+        borderpad=0.4,
+        labelspacing=0.3,
+        handletextpad=0.4,
+    )
+
+    # only ~10–12% of width reserved instead of 20%
+    plt.tight_layout(rect=[0.02, 0.02, 0.88, 0.95])
+
+    plt.savefig(
+        distribution_folder
+        / f"group_means_dist_{groups_selected}_{POOL_SPLIT}_bins{BINS_HIST}.png",
+        bbox_inches="tight",
+    )
+    plt.show()
+
+# %%
+
+
+# ========================== PLOTTING CIs ==========================
+for groups_selected in groups_list:
+    print(f"\nProcessing grouping (CIs): {groups_selected}")
+
+    # --- Load bootstrap pack ---
+    outdir_bootstrap_repeat_aux = Path(
+        outdir_bootstrap_repeat.format(
+            groups_selected=groups_selected,
+            n_resamples=n_resamples,
+            downsample_factor=downsample_factor,
+            seed=seed,
+        )
+    )
+
+    if not outdir_bootstrap_repeat_aux.exists():
+        print("  -> bootstrap file missing, skipping")
+        continue
+
+    with open(outdir_bootstrap_repeat_aux, "rb") as f:
+        data_loaded = pickle.load(f)
     print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
-    if outdir_bootstrap_repeat_aux.exists():
-        print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
-        with open(
-            outdir_bootstrap_repeat_aux,
-            "rb",
-        ) as f:
-            # data_loaded keys of interest
-            data_loaded = pickle.load(f)
-            # metadata
-            groups_selected = data_loaded["groups_selected"]
-            group_data = data_loaded["group_data"]
-            ranges = data_loaded["ranges"]
-            percentiles_ = data_loaded["percentiles_"]
-            # bootstrap results
-            ci_low_repeat = data_loaded["ci_low_repeat"]
-            ci_high_repeat = data_loaded["ci_high_repeat"]
-            vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
-            # speed data
-            group_means_by_segment = data_loaded["group_means_by_segment"]
-            pooled_group_hists_by_segment = data_loaded["pooled_group_hists_by_segment"]
-            pooled_group_speed_by_segment = data_loaded["pooled_group_speed_by_segment"]
-            group_speed_by_segment = data_loaded["group_speed_by_segment"]
 
-    # # #plot group means_by_segment
-    # plt.figure(figsize=(16, 8))
-    # for seg_name, group_means in group_means_by_segment.items():
-    #     print("Plotting Group Means for segment:", seg_name, group_means.keys())
-    #     plt.subplot(1, len(ranges), list(ranges.keys()).index(seg_name) + 1)
-    #     plt.title(f"Group Means - {seg_name}")
-    #     for gt, mean_hist in group_means.items():
-    #         plt.plot(centers, mean_hist, label=gt)
-    #     plt.xlabel("Speed")
-    #     plt.ylabel("Density")
-    #     # plt.yscale("log")
-    #     # plt.xscale("log")
+    # metadata / results
+    ranges = data_loaded["ranges"]
+    percentiles_ = data_loaded["percentiles_"]
+    group_data = data_loaded["group_data"]
+    ci_low_repeat = data_loaded["ci_low_repeat"]
+    ci_high_repeat = data_loaded["ci_high_repeat"]
 
-    #     # plt.ylim(2e-1, 1.5e0)
-    #     plt.legend()
-    # plt.tight_layout()
-    # plt.show()
+    seg_names = list(ranges.keys())
+    n_seg = len(seg_names)
 
-    # plot pooled_group_hists_by_segment, top subplot female, bottom male
-    # plt.figure(figsize=(16, 8))
+    # -----------------------------
+    # Two-row figure:
+    #   Top: linear y-scale
+    #   Bottom: log y-scale
+    # -----------------------------
+    fig, axes = plt.subplots(
+        2,
+        n_seg,
+        figsize=(6 * n_seg, 8),
+        # sharex=True,
+    )
+    if n_seg == 1:
+        axes = np.array([axes]).reshape(2, 1)
 
-    # for seg_name, pooled_group_hists in pooled_group_hists_by_segment.items():
-    #     print(
-    #         "Plotting Pooled Group Hists for segment:",
-    #         seg_name,
-    #         pooled_group_hists.keys(),
-    #     )
-    #     plt.subplot(1, len(ranges), list(ranges.keys()).index(seg_name) + 1)
-    #     plt.title(f"Pooled Group Histograms - {seg_name}")
-    #     for gt, pooled_hist in pooled_group_hists.items():
-    #         plt.plot(centers, pooled_hist, label=gt, alpha=0.7)
-    #     plt.xlabel("Speed")
-    #     plt.ylabel("Density")
-    #     plt.legend()
-    # plt.tight_layout()
-    # plt.show()
+    # consistent color cycle
+    plt.rcParams["axes.prop_cycle"] = plt.cycler(
+        color=plt.cm.tab20(np.linspace(0, 1, 20))
+    )
+
+    # for legend consolidation
+    legend_handles = []
+    legend_labels = []
+
+    for col, seg_name in enumerate(seg_names):
+
+        # ---------- TOP ROW (linear y) ----------
+        ax_lin = axes[0, col]
+        ax_lin.set_title(f"{seg_name} (linear scale)", fontsize=14)
+
+        for gt in group_data.keys():
+            lo = ci_low_repeat[seg_name][gt]
+            hi = ci_high_repeat[seg_name][gt]
+            label = pretty_group_label(gt)
+
+            band = ax_lin.fill_between(
+                percentiles_,
+                lo,
+                hi,
+                alpha=0.6,
+                label=label,
+            )
+
+            legend_handles.append(band)
+            legend_labels.append(label)
+
+        ax_lin.set_xlabel("Percentiles")
+        ax_lin.set_ylabel("Speed")
+        ax_lin.set_ylim(0.2, 1.5)
+        ax_lin.set_xlim(0, 100)
+        ax_lin.set_xscale("linear")
+        ax_lin.set_yscale("linear")
+        ax_lin.grid(True, which="both", ls="--", lw=0.4)
+
+        # ---------- BOTTOM ROW (log y) ----------
+        ax_log = axes[1, col]
+        ax_log.set_title(f"{seg_name} (log scale)", fontsize=14)
+
+        for gt in group_data.keys():
+            lo = ci_low_repeat[seg_name][gt]
+            hi = ci_high_repeat[seg_name][gt]
+
+            ax_log.fill_between(
+                percentiles_,
+                lo,
+                hi,
+                alpha=0.6,
+            )
+
+        ax_log.set_xlabel("Percentiles")
+        ax_log.set_ylabel("Speed (log)")
+        ax_log.set_yscale("log")
+        ax_log.set_xscale("log")
+        ax_log.grid(True, which="both", ls="--", lw=0.4)
+
+    # -----------------------------
+    # Single consolidated legend
+    # -----------------------------
+    uniq = {}
+    for h, l in zip(legend_handles, legend_labels, strict=False):
+        if l not in uniq:
+            uniq[l] = h
+
+    fig.legend(
+        uniq.values(),
+        uniq.keys(),
+        title="Groups",
+        loc="center left",
+        bbox_to_anchor=(0.92, 0.5),
+        fontsize=11,
+        frameon=False,
+        handlelength=1.0,
+        handleheight=0.8,
+        borderpad=0.4,
+        labelspacing=0.3,
+        handletextpad=0.4,
+    )
+
+    plt.tight_layout(rect=[0.02, 0.02, 0.88, 0.95])
+
+    plt.savefig(
+        distribution_folder
+        / f"ci_comparison_{groups_selected}_{POOL_SPLIT}_bins{BINS_HIST}.png",
+        bbox_inches="tight",
+    )
+    plt.show()
+
+
+# %%
+# % ========================== PLOTTING ==========================
+for groups_selected in groups_list:
+    print(f"Processing grouping: {groups_selected}")
+
+    # folder load bootstrap
+    outdir_bootstrap_repeat_aux = Path(
+        outdir_bootstrap_repeat.format(
+            groups_selected=groups_selected,
+            n_resamples=n_resamples,
+            downsample_factor=downsample_factor,
+            seed=seed,
+        )
+    )
+    # check exists
+    if not outdir_bootstrap_repeat_aux.exists():
+        print("  -> bootstrap file missing, skipping")
+        continue
+    # load bootstrap data
+    with open(outdir_bootstrap_repeat_aux, "rb") as f:
+        data_loaded = pickle.load(f)
+    print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
+
+    # metadata
+    groups_selected = data_loaded["groups_selected"]
+    group_data = data_loaded["group_data"]
+    ranges = data_loaded["ranges"]
+    percentiles_ = data_loaded["percentiles_"]
+
+    # bootstrap results
+    ci_low_repeat = data_loaded["ci_low_repeat"]
+    ci_high_repeat = data_loaded["ci_high_repeat"]
+    vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
+
+    # speed data
+    group_means_by_segment = data_loaded["group_means_by_segment"]
+    pooled_group_hists_by_segment = data_loaded["pooled_group_hists_by_segment"]
+    pooled_group_speed_by_segment = data_loaded["pooled_group_speed_by_segment"]
+    group_speed_by_segment = data_loaded["group_speed_by_segment"]
+
+    print(f"Group data keys: {group_data.keys()}")
 
     # plot confidence intervals comparison
     plt.figure(figsize=(16, 8))
@@ -1271,7 +812,7 @@ for groups_selected in groups_list:
         plt.subplot(1, len(ranges), list(ranges.keys()).index(seg_name) + 1)
         plt.title(f"Confidence Intervals Comparison - {seg_name}")
         for gt in group_data.keys():
-            print("Plotting GT:", gt)
+            # print("Plotting GT:", gt)
             plt.fill_between(
                 percentiles_,
                 ci_low_repeat[seg_name][gt],
@@ -1283,8 +824,8 @@ for groups_selected in groups_list:
         # plt.plot(percentiles_, group_flat_speed_perc, label='Pooled Group Histogram')
         plt.xlabel("Percentiles")
         plt.ylabel("Speed")
-        # plt.yscale("log")
-        # plt.xscale("log")
+        plt.yscale("log")
+        plt.xscale("log")
         plt.ylim(2e-1, 1.5e0)
         # plt.xlim(0,3)
 
@@ -1293,9 +834,12 @@ for groups_selected in groups_list:
     plt.tight_layout()
     plt.savefig(
         distribution_folder
-        / f'ci_comparison_downsampled_classic_bootstrap_{groups_selected}_{POOL_SPLIT}_bins{BINS_HIST}.png'
-        )
-    # plt.savefig(distribution_folder / f'ci_comparison_downsampled_classic_bootstrap_{POOL_SPLIT}_bins{BINS_HIST}.png')
+        / f"ci_comparison_downsampled_classic_bootstrap_{groups_selected}_{POOL_SPLIT}_bins{BINS_HIST}.png"
+    )
+    plt.savefig(
+        distribution_folder
+        / f"ci_comparison_downsampled_classic_bootstrap__loglog_{groups_selected}_{POOL_SPLIT}_bins{BINS_HIST}.png"
+    )
     plt.show()
 
     for seg_name, w_range in ranges.items():
@@ -1349,62 +893,48 @@ for groups_selected in groups_list:
                 aux_animal_i_perc = np.percentile(aux_animal_i_s_flat, percentiles_)
                 # print(f"Animal {i} percentiles: {aux_animal_i_perc}")
                 animal_flat_speed_perc[i] = aux_animal_i_perc
-            plt.legend()
+            # plt.legend()
             plt.tight_layout()
-            gt_format = str(str(gt).replace('(', '').replace(')', '').replace(',', '_').replace("'", "").replace(" ", ""))
-            plt.savefig(distribution_folder / f'animal_speed_histograms_{seg_name}_gt_{gt_format}.png')
+            gt_format = str(
+                str(gt)
+                .replace("(", "")
+                .replace(")", "")
+                .replace(",", "_")
+                .replace("'", "")
+                .replace(" ", "")
+            )
+            plt.savefig(
+                distribution_folder
+                / f"animal_speed_histograms_{seg_name}_gt_{gt_format}.png"
+            )
             plt.show()
-#%%
-
-    # %%
 # %%
-# for groups_selected in groups_list:
-#     print(f"Processing grouping: {groups_selected}")
 
-#     group_data = get_group_data(cog_data, dataset_name, groups_selected)
-#     print(f"Group data keys: {group_data.keys()}")
+# %%
+# %%
+groups_list = [
+    # "sex",
+    "age",
+    # "genotype",
+    # "phenotype_oip",
+    # "phenotype_nor",
+    "age_sex",
+    "age_genotype",
+    "age_phenotype_nor",
+    "age_phenotype_oip",
+    "age_sex_genotype",
+    "age_sex_phenotype_oip",
+    "age_sex_phenotype_nor",
+]
 
-#     outdir_bootstrap_repeat_aux = Path(
-#         outdir_bootstrap_repeat.format(
-#             groups_selected=groups_selected,
-#             n_resamples=n_resamples,
-#             downsample_factor=downsample_factor,
-#             seed=seed,
-#         )
-#     )
-#     print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
-#     if outdir_bootstrap_repeat_aux.exists():
-#         with open(outdir_bootstrap_repeat_aux, "rb") as f:
-#             data_loaded = pickle.load(f)
-
-#         # metadata
-#         groups_selected = data_loaded["groups_selected"]
-#         group_data = data_loaded["group_data"]
-#         ranges = data_loaded["ranges"]
-#         percentiles_ = data_loaded["percentiles_"]
-#         # bootstrap results
-#         ci_low_repeat = data_loaded["ci_low_repeat"]
-#         ci_high_repeat = data_loaded["ci_high_repeat"]
-#         vals_btr_downsample_repeat = data_loaded["ci_btr_downsample_repeat"]
-#         # speed data (kept if you need it later)
-#         group_means_by_segment = data_loaded["group_means_by_segment"]
-#         pooled_group_hists_by_segment = data_loaded["pooled_group_hists_by_segment"]
-#         pooled_group_speed_by_segment = data_loaded["pooled_group_speed_by_segment"]
-#         group_speed_by_segment = data_loaded["group_speed_by_segment"]
-#     else:
-#         print(f"WARNING: bootstrap file not found for {groups_selected}")
-#         continue
-
-    # ============================================================
-    #   CI DIFF BANDS: 4M - 2M AS SUBPLOTS PER SEGMENT
-    # ============================================================
+# ============================================================
+#   CI DIFF BANDS: 4M - 2M AS SUBPLOTS PER SEGMENT
+# ============================================================
 
 for groups_selected in groups_list:
     print(f"Processing grouping: {groups_selected}")
 
-    group_data = get_group_data(cog_data, dataset_name, groups_selected)
-    print(f"Group data keys: {group_data.keys()}")
-
+    # folder load bootstrap
     outdir_bootstrap_repeat_aux = Path(
         outdir_bootstrap_repeat.format(
             groups_selected=groups_selected,
@@ -1413,22 +943,26 @@ for groups_selected in groups_list:
             seed=seed,
         )
     )
-    print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
+
     if not outdir_bootstrap_repeat_aux.exists():
         print("  -> bootstrap file missing, skipping")
         continue
 
     with open(outdir_bootstrap_repeat_aux, "rb") as f:
         data_loaded = pickle.load(f)
+    print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
 
     # metadata
     groups_selected = data_loaded["groups_selected"]
     group_data = data_loaded["group_data"]
     ranges = data_loaded["ranges"]
     percentiles_ = data_loaded["percentiles_"]
+
     # bootstrap results
     ci_low_repeat = data_loaded["ci_low_repeat"]
     ci_high_repeat = data_loaded["ci_high_repeat"]
+
+    print(f"Group data keys: {group_data.keys()}")
 
     # ---------- one figure per groups_selected, subplots per segment ----------
     seg_names = list(ranges.keys())
@@ -1444,121 +978,187 @@ for groups_selected in groups_list:
     if n_seg == 1:
         axes = [axes]
 
-    for ax, seg_name in zip(axes, seg_names):
+    # fixed color map: label (female, male, …) -> color from AGE_CONTRAST_PALETTE
+    color_map = make_age_contrast_color_map(group_data.keys(), groups_selected)
+
+    for ax, seg_name in zip(axes, seg_names, strict=False):
         plotted_any = False
 
-        # loop over groups that have 4M in their key for this segment
         for gt in ci_low_repeat[seg_name].keys():
-            if "4M" not in gt:
-                continue
+            # ----- CASE A: pure age grouping: keys are '2M', '4M' -----
+            if groups_selected == "age":
+                if gt != "4M":
+                    continue  # only contrast 4M vs 2M
 
-            # find age position and build matching 2M key
-            age_idx = gt.index("4M")
-            gt2_list = list(gt)
-            gt2_list[age_idx] = "2M"
-            gt2 = tuple(gt2_list)
+                gt_4m = "4M"
+                gt_2m = "2M"
 
-            if gt2 not in ci_low_repeat[seg_name]:
-                print(f"Skipping pair: {gt} vs {gt2} (missing CI for seg={seg_name})")
-                continue
+                if gt_2m not in ci_low_repeat[seg_name]:
+                    print(
+                        f"Skipping pair: {gt_4m} vs {gt_2m} (missing CI for seg={seg_name})"
+                    )
+                    continue
 
-            ci_low_4m = ci_low_repeat[seg_name][gt]
-            ci_low_2m = ci_low_repeat[seg_name][gt2]
-            ci_high_4m = ci_high_repeat[seg_name][gt]
-            ci_high_2m = ci_high_repeat[seg_name][gt2]
+                label = "4M-2M"  # must match key in color_map
+            # ----- CASE B: age + other factors: keys are tuples -----
+            else:
+                # e.g. gt = ('female', '2M', 'wt') or ('female', '4M', 'wt')
+                if not isinstance(gt, tuple) or "4M" not in gt:
+                    continue
+
+                age_idx = gt.index("4M")
+                gt_4m = gt
+
+                gt2_list = list(gt)
+                gt2_list[age_idx] = "2M"
+                gt_2m = tuple(gt2_list)
+
+                if gt_2m not in ci_low_repeat[seg_name]:
+                    print(
+                        f"Skipping pair: {gt_4m} vs {gt_2m} (missing CI for seg={seg_name})"
+                    )
+                    continue
+
+                # label: all factors except age, consistent with color_map
+                label = age_contrast_label(gt_4m)  # e.g. "female | wt"
+
+            # ---- color for this label ----
+            color = color_map[label]
+
+            # ----- compute diff CI: always 4M – 2M from here -----
+            ci_low_4m = ci_low_repeat[seg_name][gt_4m]
+            ci_low_2m = ci_low_repeat[seg_name][gt_2m]
+            ci_high_4m = ci_high_repeat[seg_name][gt_4m]
+            ci_high_2m = ci_high_repeat[seg_name][gt_2m]
 
             ci_low_diff = ci_low_4m - ci_low_2m
             ci_high_diff = ci_high_4m - ci_high_2m
 
-            # label = all factors except age
-            label_parts = [v for i, v in enumerate(gt) if i != age_idx]
-            label = ", ".join(label_parts) if label_parts else "all"
-
-            # low diff (solid) + high diff (dashed) + band
-            line_low, = ax.plot(
+            # low diff + high diff + band, all with the same explicit color
+            ax.plot(
                 percentiles_,
                 ci_low_diff,
                 label=label,
-                alpha=0.2
+                color=color,
+                alpha=0.7,
             )
             ax.plot(
                 percentiles_,
                 ci_high_diff,
-                # linestyle="--",
-                color=line_low.get_color(),
-                alpha=0.2,
+                color=color,
+                alpha=0.7,
             )
             ax.fill_between(
                 percentiles_,
                 ci_low_diff,
                 ci_high_diff,
-                color=line_low.get_color(),
-                alpha=0.4,
+                color=color,
+                alpha=0.3,
             )
 
             plotted_any = True
-            # >>> Force limits, ticks and fontsize here <<<
-            ax.set_ylim(-0.2, 0.2)
-            ax.set_xlim(0, 100)
-            ax.set_yticks([-0.2, -0.1, 0, 0.1, 0.2])
-            ax.tick_params(axis="both", labelsize=15)
 
-
-
+        # ----- common formatting -----
         ax.axhline(0, color="black", linestyle="--", linewidth=1)
         ax.set_title(seg_name)
         ax.set_xlabel("Percentiles")
-        # ax.set_xscale("symlog")
-        ax.set_xscale("log")
+        ax.set_ylim(-0.2, 0.2)
+        ax.set_xlim(0, 100)
+        ax.set_yticks([-0.2, -0.1, 0, 0.1, 0.2])
+        ax.tick_params(axis="both", labelsize=15)
 
         if ax is axes[0]:
             ax.set_ylabel("Speed Difference (4M - 2M)")
-        if plotted_any:
-            ax.legend(title="Group (non-age factors)", fontsize=9)
 
-    # plt.ylim(-0.2,0.2)
-    # plt.yticks((-0.2, -0.1, 0, 0.1, 0.2), fontsize=30)
+    # -------- single legend for whole figure --------
+    handles, labels = axes[0].get_legend_handles_labels()
+    uniq = dict(zip(labels, handles, strict=False))
+
+    fig.legend(
+        uniq.values(),
+        uniq.keys(),
+        title="Age contrast" if groups_selected == "age" else "Group (non-age factors)",
+        loc="center right",
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=10,
+        frameon=False,
+    )
+
     fig.suptitle(f"dFC acceleration low/high diff 4M-2M   groups={groups_selected}")
-    plt.tight_layout()
-    # plt.show()
-    # Save figure:
-    plt.savefig(acceleration_folder / f"ci_diff_band_4M_minus_2M_{seg_name}_{groups_selected}.png")
-    # plt.savefig(speed_root / f"ci_diff_band_4M_minus_2M_{seg_name}_{groups_selected}.png")
+    plt.tight_layout(rect=[0.02, 0.02, 0.85, 0.95])
+
+    plt.savefig(
+        acceleration_folder
+        / f"ci_diff_band_4M_minus_2M_{seg_name}_{groups_selected}.png"
+    )
+    plt.show()
 
 
+# %%
+def sex_contrast_label(gt_male):
+    """
+    Build the label used for male–female contrasts.
+    For tuple keys: drop the sex ('male'/'female') and join other factors.
+    For pure sex: just return 'male-female'.
+    """
+    if isinstance(gt_male, str):
+        return "male-female"
 
-#%%
+    parts = [str(v) for v in gt_male if v not in ("male", "female")]
+    return " | ".join(parts) if parts else "all"
 
+
+def make_sex_contrast_color_map(group_keys, groups_selected: str) -> dict[str, str]:
+    """
+    Map each non-sex label → a fixed color from AGE_CONTRAST_PALETTE.
+    Mirrors make_age_contrast_color_map, but for sex contrasts.
+    """
+    example_key = next(iter(group_keys))
+
+    # pure sex: only one contrast
+    if groups_selected == "sex" and isinstance(example_key, str):
+        return {"male-female": AGE_CONTRAST_PALETTE[0]}
+
+    labels: list[str] = []
+    for k in group_keys:
+        if isinstance(k, str):
+            # keys 'male'/'female' by themselves are handled in the loop
+            continue
+        if "male" not in k and "female" not in k:
+            continue
+        if isinstance(k, tuple) and "male" in k:
+            lbl = sex_contrast_label(k)
+            if lbl not in labels:
+                labels.append(lbl)
+
+    return {
+        lbl: AGE_CONTRAST_PALETTE[i % len(AGE_CONTRAST_PALETTE)]
+        for i, lbl in enumerate(labels)
+    }
+
+
+# ============================================================
+#   CI DIFF BANDS: MALE - FEMALE AS SUBPLOTS PER SEGMENT
+# ============================================================
 
 # Age = '2M' | '4M'
 # Sex = 'male' | 'female'
 
 groups_list = [
     "sex",
-    # "age_sex",
-    # "age_sex_genotype",
-    # "age_sex_phenotype_oip",
-    # "age_sex_phenotype_nor",
-    "sex_genotype",
-    "sex_phenotype_oip",
-    "sex_phenotype_nor",
-]
-
-# Age = '2M' | '4M'
-# Sex = 'male' | 'female'
-
-groups_list = [
-    "sex",
+    "age_sex",
+    "age_sex_genotype",
+    "age_sex_phenotype_oip",
+    "age_sex_phenotype_nor",
     "sex_genotype",
     "sex_phenotype_oip",
     "sex_phenotype_nor",
 ]
 
 for groups_selected in groups_list:
-    print(f"\nProcessing grouping: {groups_selected}")
+    print(f"\nProcessing grouping (sex diff): {groups_selected}")
 
-    group_data = get_group_data(cog_data, dataset_name, groups_selected)
-
+    # folder load bootstrap (same pattern as 4M-2M block)
     outdir_bootstrap_repeat_aux = Path(
         outdir_bootstrap_repeat.format(
             groups_selected=groups_selected,
@@ -1568,172 +1168,389 @@ for groups_selected in groups_list:
         )
     )
     if not outdir_bootstrap_repeat_aux.exists():
-        print(" -> bootstrap missing")
+        print("  -> bootstrap missing")
         continue
 
     with open(outdir_bootstrap_repeat_aux, "rb") as f:
         data_loaded = pickle.load(f)
+    print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
 
-    ci_low_repeat  = data_loaded["ci_low_repeat"]
+    # metadata
+    groups_selected = data_loaded["groups_selected"]
+    group_data = data_loaded["group_data"]
+    ranges = data_loaded["ranges"]
+    percentiles_ = data_loaded["percentiles_"]
+
+    # bootstrap results
+    ci_low_repeat = data_loaded["ci_low_repeat"]
     ci_high_repeat = data_loaded["ci_high_repeat"]
-    ranges         = data_loaded["ranges"]
-    percentiles_   = data_loaded["percentiles_"]
+
+    print(f"Group data keys: {group_data.keys()}")
 
     seg_names = list(ranges.keys())
-    first_seg = seg_names[0]
-    all_keys = list(ci_low_repeat[first_seg].keys())
-    print("  CI keys example:", all_keys)
+    n_seg = len(seg_names)
 
-    # ----------------- Helper -----------------
-    def norm_key(k):
-        if isinstance(k, tuple):
-            return k
-        return (k,)
-
-    # ------------------------------------------------------------------
-    # 1. Build male–female pairs
-    # ------------------------------------------------------------------
-    pairs = []
-
-    if groups_selected == "sex":
-        male_key = None
-        female_key = None
-        for k in all_keys:
-            ks = [str(x).lower() for x in norm_key(k)]
-            if any(s == "male" for s in ks):
-                male_key = k
-            if any(s == "female" for s in ks):
-                female_key = k
-        if male_key is not None and female_key is not None:
-            pairs.append((male_key, female_key))
-
-    else:
-        for k in all_keys:
-            kt = norm_key(k)
-
-            sex_idx = None
-            for i, v in enumerate(kt):
-                if v in ("male", "female"):
-                    sex_idx = i
-                    break
-            if sex_idx is None or kt[sex_idx] != "male":
-                continue
-
-            other = list(kt)
-            other[sex_idx] = "female"
-            k_f = tuple(other)
-
-            for c in all_keys:
-                if norm_key(c) == k_f:
-                    pairs.append((k, c))
-                    break
-
-    if not pairs:
-        print("  -> no male/female pairs found for this grouping, skipping")
-        continue
-
-    print("  Male–female pairs:", pairs)
-
-    # ------------------------------------------------------------------
-    # 2. Plot: one figure per grouping, subplots per segment
-    # ------------------------------------------------------------------
     fig, axes = plt.subplots(
-        1, len(seg_names),
-        figsize=(5 * len(seg_names), 4),
+        1,
+        n_seg,
+        figsize=(6 * n_seg, 5),
         sharex=True,
         sharey=True,
     )
-    if len(seg_names) == 1:
+    if n_seg == 1:
         axes = [axes]
 
-    for ax, seg_name in zip(axes, seg_names):
+    # fixed color map: label (non-sex factors) -> color
+    color_map = make_sex_contrast_color_map(group_data.keys(), groups_selected)
 
-        for (gt_m, gt_f) in pairs:
+    for ax, seg_name in zip(axes, seg_names, strict=False):
+        plotted_any = False
 
-            ci_low_m  = ci_low_repeat[seg_name][gt_m]
-            ci_low_f  = ci_low_repeat[seg_name][gt_f]
+        for gt in ci_low_repeat[seg_name].keys():
+            # ----- CASE A: pure sex grouping: keys are 'male', 'female' -----
+            if groups_selected == "sex":
+                if gt != "male":
+                    # only contrast male vs female
+                    continue
+
+                gt_m = "male"
+                gt_f = "female"
+
+                if gt_f not in ci_low_repeat[seg_name]:
+                    print(
+                        f"Skipping pair: {gt_m} vs {gt_f} "
+                        f"(missing CI for seg={seg_name})"
+                    )
+                    continue
+
+                label = "male-female"  # must match key in color_map
+
+            # ----- CASE B: sex + other factors: keys are tuples -----
+            else:
+                # e.g. ('female', '2M', 'wt') or ('male', '2M', 'wt')
+                if not isinstance(gt, tuple) or "male" not in gt:
+                    # we only start the pair from the 'male' version
+                    continue
+
+                sex_idx = gt.index("male")
+                gt_m = gt
+
+                gt_f_list = list(gt)
+                gt_f_list[sex_idx] = "female"
+                gt_f = tuple(gt_f_list)
+
+                if gt_f not in ci_low_repeat[seg_name]:
+                    print(
+                        f"Skipping pair: {gt_m} vs {gt_f} "
+                        f"(missing CI for seg={seg_name})"
+                    )
+                    continue
+
+                # label: all factors except sex, consistent with color_map
+                label = sex_contrast_label(gt_m)  # e.g. "2M | wt"
+
+            # ---- color for this label ----
+            color = color_map[label]
+
+            # ----- compute diff CI: always male – female from here -----
+            ci_low_m = ci_low_repeat[seg_name][gt_m]
+            ci_low_f = ci_low_repeat[seg_name][gt_f]
             ci_high_m = ci_high_repeat[seg_name][gt_m]
             ci_high_f = ci_high_repeat[seg_name][gt_f]
 
-            ci_low_diff  = ci_low_m  - ci_low_f
+            ci_low_diff = ci_low_m - ci_low_f
             ci_high_diff = ci_high_m - ci_high_f
 
-            # clean label = everything except sex
-            kt_m = norm_key(gt_m)
-            non_sex = [v for v in kt_m if v not in ("male", "female")]
-            label = ", ".join(non_sex) if non_sex else "all"
-
-            line_low, = ax.plot(
+            # low diff + high diff + band, all with the same explicit color
+            ax.plot(
                 percentiles_,
                 ci_low_diff,
                 label=label,
+                color=color,
+                alpha=0.7,
             )
             ax.plot(
                 percentiles_,
                 ci_high_diff,
-                linestyle="--",
-                color=line_low.get_color(),
+                color=color,
+                alpha=0.7,
             )
             ax.fill_between(
                 percentiles_,
                 ci_low_diff,
                 ci_high_diff,
-                color=line_low.get_color(),
-                alpha=0.2,
+                color=color,
+                alpha=0.3,
             )
 
+            plotted_any = True
+
+        # ----- common formatting (match 4M–2M block) -----
         ax.axhline(0, color="black", linestyle="--", linewidth=1)
         ax.set_title(seg_name)
         ax.set_xlabel("Percentiles")
+        ax.set_ylim(-0.2, 0.2)
+        ax.set_xlim(0, 100)
+        ax.set_yticks([-0.2, -0.1, 0, 0.1, 0.2])
+        ax.tick_params(axis="both", labelsize=15)
 
-    axes[0].set_ylabel("Speed Difference (male – female)")
-    fig.suptitle(f"dFC acceleration low/high diff male–female, groups={groups_selected}")
+        if ax is axes[0]:
+            ax.set_ylabel("Speed Difference (male - female)")
 
-    # ------------------ Clean consolidated legend ------------------
+    # -------- single legend for whole figure --------
     handles, labels = axes[0].get_legend_handles_labels()
-    seen = set()
-    handles_dedup = []
-    labels_dedup = []
-    for h, l in zip(handles, labels):
-        if l not in seen:
-            seen.add(l)
-            handles_dedup.append(h)
-            labels_dedup.append(l)
+    uniq = dict(zip(labels, handles, strict=False))
 
-    # legend placed outside the last subplot without eating space
     fig.legend(
-        handles_dedup,
-        labels_dedup,
-        title="Group (non-sex factors)",
-        loc=2,
-        bbox_to_anchor=(0.92, 0.5),
-        fontsize=9,
+        uniq.values(),
+        uniq.keys(),
+        title="Sex contrast" if groups_selected == "sex" else "Group (non-sex factors)",
+        loc="center right",
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=10,
         frameon=False,
     )
 
-    fig.tight_layout(rect=[0.02, 0.02, 0.88, 0.9])
+    fig.suptitle(
+        f"dFC acceleration low/high diff male-female   groups={groups_selected}"
+    )
+    plt.tight_layout(rect=[0.02, 0.02, 0.85, 0.95])
 
-    # ------------------ No figure shrink, just padding ------------------
-    plt.savefig(acceleration_folder / f"ci_diff_band_male_minus_female_{groups_selected}.png")
-    #
-
+    plt.savefig(
+        acceleration_folder
+        / f"ci_diff_band_male_minus_female_{seg_name}_{groups_selected}.png"
+    )
     plt.show()
-    plt.close(fig)
 
 
+# %%
+# ============================================================
+#   CI DIFF BANDS: WT - dKI AS SUBPLOTS PER SEGMENT
+# ============================================================
+def genotype_contrast_label(gt_ref, mut="dKI", ref="wt"):
+    """
+    Label for genotype contrast *wt - dKI*.
+
+    gt_ref is the key for the reference genotype (wt, or tuple containing 'wt').
+    For pure genotype: returns 'wt-dKI'.
+    For tuples: drops genotype and joins the remaining factors with ' | '.
+    """
+    if isinstance(gt_ref, str):
+        # pure genotype: just 'wt-dKI'
+        return f"{ref}-{mut}"
+
+    parts = [str(v) for v in gt_ref if v not in (ref, mut)]
+    return " | ".join(parts) if parts else "all"
 
 
+def make_genotype_contrast_color_map(
+    group_keys,
+    groups_selected: str,
+    mut: str = "dKI",
+    ref: str = "wt",
+) -> dict[str, str]:
+    """
+    Map each non-genotype label → a fixed color from AGE_CONTRAST_PALETTE,
+    for the contrast *wt - dKI*.
+
+    IMPORTANT: we now enumerate labels from the *reference* (wt) keys,
+    so the map contains exactly the same labels used in the plotting code.
+    """
+    example_key = next(iter(group_keys))
+
+    # pure genotype: only one contrast 'wt-dKI'
+    if groups_selected == "genotype" and isinstance(example_key, str):
+        return {f"{ref}-{mut}": AGE_CONTRAST_PALETTE[0]}
+
+    labels: list[str] = []
+    for k in group_keys:
+        if isinstance(k, str):
+            # 'wt', 'dKI' handled in the plotting loop
+            continue
+        if ref not in k and mut not in k:
+            continue
+        # we take labels from the reference-genotype version (contains 'wt')
+        if isinstance(k, tuple) and ref in k:
+            lbl = genotype_contrast_label(k, mut=mut, ref=ref)
+            if lbl not in labels:
+                labels.append(lbl)
+
+    return {
+        lbl: AGE_CONTRAST_PALETTE[i % len(AGE_CONTRAST_PALETTE)]
+        for i, lbl in enumerate(labels)
+    }
 
 
+# ============================================================
+#   CI DIFF BANDS: wt - dKI AS SUBPLOTS PER SEGMENT
+# ============================================================
 
+groups_list = [
+    "genotype",
+    "age_genotype",
+    "sex_genotype",
+    "age_sex_genotype",
+]
 
+for groups_selected in groups_list:
+    print(f"\nProcessing grouping (genotype diff wt-dKI): {groups_selected}")
 
+    # Load bootstrap
+    outdir_bootstrap_repeat_aux = Path(
+        outdir_bootstrap_repeat.format(
+            groups_selected=groups_selected,
+            n_resamples=n_resamples,
+            downsample_factor=downsample_factor,
+            seed=seed,
+        )
+    )
+    if not outdir_bootstrap_repeat_aux.exists():
+        print("  -> bootstrap missing")
+        continue
 
+    with open(outdir_bootstrap_repeat_aux, "rb") as f:
+        data_loaded = pickle.load(f)
+    print(f"Loading bootstrap: {outdir_bootstrap_repeat_aux}")
 
+    # metadata
+    groups_selected = data_loaded["groups_selected"]
+    group_data = data_loaded["group_data"]
+    ranges = data_loaded["ranges"]
+    percentiles_ = data_loaded["percentiles_"]
 
+    # bootstrap results
+    ci_low_repeat = data_loaded["ci_low_repeat"]
+    ci_high_repeat = data_loaded["ci_high_repeat"]
 
+    seg_names = list(ranges.keys())
+    n_seg = len(seg_names)
 
+    fig, axes = plt.subplots(
+        1,
+        n_seg,
+        figsize=(6 * n_seg, 5),
+        sharex=True,
+        sharey=True,
+    )
+    if n_seg == 1:
+        axes = [axes]
 
+    # Color map for *wt-dKI* (same grammar as sex/age contrasts)
+    color_map = make_genotype_contrast_color_map(
+        group_data.keys(),
+        groups_selected,
+        mut="dKI",  # mutant
+        ref="wt",  # reference
+    )
+
+    for ax, seg_name in zip(axes, seg_names, strict=False):
+        plotted_any = False
+
+        for gt in ci_low_repeat[seg_name].keys():
+            # ---- CASE A: pure genotype (strings 'wt', 'dKI') ----
+            if groups_selected == "genotype":
+                if gt != "wt":
+                    continue  # we start from reference = wt
+
+                gt_ref = "wt"
+                gt_mut = "dKI"
+
+                if gt_mut not in ci_low_repeat[seg_name]:
+                    print(f"Skipping: missing dKI for seg {seg_name}")
+                    continue
+
+                label = "wt-dKI"
+
+            # ---- CASE B: tuple with multiple factors ----
+            else:
+                # only start from wt
+                if not isinstance(gt, tuple) or "wt" not in gt:
+                    continue
+
+                geno_idx = gt.index("wt")
+                gt_ref = gt
+
+                # build dKI tuple
+                gt_mut_list = list(gt)
+                gt_mut_list[geno_idx] = "dKI"
+                gt_mut = tuple(gt_mut_list)
+
+                if gt_mut not in ci_low_repeat[seg_name]:
+                    print(f"Skipping pair {gt_ref} vs {gt_mut}: missing")
+                    continue
+
+                label = genotype_contrast_label(gt_ref, mut="dKI", ref="wt")
+
+            # ---- Color ----
+            color = color_map[label]
+
+            # ---- Compute diff: wt – dKI ----
+            ci_low_ref = ci_low_repeat[seg_name][gt_ref]
+            ci_low_mut = ci_low_repeat[seg_name][gt_mut]
+            ci_high_ref = ci_high_repeat[seg_name][gt_ref]
+            ci_high_mut = ci_high_repeat[seg_name][gt_mut]
+
+            ci_low_diff = ci_low_ref - ci_low_mut
+            ci_high_diff = ci_high_ref - ci_high_mut
+
+            # ---- Plot band ----
+            ax.plot(
+                percentiles_,
+                ci_low_diff,
+                label=label,
+                color=color,
+                alpha=0.7,
+            )
+            ax.plot(
+                percentiles_,
+                ci_high_diff,
+                color=color,
+                alpha=0.7,
+            )
+            ax.fill_between(
+                percentiles_,
+                ci_low_diff,
+                ci_high_diff,
+                color=color,
+                alpha=0.3,
+            )
+
+            plotted_any = True
+
+        # Formatting
+        ax.axhline(0, color="black", linestyle="--", linewidth=1)
+        ax.set_title(seg_name)
+        ax.set_xlabel("Percentiles")
+        ax.set_ylim(-0.2, 0.2)
+        ax.set_xlim(0, 100)
+        ax.set_yticks([-0.2, -0.1, 0, 0.1, 0.2])
+        ax.tick_params(axis="both", labelsize=15)
+
+        if ax is axes[0]:
+            ax.set_ylabel("Speed Difference (wt - dKI)")
+
+    # Legend
+    handles, labels = axes[0].get_legend_handles_labels()
+    uniq = dict(zip(labels, handles, strict=False))
+
+    fig.legend(
+        uniq.values(),
+        uniq.keys(),
+        title="Genotype contrast",
+        loc="center right",
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=10,
+        frameon=False,
+    )
+
+    fig.suptitle(f"dFC acceleration low/high diff wt - dKI   groups={groups_selected}")
+    plt.tight_layout(rect=[0.02, 0.02, 0.85, 0.95])
+
+    plt.savefig(
+        acceleration_folder
+        / f"ci_diff_band_wt_minus_dKI_{seg_name}_{groups_selected}.png"
+    )
+    plt.show()
 
 
 # %%
