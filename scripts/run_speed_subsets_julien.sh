@@ -173,10 +173,11 @@ if [[ "${RUN_GLOBAL}" == "1" ]]; then
   run_cmd "${SPEED_CLI_BASE} all ${COMMON_SPEED_FLAGS}"
 fi
 if [[ "${RUN_PER_REGION}" == "1" ]]; then
-  run_cmd "${SPEED_CLI_BASE} regions500 \
-  --per-region --per-region-mode touching \
-  ${COMMON_SPEED_FLAGS}"
+  run_cmd "${SPEED_CLI_BASE} per_region \
+    --per-region --per-region-mode touching \
+    ${COMMON_SPEED_FLAGS}"
 fi
+
 
 run_with_sets() {
   local mode="$1"; shift
