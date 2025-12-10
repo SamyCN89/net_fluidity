@@ -6,30 +6,22 @@ Created on Wed Apr  2 02:59:41 2025
 """
 
 # %%
-from tkinter import font
-from turtle import color
-from matplotlib.pylab import f
 import matplotlib.pyplot as plt
 import numpy as np
-import tqdm
-import json
+
+from shared_code.fun_loaddata import load_timeseries_bundle
+
 # from fun_utils import get_paths, set_figure_params
 from shared_code.fun_paths import get_paths
 
 # from shared_code.fun_utils import set_figure_params
-from shared_code.fun_utils import (
-    load_timeseries_data,
-    set_figure_params,
-    load_cognitive_data
-)
-from shared_code.fun_loaddata import load_timeseries_bundle
-import matplotlib.transforms as mtransforms
+from shared_code.fun_utils import load_cognitive_data, set_figure_params
 
 save_fig = set_figure_params(False)
 
 timecourse_folder = "Timecourses_updated_03052024"
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder=timecourse_folder,
     cognitive_data_file="ROIs.xlsx",
     anat_labels_file="41_Allen.txt",
@@ -47,7 +39,7 @@ regions = bundle.n_regions
 mask_groups = bundle.mask_groups
 label_variables = bundle.label_variables
 
-#%%
+# %%
 # ========================== Prepare cognitive data =========================
 # Load cognitive data
 
@@ -55,7 +47,7 @@ cog_data = load_cognitive_data(paths["preprocessed"] / "cog_data_sorted_2m4m.csv
 # import pickle
 # with open(paths["preprocessed"] / "grouping_data_oip.pkl", "rb") as f:
 #     cognitive_data = pickle.load(f) # Dictionary with cognitive data
-#%%
+# %%
 # ========================== Figure parameters ================================
 # Set figure parameters globally
 # save_fig = set_figure_params(True)
@@ -63,7 +55,7 @@ cog_data = load_cognitive_data(paths["preprocessed"] / "cog_data_sorted_2m4m.csv
 # # =================== Paths and folders =======================================
 # # paths = get_paths()
 # paths = get_paths(
-#     dataset_name="ines_abdullah",
+#     dataset_name="ines_abdallah",
 #     timecourse_folder=timecourse_folder,
 #     cognitive_data_file="ROIs.xlsx",
 #     anat_labels_file="41_Allen.txt",
@@ -99,44 +91,72 @@ plt.savefig(paths["figures"] / f"ts/ts_extract_{timecourse_folder}.png")
 # %%
 
 # Example: Plotting a histogram of a cognitive score for male_wt_data
-plt.figure(1,figsize=(10, 6))
+plt.figure(1, figsize=(10, 6))
 plt.clf()
 plt.subplot(211)
 
-male_ind = cog_data['Sexe'] == 'M'
-female_ind = cog_data['Sexe'] == 'F'
-wt_ind = cog_data['Genotype'] == 'wt'
-dki_ind = cog_data['Genotype'] == 'dKI'
+male_ind = cog_data["Sexe"] == "M"
+female_ind = cog_data["Sexe"] == "F"
+wt_ind = cog_data["Genotype"] == "wt"
+dki_ind = cog_data["Genotype"] == "dKI"
 
 # plt.hist((male_wt_data['OiP_2M'], male_wt_data['OiP_4M'], male_dki_data['OiP_2M'], male_dki_data['OiP_4M']), bins=4,
 #          alpha=0.7,
 #           histtype='step',
 #          label=('Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'))
-plt.violinplot((cog_data['OiP_2M'][male_ind & wt_ind], cog_data['OiP_4M'][male_ind & wt_ind], cog_data['OiP_2M'][male_ind & dki_ind], cog_data['OiP_4M'][male_ind & dki_ind]))
-plt.violinplot((cog_data['OiP_2M'][female_ind & wt_ind], cog_data['OiP_4M'][female_ind & wt_ind], cog_data['OiP_2M'][female_ind & dki_ind], cog_data['OiP_4M'][female_ind & dki_ind]))
+plt.violinplot(
+    (
+        cog_data["OiP_2M"][male_ind & wt_ind],
+        cog_data["OiP_4M"][male_ind & wt_ind],
+        cog_data["OiP_2M"][male_ind & dki_ind],
+        cog_data["OiP_4M"][male_ind & dki_ind],
+    )
+)
+plt.violinplot(
+    (
+        cog_data["OiP_2M"][female_ind & wt_ind],
+        cog_data["OiP_4M"][female_ind & wt_ind],
+        cog_data["OiP_2M"][female_ind & dki_ind],
+        cog_data["OiP_4M"][female_ind & dki_ind],
+    )
+)
 
-            # labels=('Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'))
-plt.xticks([1, 2, 3, 4], ['Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'])
-plt.axhline(0,c='k')
-plt.ylabel('OiP score')
-plt.title('OiP task scores')
+# labels=('Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'))
+plt.xticks([1, 2, 3, 4], ["Male WT 2M", "Male WT 4M", "Male dKI 2M", "Male dKI 4M"])
+plt.axhline(0, c="k")
+plt.ylabel("OiP score")
+plt.title("OiP task scores")
 plt.subplot(212)
 
-plt.violinplot((cog_data['RO24h_2M'][male_ind & wt_ind], cog_data['RO24h_4M'][male_ind & wt_ind], cog_data['RO24h_2M'][male_ind & dki_ind], cog_data['RO24h_4M'][male_ind & dki_ind]))
-plt.xticks([1, 2, 3, 4], ['Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'])
-plt.axhline(0,c='k')
-plt.ylabel('RO24h score')
-plt.title('RO24h Task')
+plt.violinplot(
+    (
+        cog_data["RO24h_2M"][male_ind & wt_ind],
+        cog_data["RO24h_4M"][male_ind & wt_ind],
+        cog_data["RO24h_2M"][male_ind & dki_ind],
+        cog_data["RO24h_4M"][male_ind & dki_ind],
+    )
+)
+plt.xticks([1, 2, 3, 4], ["Male WT 2M", "Male WT 4M", "Male dKI 2M", "Male dKI 4M"])
+plt.axhline(0, c="k")
+plt.ylabel("RO24h score")
+plt.title("RO24h Task")
 plt.tight_layout()
 plt.legend()
 plt.subplot(212)
-plt.violinplot((male_wt_data['RO24h_2M'], male_wt_data['RO24h_4M'], male_dki_data['RO24h_2M'], male_dki_data['RO24h_4M']))
-plt.xticks([1, 2, 3, 4], ['Male WT 2M', 'Male WT 4M', 'Male dKI 2M', 'Male dKI 4M'])
-plt.axhline(0,c='k')
-plt.ylabel('RO24h score')
-plt.title('Distribution of RO24h for Male')
+plt.violinplot(
+    (
+        male_wt_data["RO24h_2M"],
+        male_wt_data["RO24h_4M"],
+        male_dki_data["RO24h_2M"],
+        male_dki_data["RO24h_4M"],
+    )
+)
+plt.xticks([1, 2, 3, 4], ["Male WT 2M", "Male WT 4M", "Male dKI 2M", "Male dKI 4M"])
+plt.axhline(0, c="k")
+plt.ylabel("RO24h score")
+plt.title("Distribution of RO24h for Male")
 plt.legend()
 
 
-#%%
+# %%
 # %%

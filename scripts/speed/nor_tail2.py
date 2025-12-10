@@ -41,6 +41,7 @@ from shared_code.fun_utils import load_cognitive_data, set_figure_params
 # =============================================================================
 
 RNG_SEED = 123
+ANALYSIS_VERSION = 3  # bump whenever you change logic of metrics / splitting
 
 # Tail / shape metrics we systematically use
 PRIMARY_METRICS = [
@@ -179,33 +180,30 @@ def add_per_region_speeds(
     print(f"[per_region] Found {len(region_descriptors)} regions: {region_descriptors}")
 
     for region_desc in region_descriptors:
-        print(f"[per_region] Found {len(region_descriptors)} regions: {region_descriptors}")
+        # Files live directly under subset_dir:
+        #   speed_win{w}_lag1_tau2_animals_{n_animals}_regions_{regions}_{region_desc}.npz
+        template = str(
+            subset_dir
+            / f"speed_win{{w}}_lag1_tau2_animals_{n_animals}_regions_{regions}_{region_desc}.npz"
+        )
 
-        for region_desc in region_descriptors:
-            # Files live directly under subset_dir:
-            #   speed_win{w}_lag1_tau2_animals_{n_animals}_regions_{regions}_{region_desc}.npz
-            template = str(
-                subset_dir
-                / f"speed_win{{w}}_lag1_tau2_animals_{n_animals}_regions_{regions}_{region_desc}.npz"
+        try:
+            speeds = load_speed_stack_template(
+                template=template,
+                time_windows_range=time_windows_range,
+                n_animals=n_animals,
+                regions=regions,
             )
+        except FileNotFoundError as e:
+            print(f"[WARN] Skipping per_region {region_desc}: {e}")
+            continue
 
-            try:
-                speeds = load_speed_stack_template(
-                    template=template,
-                    time_windows_range=time_windows_range,
-                    n_animals=n_animals,
-                    regions=regions,
-                )
-            except FileNotFoundError as e:
-                print(f"[WARN] Skipping per_region {region_desc}: {e}")
-                continue
+        clean_desc = region_desc.replace("region-", "")
+        subset_name = f"per_region_{clean_desc}"
 
-            # Optional: cleaner subset name without "region-"
-            clean_desc = region_desc.replace("region-", "")
-            subset_name = f"per_region_{clean_desc}"
+        speeds_by_subset[subset_name] = speeds
+        print(f"[INFO] Loaded per_region speeds for '{subset_name}' with {len(speeds)} windows.")
 
-            speeds_by_subset[subset_name] = speeds
-            print(f"[INFO] Loaded per_region speeds for '{subset_name}' with {len(speeds)} windows.")
 
     return speeds_by_subset
 
@@ -1562,7 +1560,7 @@ if __name__ == "__main__":
         "subsets": sorted(all_subset_labels),
         "primary_metrics": PRIMARY_METRICS,
         "rng_seed": RNG_SEED,
-        "analysis_version": 2,  # <-- bump this whenever you change analysis logic
+        "analysis_version": ANALYSIS_VERSION,  # <-- bump this whenever you change analysis logic
     }
 
     cache_key = make_cache_key(cache_config)
@@ -1587,6 +1585,12 @@ if __name__ == "__main__":
             "pool_split": POOL_SPLIT,
             "time_windows": [int(w) for w in time_windows_range],
             "rng_seed": RNG_SEED,
+            "analysis_version": ANALYSIS_VERSION,
+            "metric_columns": [
+            "speed_q01", "speed_q05", "speed_median",
+            "speed_q90", "speed_q95", "speed_q99",
+            "speed_width50", "speed_width_extreme", "speed_asymmetry",
+        ],
         }
         subset_key = make_cache_key(subset_cfg)
         subset_path = subset_cache_root / f"metrics_{subset_key}.parquet"

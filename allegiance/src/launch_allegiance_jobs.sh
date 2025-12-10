@@ -5,7 +5,7 @@ source ~/miniconda3/etc/profile.d/conda.sh
 conda activate funcog
 
 # Set base parameters
-DATA_ROOT="/mnt/sdc/samy/dataset/Ines_Abdullah/script_mc"
+DATA_ROOT="/mnt/sdc/samy/dataset/ines_abdallah/script_mc"
 N_JOBS=40
 TIMECOURSE_FOLDER="Timecourses_updated_03052024"
 LAG=1

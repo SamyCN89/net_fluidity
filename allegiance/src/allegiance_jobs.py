@@ -85,7 +85,7 @@ logging.basicConfig(
 
 # --- Load data ---
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder=timecourse_folder,
     cognitive_data_file="ROIs.xlsx",
     env=env,

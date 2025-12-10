@@ -11,11 +11,11 @@ import os
 from pathlib import Path
 import time
 
+from joblib import Parallel, delayed, parallel_backend
 from matplotlib import pyplot as plt
 import numpy as np
 
 # sys.path.append("../../shared_code")
-
 from shared_code.fun_dfcspeed import ts2dfc_stream
 from shared_code.fun_metaconnectivity import fun_allegiance_communities
 from shared_code.fun_paths import get_paths
@@ -25,7 +25,6 @@ from shared_code.fun_utils import (
     load_timeseries_data,
     set_figure_params,
 )
-from joblib import Parallel, delayed, parallel_backend
 
 
 def setup_logging():
@@ -63,7 +62,7 @@ save_fig = set_figure_params(False)
 
 # =================== Paths and folders =======================================
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder="Timecourses_updated_03052024",
     cognitive_data_file="ROIs.xlsx",
 )

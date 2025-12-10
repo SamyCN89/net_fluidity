@@ -4,7 +4,7 @@
 Centralised CLIs under `scripts/preprocessing/` build canonical bundles for both supported datasets:
 
 - **Julien (`julien_caillette`)** — single-age recordings with optional TR filtering.
-- **Ines (`ines_abdullah`)** — paired 2 m / 4 m recordings with phenotype classification and grouping masks.
+- **Ines (`ines_abdallah`)** — paired 2 m / 4 m recordings with phenotype classification and grouping masks.
 
 All entry points ultimately write to `results/<dataset>/preprocessed/` as resolved by `shared_code.fun_paths.get_paths`.
 
@@ -23,7 +23,7 @@ python scripts/preprocessing/preprocess.py \
   --ines-folder 4mois=Lot3_4mois
 ```
 
-The CLI accepts shorthand names: any value starting with `julien` targets `julien_caillette`; `ines*` maps to `ines_abdullah`.
+The CLI accepts shorthand names: any value starting with `julien` targets `julien_caillette`; `ines*` maps to `ines_abdallah`.
 
 ---
 

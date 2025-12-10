@@ -1,7 +1,13 @@
-# .dataset_config
-DATASET_NAME=julien_caillette
-#for julien_caillette dataset TR=500 and for ines_abdullah dataset TR=450
-TR=500
-PROC=50
-PATHS_ENV=LOCAL
+# .dataset_config  --- central settings used by all launchers
 
+# Choose the dataset
+DATASET_NAME=ines_abdallah
+
+# TR for ines_abdallah; julien is 500
+TR=450
+
+# Default parallelism
+PROC=50
+
+# Environment detection for PATHS_ROOT; usually AUTO is fine
+PATHS_ENV=AUTO

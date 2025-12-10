@@ -648,7 +648,7 @@ groups_ci = groups_dist  # same set for CI envelopes
 for subset in SPEED_SUBSETS:
     print(f"\n=== [MEAN HIST] Subset: {subset} ===")
 
-    subset_dist_folder = paths["f_speed"] / subset / "distribution"
+    subset_dist_folder = paths["f_speed"] / "dist"
     subset_dist_folder.mkdir(parents=True, exist_ok=True)
 
     for groups_selected in groups_dist:
@@ -764,7 +764,7 @@ for subset in SPEED_SUBSETS:
 for subset in SPEED_SUBSETS:
     print(f"\n=== [CI ENVELOPES] Subset: {subset} ===")
 
-    subset_dist_folder = paths["f_speed"] / subset / "distribution"
+    subset_dist_folder = paths["f_speed"] / "dist"
     subset_dist_folder.mkdir(parents=True, exist_ok=True)
     print(f"  Distribution folder: {subset_dist_folder}")
 

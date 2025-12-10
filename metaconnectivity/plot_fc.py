@@ -25,7 +25,7 @@ save_fig = set_figure_params(False)
 # =================== Paths and folders =======================================
 timecourse_folder = "Timecourses_updated_03052024"
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder=timecourse_folder,
     cognitive_data_file="ROIs.xlsx",
     anat_labels_file="41_Allen.txt",

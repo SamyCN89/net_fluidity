@@ -12,7 +12,7 @@ This document describes how to run the consolidated Dynamic Functional Connectiv
 ---
 
 ## Core Concepts
-- **Datasets**: Pass `--dataset-name julien` or `--dataset-name ines`. Aliases such as `--dataset-name julien_caillette` and `--dataset-name ines_abdullah` are also accepted.
+- **Datasets**: Pass `--dataset-name julien` or `--dataset-name ines`. Aliases such as `--dataset-name julien_caillette` and `--dataset-name ines_abdallah` are also accepted.
 - **Bundles**: By default the CLI looks for `ts_and_meta_<dataset>.npz`. Use `--bundle-name` to override the filename if you generated a custom bundle.
 - **Window sweep**: The triple `(wmin, wmax, wstep)` defines the set of sliding windows to compute. Each window size produces a compressed NPZ file named `dfc_window_size=<w>_lag=<lag>_tau=<tau>_animals=<n>_regions=<r>.npz`.
 - **Formats**: Use `--format 3D` (default) for `(animals, regions, regions, frames)` arrays or `--format 2D` for the vectorised upper triangle `(animals, pairs, frames)`.

@@ -9,7 +9,7 @@ Environment variables (can be placed in a local .env):
 
 Example:
     PROJECT_ROOT_LOCAL=/abs/path/to/root
-    DATASET_NAME=ines_abdullah
+    DATASET_NAME=ines_abdallah
 """
 
 import os
@@ -171,7 +171,7 @@ def get_paths(
     root = get_root_path(env)
 
     # Use dataset_name param or fallback to env
-    dataset_name = dataset_name or os.getenv("DATASET_NAME", "ines_abdullah")
+    dataset_name = dataset_name or os.getenv("DATASET_NAME", "ines_abdallah")
 
     # Define paths based on dataset_name
     if not dataset_name:

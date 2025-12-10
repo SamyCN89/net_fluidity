@@ -18,7 +18,7 @@ Also set `DATASET_NAME` to select the dataset subfolder.
 Example (simple hard override)
 ```
 export PATHS_ROOT=/abs/path/to/project/root
-export DATASET_NAME=ines_abdullah
+export DATASET_NAME=ines_abdallah
 python scripts/paths_doctor.py --show --check-write --create
 ```
 
@@ -67,7 +67,7 @@ Options overview (compute)
 - `--pairs STRING`: pairs string `(G1,T1)-(G2,T2);...` to compare for diffs (values must exist in the resolved groups).
 - `--n-boot INT`: bootstrap resamples (e.g., 500 for fast scans, 2000 for final).
 - `--seed INT`: RNG seed for reproducibility.
-- `--ci FLOAT`: CI percent for bootstrap (default 95). 
+- `--ci FLOAT`: CI percent for bootstrap (default 95).
 - `--pool-threshold median|INT`: pool windows into `short` (≤ threshold) and `long` (> threshold).
 - `--pool-all`: also add an `all` pool across all windows.
 - `--jobs INT`: parallelize across windows per ROI (e.g., `8`).
@@ -76,7 +76,7 @@ Options overview (compute)
 - `--reuse-group-boots`: reuse per‑group bootstrap replicates across pairs for faster diffs.
 - Memory/perf: defaults are float32 boots and int32 indices. Use `--no-boots-float32` / `--no-index-int32` to opt out; `--values-float32` casts values.
 - Requires `numba` because the underlying dFC kernels depend on it (`pip install numba`).
-  
+
 Pool‑test controls
 - `--bootstrap-pool-cols COLS`: build pooled supergroups by matching a subset of `--group-cols` (e.g., `genotype`).
 - `--pool-exclude-self`: when testing a group, drop its own animals from the pooled control.

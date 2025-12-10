@@ -31,7 +31,7 @@ Optional: environment variables for data paths used by `fun_paths` can be placed
 ```bash
 # used by shared_code/shared_code/fun_paths.py
 PROJECT_ROOT_LOCAL=/absolute/path/to/project/root
-DATASET_NAME=ines_abdullah
+DATASET_NAME=ines_abdallah
 ```
 
 If you use `fun_paths.get_paths`, it will read `PROJECT_ROOT_<ENV>` (default `LOCAL`) and build a standard folder layout under `dataset/`, `results/`, and `fig/` within that root.

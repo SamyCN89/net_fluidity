@@ -11,12 +11,11 @@ processing paths drawn from the Julien scripts.
 from __future__ import annotations
 
 import argparse
-import logging
-import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import nullcontext
+import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+import time
 
 import numpy as np
 
@@ -24,13 +23,12 @@ from shared_code.fun_dfcspeed import ts2dfc_stream
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import load_timeseries_data
 
-
-DATASET_DEFAULTS: Dict[str, Dict[str, str]] = {
-    "ines_abdullah": {
+DATASET_DEFAULTS: dict[str, dict[str, str]] = {
+    "ines_abdallah": {
         "timecourse_folder": "Timecourses_updated_03052024",
         "cognitive_data_file": "ROIs.xlsx",
         "anat_labels_file": "41_Allen.txt",
-        "bundle_name": "ts_and_meta_ines_abdullah.npz",
+        "bundle_name": "ts_and_meta_ines_abdallah.npz",
     },
     "julien_caillette": {
         "timecourse_folder": "time_courses_2",
@@ -41,21 +39,25 @@ DATASET_DEFAULTS: Dict[str, Dict[str, str]] = {
 }
 
 
-def _compute_window_task(payload: Tuple[int, np.ndarray, int, int, str]) -> Tuple[int, np.ndarray]:
+def _compute_window_task(
+    payload: tuple[int, np.ndarray, int, int, str],
+) -> tuple[int, np.ndarray]:
     """Worker entry point returning (animal_idx, dfc_array)."""
 
     idx, ts_single, window_size, lag, format_data = payload
-    result = ts2dfc_stream(ts_single, window_size=window_size, lag=lag, format_data=format_data)
+    result = ts2dfc_stream(
+        ts_single, window_size=window_size, lag=lag, format_data=format_data
+    )
     return idx, result
 
 
 def _compute_window_batch_task(
-    payload: Tuple[int, np.ndarray, Tuple[int, ...], int, str]
-) -> Tuple[int, Dict[int, np.ndarray]]:
+    payload: tuple[int, np.ndarray, tuple[int, ...], int, str],
+) -> tuple[int, dict[int, np.ndarray]]:
     """Worker entry point computing multiple windows for a single animal."""
 
     idx, ts_single, window_sizes, lag, format_data = payload
-    outputs: Dict[int, np.ndarray] = {}
+    outputs: dict[int, np.ndarray] = {}
     for window_size in window_sizes:
         outputs[window_size] = ts2dfc_stream(
             ts_single,
@@ -71,8 +73,10 @@ def _canonical_dataset(name: str) -> str:
     if lowered.startswith("julien"):
         return "julien_caillette"
     if lowered.startswith("ines"):
-        return "ines_abdullah"
-    raise ValueError(f"Unsupported dataset '{name}'. Expected something like 'julien' or 'ines'.")
+        return "ines_abdallah"
+    raise ValueError(
+        f"Unsupported dataset '{name}'. Expected something like 'julien' or 'ines'."
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="ines",
         help=(
             "Dataset bundle to load. Accepted aliases: 'julien', 'julien_caillette', "
-            "'ines', 'ines_abdullah'."
+            "'ines', 'ines_abdallah'."
         ),
     )
     parser.add_argument(
@@ -193,7 +197,7 @@ def expected_shape(
     window_size: int,
     lag: int,
     format_data: str,
-) -> Tuple[int, ...]:
+) -> tuple[int, ...]:
     n_animals, total_tr, n_regions = ts.shape[:3]
     frames = (total_tr - window_size) // lag + 1
     if format_data == "3D":
@@ -202,7 +206,7 @@ def expected_shape(
     return (n_animals, n_pairs, frames)
 
 
-def load_timeseries(dataset_name: str, bundle_name: str | None) -> Tuple[dict, Path]:
+def load_timeseries(dataset_name: str, bundle_name: str | None) -> tuple[dict, Path]:
     cfg = DATASET_DEFAULTS[dataset_name]
     paths = get_paths(
         dataset_name=dataset_name,
@@ -215,7 +219,9 @@ def load_timeseries(dataset_name: str, bundle_name: str | None) -> Tuple[dict, P
         raise FileNotFoundError(f"Expected bundle not found: {bundle}")
     data_ts = load_timeseries_data(bundle)
     if data_ts["ts"].ndim != 3:
-        raise ValueError(f"Timeseries bundle must be 3D (got shape={data_ts['ts'].shape})")
+        raise ValueError(
+            f"Timeseries bundle must be 3D (got shape={data_ts['ts'].shape})"
+        )
     data_ts["bundle_path"] = bundle
     ts_shape = data_ts["ts"].shape
     logging.getLogger(__name__).info(
@@ -224,7 +230,7 @@ def load_timeseries(dataset_name: str, bundle_name: str | None) -> Tuple[dict, P
     return data_ts, Path(paths["dfc"])
 
 
-def main(argv: None | Tuple[str, ...] = None) -> int:
+def main(argv: None | tuple[str, ...] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(level=getattr(logging, args.log_level))
@@ -244,7 +250,7 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
     tau_tokens = [token.strip() for token in str(args.tau).split(",") if token.strip()]
     if not tau_tokens:
         parser.error("--tau requires at least one non-negative integer.")
-    tau_values: List[int] = []
+    tau_values: list[int] = []
     for token in tau_tokens:
         try:
             value = int(token)
@@ -307,18 +313,24 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
     start = time.time()
     executor_cm = nullcontext()
     if args.jobs > 1:
-        executor_cls = ThreadPoolExecutor if backend == "thread" else ProcessPoolExecutor
+        executor_cls = (
+            ThreadPoolExecutor if backend == "thread" else ProcessPoolExecutor
+        )
         executor_cm = executor_cls(max_workers=args.jobs)
 
     with executor_cm as executor:
         for tau in tau_values:
             logger.info("Processing tau=%s", tau)
-            windows_to_compute: List[Tuple[int, Path]] = []
-            window_start: Dict[int, float] = {}
+            windows_to_compute: list[tuple[int, Path]] = []
+            window_start: dict[int, float] = {}
             for w in win_range:
                 frames = (ts.shape[1] - w) // args.lag + 1
                 if frames <= 0:
-                    logger.warning("Window %s exceeds timeseries length for lag=%s; skipping.", w, args.lag)
+                    logger.warning(
+                        "Window %s exceeds timeseries length for lag=%s; skipping.",
+                        w,
+                        args.lag,
+                    )
                     continue
                 filename = (
                     f"dfc_window_size={w}_lag={args.lag}_tau={tau}_"
@@ -335,7 +347,12 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
                             args.cache,
                         )
                     else:
-                        logger.info("[dry-run] Would compute window=%s tau=%s -> %s", w, tau, fpath)
+                        logger.info(
+                            "[dry-run] Would compute window=%s tau=%s -> %s",
+                            w,
+                            tau,
+                            fpath,
+                        )
                     continue
 
                 if fpath.exists():
@@ -346,9 +363,13 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
                         try:
                             arr = np.load(fpath)["dfc"]
                             if args.cache == "load":
-                                logger.info("[cache] Loaded %s shape=%s", fpath, arr.shape)
+                                logger.info(
+                                    "[cache] Loaded %s shape=%s", fpath, arr.shape
+                                )
                                 continue
-                            if tuple(arr.shape) == expected_shape(ts, w, args.lag, args.format):
+                            if tuple(arr.shape) == expected_shape(
+                                ts, w, args.lag, args.format
+                            ):
                                 logger.info("[cache] Verified %s; skipping", fpath)
                                 continue
                             logger.warning(
@@ -358,7 +379,11 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
                                 expected_shape(ts, w, args.lag, args.format),
                             )
                         except Exception as exc:  # pragma: no cover
-                            logger.warning("[cache] Failed to read %s (%s); recomputing", fpath, exc)
+                            logger.warning(
+                                "[cache] Failed to read %s (%s); recomputing",
+                                fpath,
+                                exc,
+                            )
 
                 windows_to_compute.append((w, fpath))
                 window_start[w] = time.time()
@@ -368,10 +393,12 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
 
             if executor is not None and args.batch_per_animal:
                 logger.debug(
-                    "Using %s executor with %s workers (batched per animal)", backend, args.jobs
+                    "Using %s executor with %s workers (batched per animal)",
+                    backend,
+                    args.jobs,
                 )
                 window_targets = {w: fpath for w, fpath in windows_to_compute}
-                window_buffers: Dict[int, List[np.ndarray | None]] = {
+                window_buffers: dict[int, list[np.ndarray | None]] = {
                     w: [None] * n_animals for w in window_targets
                 }
                 completed_counts = {w: 0 for w in window_targets}
@@ -381,7 +408,9 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
                     (idx, ts[idx], window_order, args.lag, args.format)
                     for idx in indices
                 )
-                for idx, outputs in executor.map(_compute_window_batch_task, tasks, **map_kwargs):
+                for idx, outputs in executor.map(
+                    _compute_window_batch_task, tasks, **map_kwargs
+                ):
                     for w, arr in outputs.items():
                         if w not in window_targets:
                             continue
@@ -407,21 +436,41 @@ def main(argv: None | Tuple[str, ...] = None) -> int:
                     t0 = time.time()
                     indices = range(n_animals)
                     if executor is not None:
-                        logger.debug("Using %s executor with %s workers", backend, args.jobs)
-                        tasks = ((idx, ts[idx], w, args.lag, args.format) for idx in indices)
-                        dfc_list: List[np.ndarray | None] = [None] * n_animals
-                        for idx, arr in executor.map(_compute_window_task, tasks, **map_kwargs):
+                        logger.debug(
+                            "Using %s executor with %s workers", backend, args.jobs
+                        )
+                        tasks = (
+                            (idx, ts[idx], w, args.lag, args.format) for idx in indices
+                        )
+                        dfc_list: list[np.ndarray | None] = [None] * n_animals
+                        for idx, arr in executor.map(
+                            _compute_window_task, tasks, **map_kwargs
+                        ):
                             dfc_list[idx] = arr
-                        if any(entry is None for entry in dfc_list):  # pragma: no cover - defensive
-                            raise RuntimeError("Parallel DFC compute returned incomplete results.")
+                        if any(
+                            entry is None for entry in dfc_list
+                        ):  # pragma: no cover - defensive
+                            raise RuntimeError(
+                                "Parallel DFC compute returned incomplete results."
+                            )
                     else:
                         dfc_list = [
-                            ts2dfc_stream(ts[i], window_size=w, lag=args.lag, format_data=args.format)
+                            ts2dfc_stream(
+                                ts[i],
+                                window_size=w,
+                                lag=args.lag,
+                                format_data=args.format,
+                            )
                             for i in indices
                         ]
                     dfc_arr = np.asarray(dfc_list, dtype=np.float32)
                     np.savez_compressed(fpath, dfc=dfc_arr)
-                    logger.info("Saved %s shape=%s in %.2fs", fpath, dfc_arr.shape, time.time() - t0)
+                    logger.info(
+                        "Saved %s shape=%s in %.2fs",
+                        fpath,
+                        dfc_arr.shape,
+                        time.time() - t0,
+                    )
 
     if args.dry_run:
         logger.info("Dry run complete; no files were written.")

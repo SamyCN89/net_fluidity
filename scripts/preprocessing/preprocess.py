@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Unified preprocessing entrypoint for Julien and Ines datasets."""
 
-#%%
+# %%
 from __future__ import annotations
 
 import argparse
+from collections.abc import MutableMapping, Sequence
 import logging
-import sys
 from pathlib import Path
-from typing import MutableMapping, Optional, Sequence
+import sys
 
 # Ensure local execution can import sibling modules without installing the package.
 if __package__ in (None, ""):
@@ -18,8 +18,7 @@ if __package__ in (None, ""):
     import ines as ines_mod  # type: ignore
     import julien as julien_mod  # type: ignore
 else:
-    from . import ines as ines_mod
-    from . import julien as julien_mod
+    from . import ines as ines_mod, julien as julien_mod
 
 
 # Parse CLI folder overrides such as "2mois=MyFolder".
@@ -33,8 +32,10 @@ def _canonical_dataset(name: str) -> str:
     if lowered.startswith("julien"):
         return "julien_caillette"
     if lowered.startswith("ines"):
-        return "ines_abdullah"
-    raise ValueError(f"Unsupported dataset '{name}'. Expected something like 'julien' or 'ines'.")
+        return "ines_abdallah"
+    raise ValueError(
+        f"Unsupported dataset '{name}'. Expected something like 'julien' or 'ines'."
+    )
 
 
 _IPYKERNEL_ARG_PREFIXES = (
@@ -69,10 +70,14 @@ def _prune_notebook_args(extras: Sequence[str]) -> list[str]:
 
 
 # Build the preprocessing CLI and expose dataset-specific options.
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset-name", default="julien", help="Dataset to preprocess (julien/ines).")
-    parser.add_argument("--dry-run", action="store_true", help="Skip writing artefacts.")
+    parser.add_argument(
+        "--dataset-name", default="julien", help="Dataset to preprocess (julien/ines)."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Skip writing artefacts."
+    )
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -173,7 +178,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error(f"Unrecognized arguments: {' '.join(leftovers)}")
     return args
 
-#%%
+
+# %%
 # CLI adapters dispatching to dataset-specific preprocessors.
 def preprocess_julien(args: argparse.Namespace, dataset_name: str) -> None:
     julien_mod.setup_logging()
@@ -203,11 +209,13 @@ def preprocess_ines(args: argparse.Namespace, dataset_name: str) -> None:
         transient=args.ines_transient,
         threshold=args.ines_threshold,
     )
-    ines_mod.write_outputs(result, dry_run=args.dry_run, write_extra_groups=not args.ines_no_extra_groups)
+    ines_mod.write_outputs(
+        result, dry_run=args.dry_run, write_extra_groups=not args.ines_no_extra_groups
+    )
 
 
 # Entry-point used both by module execution and CLI wrapper.
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=getattr(logging, args.log_level))
 

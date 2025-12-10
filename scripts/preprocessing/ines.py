@@ -102,7 +102,7 @@ def _group_indices(
 # Load Ines recordings, align cognition metadata, and prepare grouping masks.
 def prepare_cognitive_dataset(
     *,
-    dataset_name: str = "ines_abdullah",
+    dataset_name: str = "ines_abdallah",
     timecourse_folder: str = "Timecourses_updated_03052024",
     cognitive_data_file: str = "ROIs.xlsx",
     anat_labels_file: str | None = "41_Allen.txt",
@@ -375,10 +375,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dataset-name",
-        default="ines_abdullah",
+        default="ines_abdallah",
         help=(
             "Dataset key recognised by shared_code.fun_paths.get_paths "
-            "(default: ines_abdullah)."
+            "(default: ines_abdallah)."
         ),
     )
     parser.add_argument(

@@ -86,7 +86,7 @@ This document summarizes the analysis flow implemented under `allegiance/src/`, 
   - Paths are controlled via environment variables per governance (`.env`). Set one of:
     - `PATHS_ROOT` (hard override) **or**
     - `PROJECT_ROOT_<ENV>` (e.g. `PROJECT_ROOT_LOCAL`, `PROJECT_ROOT_CLUSTER`) with optional `PATHS_ENV` selector.
-  - `DATASET_NAME` chooses the dataset subfolder (default: `ines_abdullah`); override `timecourse_folder`, `cognitive_data_file`, `anat_labels_file` per dataset when needed.
+  - `DATASET_NAME` chooses the dataset subfolder (default: `ines_abdallah`); override `timecourse_folder`, `cognitive_data_file`, `anat_labels_file` per dataset when needed.
 - Raw-input contract for metaconnectivity:
   - Time courses: `dataset/<DATASET_NAME>/<timecourse_folder>/*.mat` (produced upstream).
   - Cognitive table: `dataset/<DATASET_NAME>/cog_data/<cognitive_data_file>`.

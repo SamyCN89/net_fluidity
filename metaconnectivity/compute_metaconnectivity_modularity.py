@@ -7,11 +7,13 @@ Created on Mon Sep 23 13:26:30 2024
 
 # %%
 from pathlib import Path
+
 # from functions_analysis import *
 import time
 
 import numpy as np
 
+from shared_code.fun_loaddata import load_timeseries_bundle
 from shared_code.fun_metaconnectivity import (
     compute_metaconnectivity,
     fun_allegiance_communities,
@@ -20,7 +22,6 @@ from shared_code.fun_metaconnectivity import (
     intramodule_indices_mask,
 )
 from shared_code.fun_paths import get_paths
-from shared_code.fun_loaddata import load_timeseries_bundle
 from shared_code.fun_utils import set_figure_params
 
 # ===============================================================================
@@ -29,7 +30,7 @@ from shared_code.fun_utils import set_figure_params
 save_fig = set_figure_params(False)
 
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder="Timecourses_updated_03052024",
     cognitive_data_file="ROIs.xlsx",
     anat_labels_file="41_Allen.txt",
@@ -118,7 +119,7 @@ mc_ref_allegiance_communities, sort_allegiance, contingency_matrix = (
     )
 )
 
-#%%
+# %%
 # sorted initial mc by communities
 mc_allegiance = mc[:, sort_allegiance][:, :, sort_allegiance]
 # Optional -fill with 0 the diagonal

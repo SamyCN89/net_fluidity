@@ -9,8 +9,10 @@ Created on Mon Sep 23 13:26:30 2024
 # from click import group
 # from functions_analysis import *
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+
+from shared_code.fun_fluidity import manifold_fluidity
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
     #    get_paths,
@@ -19,7 +21,6 @@ from shared_code.fun_utils import (
     load_timeseries_data,
     set_figure_params,
 )
-from shared_code.fun_fluidity import extremal_sueveges, manifold_fluidity
 
 # =============================================================================
 # This code compute
@@ -31,7 +32,7 @@ save_fig = set_figure_params(False)
 # =================== Paths and folders =======================================
 
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder="Timecourses_updated_03052024",
     cognitive_data_file="ROIs.xlsx",
     anat_labels_file="41_Allen.txt",

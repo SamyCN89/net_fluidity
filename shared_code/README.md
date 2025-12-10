@@ -67,7 +67,7 @@ Configure paths via environment variables (e.g. in `.env`):
 
 - `PATHS_ROOT` — absolute override for the project root (skip other vars when set)
 - or `PROJECT_ROOT_<ENV>` (e.g. `PROJECT_ROOT_LOCAL`, `PROJECT_ROOT_CLUSTER`) with optional `PATHS_ENV`
-- `DATASET_NAME` — dataset selector (defaults to `ines_abdullah`)
+- `DATASET_NAME` — dataset selector (defaults to `ines_abdallah`)
 - Override folder/file names per dataset with `timecourse_folder`, `cognitive_data_file`, `anat_labels_file` arguments when calling `get_paths`.
 
 ## Testing

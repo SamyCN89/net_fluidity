@@ -39,7 +39,7 @@ from shared_code.fun_utils import load_cognitive_data
 from shared_code.fun_paths import get_paths
 
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder="Timecourses_updated_03052024",
     cognitive_data_file="ROIs.xlsx",
     anat_labels_file="41_Allen.txt",

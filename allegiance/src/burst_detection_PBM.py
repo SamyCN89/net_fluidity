@@ -62,7 +62,7 @@ def save_figure(path, flag):
 # =================== Paths and folders =======================================
 
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder="Timecourses_updated_03052024",
     cognitive_data_file="ROIs.xlsx",
 )
@@ -434,7 +434,7 @@ for link, dur_list in enumerate(durations_by_link):
     plt.title("Burst Duration Distributions per Link")
     plt.tight_layout()
     plt.show()
-#%%
+# %%
 # ... after you compute durations_by_link
 link_ids, durations = [], []
 for link, dur_list in enumerate(durations_by_link):
@@ -513,23 +513,24 @@ if globals().get("fc_clusters") is not None:
 
 aux_plot = []
 
-range_thr = np.linspace(0.01,0.9)
+range_thr = np.linspace(0.01, 0.9)
 for thr_ in range_thr:
-    threshold_links = np.max(fc_cluster_per_animal, axis=1)*thr_
-    thr_num = np.sum(fc_cluster_per_animal>threshold_links[:,None,:])
-    aux_plot.append(thr_num/n_animals)
-#%%
+    threshold_links = np.max(fc_cluster_per_animal, axis=1) * thr_
+    thr_num = np.sum(fc_cluster_per_animal > threshold_links[:, None, :])
+    aux_plot.append(thr_num / n_animals)
+# %%
 plt.figure(10)
-plt.plot(range_thr, np.array(aux_plot)/(450*820))
+plt.plot(range_thr, np.array(aux_plot) / (450 * 820))
 # plt.yscale('log')
 
 
 # %%
 
-#============================ Dwell Time ==========================
+# ============================ Dwell Time ==========================
 
 
 # Compute dwell times (consecutive durations) for each cluster using NumPy only
+
 
 def compute_dwell_times_np(labels):
     """

@@ -12,7 +12,7 @@ pip install duecredit webcolors statannotations "git+https://github.com/fiuneuro
 pip install -e shared_code
 
 # 3) Configure paths (env vars or .env)
-export DATASET_NAME=ines_abdullah
+export DATASET_NAME=ines_abdallah
 # optional: PATHS_ROOT or PATHS_ENV/PROJECT_ROOT_*
 
 # 4) Quick sanity
@@ -102,12 +102,12 @@ Numba/NumPy/Scipy are widely distributed as wheels; prefer pinned Python (3.11) 
 ```bash
 # Simple: hard override
 export PATHS_ROOT=/abs/path/to/project/root
-export DATASET_NAME=ines_abdullah
+export DATASET_NAME=ines_abdallah
 
 # Profile‑based: select a label and provide its root
 export PATHS_ENV=CLUSTER_FS
 export PROJECT_ROOT_CLUSTER_FS=/scratch/$USER/project_root
-export DATASET_NAME=ines_abdullah
+export DATASET_NAME=ines_abdallah
 
 # Doctor: inspect + create + check write
 python scripts/paths_doctor.py --show --check-write --create

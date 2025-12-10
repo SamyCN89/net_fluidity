@@ -7,10 +7,13 @@ Created on Mon Sep 23 13:26:30 2024
 
 # %%
 # from functions_analysis import *
-from pathlib import Path
+
+import pickle
+
+from matplotlib import pyplot as plt
+import numpy as np
 
 from metaconnectivity.fun_dfcspeed import ts2dfc_stream, ts2fc
-from matplotlib import pyplot as plt
 from shared_code.fun_metaconnectivity import (
     compute_mc_nplets_mask_and_index,
     compute_trimers_genuine,
@@ -20,14 +23,10 @@ from shared_code.fun_metaconnectivity import (
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import (
     # get_paths,
-    load_cognitive_data,
-    load_grouping_data,
-    load_timeseries_data,
     set_figure_params,
 )
-import numpy as np
-import pickle
-#%%
+
+# %%
 # =============================================================================
 # This code compute
 # Load the dataz
@@ -47,11 +46,11 @@ external_disk = True
 #     external_disk=True, external_path=root, timecourse_folder=timeseries_folder
 # )
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder="Timecourses_updated_03052024",
     cognitive_data_file="ROIs.xlsx",
 )
-#%%
+# %%
 # ========================== Load data =========================
 
 # Load groups
@@ -72,7 +71,7 @@ with open(paths["preprocessed"] / "grouping_data_new.pkl", "rb") as f:
 #     paths["results"] / "grouping_data_oip.pkl"
 # )
 
-#%%
+# %%
 data_ts = np.load(paths["preprocessed"] / "ts_and_meta_2m4m.npz")
 # data_ts = load_timeseries_data(paths["sorted"] / "ts_and_meta_2m4m.npz")
 ts = data_ts["ts"]

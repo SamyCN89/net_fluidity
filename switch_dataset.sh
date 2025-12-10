@@ -14,7 +14,7 @@ case "$DATASET" in
     sed -i 's/^DATASET_NAME=.*/DATASET_NAME=julien_caillette/' "$CONFIG_FILE"
     ;;
   ines)
-    sed -i 's/^DATASET_NAME=.*/DATASET_NAME=ines_abdullah/' "$CONFIG_FILE"
+    sed -i 's/^DATASET_NAME=.*/DATASET_NAME=ines_abdallah/' "$CONFIG_FILE"
     ;;
   *)
     echo "Unknown dataset: $DATASET"

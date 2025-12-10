@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 23 13:26:30 2024
 
@@ -10,23 +9,22 @@ respects repository paths and bundled metadata.
 from pathlib import Path
 import time
 
-import numpy as np
-
 from fun_dfcspeed import *
 from fun_metaconnectivity import (
-    build_trimer_mask,
     compute_metaconnectivity,
-    compute_trimers_identity,
     fun_allegiance_communities,
     get_fc_mc_indices,
     get_mc_region_identities,
     intramodule_indices_mask,
 )
+import numpy as np
+
 from shared_code.fun_loaddata import load_timeseries_bundle
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import set_figure_params
+
 # =============================================================================
-# This code compute 
+# This code compute
 # Load the data
 # Intersect the 2 and 4 months to have data that have the two datapoints
 # ========================== Figure parameters ================================
@@ -34,7 +32,7 @@ save_fig = set_figure_params(False)
 
 # =================== Paths and folders =======================================
 paths = get_paths(
-    dataset_name="ines_abdullah",
+    dataset_name="ines_abdallah",
     timecourse_folder="Timecourses_updated_03052024",
     cognitive_data_file="ROIs.xlsx",
     anat_labels_file="41_Allen.txt",
@@ -64,31 +62,29 @@ for directory in (mc_dir, allegiance_dir, mc_mod_dir):
     directory.mkdir(parents=True, exist_ok=True)
 
 
-#%%
+# %%
 # ======================== Metaconnectivigty ==========================================
-#Parameters speed
+# Parameters speed
 
-PROCESSORS =-1
+PROCESSORS = -1
 
-lag=1
-tau=5
+lag = 1
+tau = 5
 window_size = 7
-window_parameter = (5,100,1)
+window_parameter = (5, 100, 1)
 
-#Parameters allegiance analysis
+# Parameters allegiance analysis
 n_runs_allegiance = 1000
 gamma_pt_allegiance = 100
 
-tau_array       = np.append(np.arange(0,tau), tau ) 
-lentau          = len(tau_array)
+tau_array = np.append(np.arange(0, tau), tau)
+lentau = len(tau_array)
 
 time_window_min, time_window_max, time_window_step = window_parameter
-time_window_range = np.arange(time_window_min,
-                              time_window_max+1,
-                              time_window_step)
+time_window_range = np.arange(time_window_min, time_window_max + 1, time_window_step)
 
 
-#%%compute metaconnectivity
+# %%compute metaconnectivity
 start = time.time()
 mc = compute_metaconnectivity(
     ts,
@@ -98,9 +94,9 @@ mc = compute_metaconnectivity(
     save_path=mc_dir,
 )
 stop = time.time()
-print(f'Metaconnectivity time {stop-start}')
+print(f"Metaconnectivity time {stop-start}")
 
-#%% Modularity analysis
+# %% Modularity analysis
 # # Choose reference condition
 # # label_ref = 'good2M_recurrecy' #The label of the reference matrix
 # # label_ref = 'wt2M_recurrecy' #The label of the reference matrix
@@ -111,10 +107,10 @@ print(f'Metaconnectivity time {stop-start}')
 
 # # ========================Communities ==========================================
 # #Set reference
-label_ref = label_variables[2][0] #The label of the reference matrix
-ind_ref = mask_groups[2][0] # the mask of the reference matrix
-mc_ref = np.mean(mc[ind_ref],axis=0)
-#%% Compute allegiance
+label_ref = label_variables[2][0]  # The label of the reference matrix
+ind_ref = mask_groups[2][0]  # the mask of the reference matrix
+mc_ref = np.mean(mc[ind_ref], axis=0)
+# %% Compute allegiance
 mc_ref_allegiance_communities, mc_ref_allegiance_sort, contingency_matrix = (
     fun_allegiance_communities(
         mc_ref,
@@ -126,29 +122,38 @@ mc_ref_allegiance_communities, mc_ref_allegiance_sort, contingency_matrix = (
     )
 )
 
-#sorted initial mc by communities
+# sorted initial mc by communities
 mc_allegiance = mc[:, mc_ref_allegiance_sort][:, :, mc_ref_allegiance_sort]
-#Optional -fill with 0 the diagonal
-idx = np.arange(int(regions*(regions-1)/2))
-mc_allegiance[..., idx, idx] = np.nan # Zero the diagonal across the last two dimensions
+# Optional -fill with 0 the diagonal
+idx = np.arange(int(regions * (regions - 1) / 2))
+mc_allegiance[..., idx, idx] = (
+    np.nan
+)  # Zero the diagonal across the last two dimensions
 
-#%% Compute Modules
+# %% Compute Modules
 # ========================Modules==========================================
 
-intramodules_idx, intramodule_indices, mc_modules_mask = intramodule_indices_mask(mc_ref_allegiance_communities)
+intramodules_idx, intramodule_indices, mc_modules_mask = intramodule_indices_mask(
+    mc_ref_allegiance_communities
+)
 mc_modules_mask = mc_modules_mask[mc_ref_allegiance_sort][:, mc_ref_allegiance_sort]
 
 # Build basic indices
 fc_indx, mc_idx = get_fc_mc_indices(regions)
 
 # mc_idx = mc_idx[mc_ref_allegiance_sort]
-mc_reg_idx, fc_reg_idx = get_mc_region_identities(fc_indx, mc_idx, mc_ref_allegiance_sort)
+mc_reg_idx, fc_reg_idx = get_mc_region_identities(
+    fc_indx, mc_idx, mc_ref_allegiance_sort
+)
 mc_val = mc_allegiance[:, mc_idx[:, 0], mc_idx[:, 1]]
 
 mc_mod_idx = mc_modules_mask[mc_idx[:, 0], mc_idx[:, 1]].astype(int)
-#%% Save modularity
-save_filename = mc_mod_dir / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(
-    " ", ""
+# %% Save modularity
+save_filename = (
+    mc_mod_dir
+    / f"mc_allegiance_ref(runs={label_ref}_gammaval={n_runs_allegiance})={gamma_pt_allegiance}_lag={lag}_windowsize={window_size}_animals={n_animals}_regions={regions}.npz".replace(
+        " ", ""
+    )
 )
 
 np.savez_compressed(
@@ -188,14 +193,14 @@ np.savez_compressed(
 # def ts2fc(timeseries, format_data = '2D', method='pearson'):
 #     """
 #     Calculate functional connectivity from time series data.
-    
+
 #     Parameters:
 #     timeseries (array): Time series data of shape (timepoints, nodes).
 #     format_data (str): Output format, '2D' for full matrix or '1D' for lower-triangular vector.
-    
+
 #     Returns:
 #     fc (array): Functional connectivity matrix ('2D') or vector ('1D').
-    
+
 #     Adapted from Lucas Arbabyazd et al 2020. Methods X, doi: 10.1016/j.neuroimage.2020.117156
 #     """
 #     # Calculate correlation coefficient matrix
@@ -214,7 +219,7 @@ np.savez_compressed(
 #         # Return the lower-triangular part excluding the diagonal
 #         return fc[np.tril_indices_from(fc, k=-1)]
 # # animal=0
-# fc = np.array([ts2fc(ts[animal], format_data = '2D', method='pearson') 
+# fc = np.array([ts2fc(ts[animal], format_data = '2D', method='pearson')
 #                for animal in range(n_animals)
 #                ])
 
@@ -278,16 +283,16 @@ np.savez_compressed(
 #     #Not overlap
 #     if lag is None:
 #         lag = windows_size
-    
+
 #     n_pairs               = n * (n-1)//2 #number of pairwise correlations
 #     # Calculate the number of frames/windows
 #     frames = (t_total - windows_size)//lag + 1
-    
+
 #     if format_data=='2D':
 #         dfc_stream = np.empty((n_pairs, frames))
 #     elif format_data=='3D':
 #         dfc_stream = np.empty((n, n, frames))
-        
+
 
 #     for k in range(frames):
 #         wstart = k * lag
@@ -324,7 +329,7 @@ np.savez_compressed(
 # plt.scatter(np.sum(trimers_genuine_fc_root_leaves, axis=0)/n_animals, np.sum(trimers_genuine_mc_root_fc_leaves, axis=0)/n_animals,
 #             alpha=0.4,
 #             s=3,
-#             # label =label_fc_root_fc_leaves + ' vs ' + label_mc_root_fc_leaves 
+#             # label =label_fc_root_fc_leaves + ' vs ' + label_mc_root_fc_leaves
 #             )
 
 # plt.plot([0, 1], [0, 1], color='red', linestyle='--', linewidth=1)
@@ -337,7 +342,7 @@ np.savez_compressed(
 #             alpha=0.4,
 #             s=3,
 #             c='C1',
-#             # label =label_fc_root_fc_leaves + ' vs ' + label_mc_root_fc_leaves 
+#             # label =label_fc_root_fc_leaves + ' vs ' + label_mc_root_fc_leaves
 #             )
 
 # plt.plot([0, 1], [0, 1], color='red', linestyle='--', linewidth=1)
@@ -349,7 +354,7 @@ np.savez_compressed(
 #             alpha=0.4,
 #             s=3,
 #             c='C2'
-#             # label =label_fc_root_fc_leaves + ' vs ' + label_mc_root_fc_leaves 
+#             # label =label_fc_root_fc_leaves + ' vs ' + label_mc_root_fc_leaves
 #             )
 
 # plt.plot([0, 1], [0, 1], color='red', linestyle='--', linewidth=1)
@@ -365,7 +370,7 @@ np.savez_compressed(
 # # plt.plot(np.sum(trimers_genuine_mc_root_dfc_leaves, axis=0),'.')
 # # plt.imshow(fc[:,fc_indx[:,0],fc_indx[:,1]].T,
 # #            interpolation='none',
-# #            aspect='auto', 
+# #            aspect='auto',
 # #            cmap = 'coolwarm',
 # #            )
 # # plt.colorbar()
@@ -404,7 +409,7 @@ np.savez_compressed(
 
 # #     mc_nplets_mask         = mc_nplets_mask,
 # #     mc_nplets_idx                  = mc_nplets_index,
-    
+
 # # )
 
 # # #Save allegiance sorted anat labels
@@ -430,5 +435,3 @@ np.savez_compressed(
 # # mc_reg_idx             = data_analysis['mc_reg_idx']
 # # mc_mod_idx             = data_analysis['mc_mod_idx']
 # mc_nplets_index = data_analysis['mc_nplets_idx']
-
-

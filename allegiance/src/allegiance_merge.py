@@ -39,7 +39,7 @@ def merge_allegiance(
 ):
     # Get paths
     paths = get_paths(
-        dataset_name="ines_abdullah",
+        dataset_name="ines_abdallah",
         timecourse_folder="Timecourses_updated_03052024",
         cognitive_data_file="ROIs.xlsx",
     )

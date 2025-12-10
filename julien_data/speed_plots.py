@@ -14,18 +14,18 @@ Usage examples:
 
 If --subset-name is omitted, the script will auto-detect a merged PKL under paths['speed'].
 """
-#%%
+# %%
 import argparse
+from collections.abc import Iterable, Sequence
+from itertools import combinations
 import logging
 from pathlib import Path
 import pickle
 import sys
 
-import numpy as np
 import matplotlib.pyplot as plt
-from itertools import combinations
+import numpy as np
 from scipy.stats import spearmanr
-from typing import Iterable, Sequence
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -34,18 +34,18 @@ if str(ROOT) not in sys.path:
 
 from scripts.bootstrap.compute_speed_bootstrap import (
     BootstrapConfig,
-    load_dataset_context,
-    load_per_animal_from_npz,
+    _concat_per_animal,
     _find_region_folders,
     _list_window_files,
     _pool_windows_indices,
     _resolve_group_columns,
-    _concat_per_animal,
+    build_groups_from_columns,
+    load_dataset_context,
+    load_per_animal_from_npz,
 )
-from shared_code.fun_bootstrap import pool_per_animal
-from scripts.bootstrap.compute_speed_bootstrap import build_groups_from_columns
-from shared_code.fun_loaddata import load_timeseries_bundle
 from scripts.dfc.dfc_compute import _canonical_dataset
+from shared_code.fun_bootstrap import pool_per_animal
+from shared_code.fun_loaddata import load_timeseries_bundle
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,26 +62,26 @@ except ModuleNotFoundError:
 # Shared plotting utilities (import from src/, with fallback if not installed as a package)
 try:
     from net_fluidity_julien.plots_utils import (
-        pool_window_speeds as _pu_pool_window_speeds,
         pool_speeds_per_animal as _pu_per_animal,
-        subsample_equal_length as _pu_subsample,
+        pool_window_speeds as _pu_pool_window_speeds,
         split_window_indices as _pu_split,
+        subsample_equal_length as _pu_subsample,
     )
 except ModuleNotFoundError:
     try:
         from julien_data.src.plots_utils import (
-            pool_window_speeds as _pu_pool_window_speeds,
             pool_speeds_per_animal as _pu_per_animal,
-            subsample_equal_length as _pu_subsample,
+            pool_window_speeds as _pu_pool_window_speeds,
             split_window_indices as _pu_split,
+            subsample_equal_length as _pu_subsample,
         )
     except ModuleNotFoundError:
         try:
             from src.plots_utils import (
-                pool_window_speeds as _pu_pool_window_speeds,
                 pool_speeds_per_animal as _pu_per_animal,
-                subsample_equal_length as _pu_subsample,
+                pool_window_speeds as _pu_pool_window_speeds,
                 split_window_indices as _pu_split,
+                subsample_equal_length as _pu_subsample,
             )
         except ModuleNotFoundError:
             # Last resort: define no-op fallbacks
@@ -91,25 +91,42 @@ except ModuleNotFoundError:
             def _pu_per_animal(win_array, idxs, tau=None):
                 return [np.array([], float) for _ in idxs]
 
-            def _pu_subsample(per_animal, n_per_animal=None, replace=False, random_state=0):
+            def _pu_subsample(
+                per_animal, n_per_animal=None, replace=False, random_state=0
+            ):
                 return np.array([], float)
 
             def _pu_split(window_sizes, split_at=None):
-                return list(range(len(window_sizes)//2)), list(range(len(window_sizes)//2, len(window_sizes))), "fallback"
+                return (
+                    list(range(len(window_sizes) // 2)),
+                    list(range(len(window_sizes) // 2, len(window_sizes))),
+                    "fallback",
+                )
 
-#%%
-def find_merged_file(save_root: Path, n_animals: int, regions: int, tau_count: int, subset_name: str | None):
+
+# %%
+def find_merged_file(
+    save_root: Path,
+    n_animals: int,
+    regions: int,
+    tau_count: int,
+    subset_name: str | None,
+):
     """Find the merged speeds PKL in a specific subfolder (subset_name) or auto-detect under save_root."""
     if subset_name:
         subdir = save_root / subset_name
         if not subdir.exists():
             raise FileNotFoundError(f"Subset folder not found: {subdir}")
         cands = sorted(
-            subdir.glob(f"speed_windows*_tau{tau_count}_animals_{n_animals}_regions_{regions}.pkl")
+            subdir.glob(
+                f"speed_windows*_tau{tau_count}_animals_{n_animals}_regions_{regions}.pkl"
+            )
         )
     else:
         cands = sorted(
-            save_root.rglob(f"speed_windows*_tau{tau_count}_animals_{n_animals}_regions_{regions}.pkl")
+            save_root.rglob(
+                f"speed_windows*_tau{tau_count}_animals_{n_animals}_regions_{regions}.pkl"
+            )
         )
     if not cands:
         where = (save_root / subset_name) if subset_name else save_root
@@ -129,20 +146,40 @@ def plot_overall_distribution(last_window_vals, window_size: int, ax=None):
     ax.set_ylabel("Density")
     return ax
 
-#%%
+
+# %%
 def _pool_speeds_per_animal(win_array, idxs, tau: int | None = None):
     return _pu_per_animal(win_array, idxs, tau=tau)
 
 
-def _subsample_equal_length(per_animal, n_per_animal: int | None = None, replace: bool = False, random_state: int | None = 0):
-    return _pu_subsample(per_animal, n_per_animal=n_per_animal, replace=replace, random_state=random_state)
+def _subsample_equal_length(
+    per_animal,
+    n_per_animal: int | None = None,
+    replace: bool = False,
+    random_state: int | None = 0,
+):
+    return _pu_subsample(
+        per_animal,
+        n_per_animal=n_per_animal,
+        replace=replace,
+        random_state=random_state,
+    )
 
 
-def plot_group_distributions(win_array, groups: dict, window_size: int, tau: int | None = None,
-                             equal_animal_weight: bool = False, equal_method: str = "kde",
-                             n_per_animal: int | None = None, replace: bool = False,
-                             normalize_density: bool = True, random_state: int | None = 0):
+def plot_group_distributions(
+    win_array,
+    groups: dict,
+    window_size: int,
+    tau: int | None = None,
+    equal_animal_weight: bool = False,
+    equal_method: str = "kde",
+    n_per_animal: int | None = None,
+    replace: bool = False,
+    normalize_density: bool = True,
+    random_state: int | None = 0,
+):
     import seaborn as sns  # optional; only needed for KDE
+
     try:
         import statsmodels.api as sm
     except Exception:
@@ -169,12 +206,29 @@ def plot_group_distributions(win_array, groups: dict, window_size: int, tau: int
                     curves.append(y)
                 if curves:
                     stacked = np.vstack(curves)
-                    mean_y = (np.nanmean(stacked, axis=0) if normalize_density else np.nansum(stacked, axis=0) / stacked.shape[0])
+                    mean_y = (
+                        np.nanmean(stacked, axis=0)
+                        if normalize_density
+                        else np.nansum(stacked, axis=0) / stacked.shape[0]
+                    )
                     plt.plot(xs, mean_y, lw=2.5, label=label, color=color)
             elif equal_method == "subsample":
-                pooled = _subsample_equal_length(per_animal, n_per_animal=n_per_animal, replace=replace, random_state=random_state)
+                pooled = _subsample_equal_length(
+                    per_animal,
+                    n_per_animal=n_per_animal,
+                    replace=replace,
+                    random_state=random_state,
+                )
                 if pooled.size:
-                    sns.kdeplot(pooled, bw_adjust=0.5, label=label, color=color, linewidth=2.5, clip=(0, 2), common_norm=normalize_density)
+                    sns.kdeplot(
+                        pooled,
+                        bw_adjust=0.5,
+                        label=label,
+                        color=color,
+                        linewidth=2.5,
+                        clip=(0, 2),
+                        common_norm=normalize_density,
+                    )
         else:
             pooled = []
             for a in idxs:
@@ -193,14 +247,29 @@ def plot_group_distributions(win_array, groups: dict, window_size: int, tau: int
             vals = np.concatenate(pooled) if pooled else np.array([])
             if vals.size == 0:
                 continue
-            sns.kdeplot(vals, bw_adjust=0.5, label=label, color=color, linewidth=2.5, clip=(0, 2), common_norm=normalize_density)
+            sns.kdeplot(
+                vals,
+                bw_adjust=0.5,
+                label=label,
+                color=color,
+                linewidth=2.5,
+                clip=(0, 2),
+                common_norm=normalize_density,
+            )
 
-    plt.title(f"dFC Speed per group (W={window_size}{', tau='+str(tau) if tau is not None else ', all taus'})")
-    plt.xlabel("Speed"); plt.ylabel("Density"); plt.legend(title="Group")
-    plt.tight_layout(); sns.despine(trim=True)
+    plt.title(
+        f"dFC Speed per group (W={window_size}{', tau='+str(tau) if tau is not None else ', all taus'})"
+    )
+    plt.xlabel("Speed")
+    plt.ylabel("Density")
+    plt.legend(title="Group")
+    plt.tight_layout()
+    sns.despine(trim=True)
 
 
-def plot_median_vs_window(all_speed, groups: dict, window_sizes: list[int], tau: int | None = None):
+def plot_median_vs_window(
+    all_speed, groups: dict, window_sizes: list[int], tau: int | None = None
+):
     """Plot median with 25–75% quantile bands per group across window sizes."""
     plt.figure(figsize=(10, 6))
     for grp_idx, (grp, idxs) in enumerate(groups.items()):
@@ -232,7 +301,9 @@ def plot_median_vs_window(all_speed, groups: dict, window_sizes: list[int], tau:
         plt.plot(window_sizes, medians, marker=".", label=label)
         # Quantile band
         plt.fill_between(window_sizes, q25, q75, alpha=0.15)
-    plt.title(f"Median dFC Speed vs Window Size{' (all taus)' if tau is None else f' (tau={tau})'}")
+    plt.title(
+        f"Median dFC Speed vs Window Size{' (all taus)' if tau is None else f' (tau={tau})'}"
+    )
     plt.xlabel("Window size")
     plt.ylabel("Median speed")
     plt.legend(title="Group")
@@ -277,9 +348,16 @@ def split_window_indices(window_sizes: list[int], split_at: int | None = None):
         return first, second, info
 
 
-def plot_group_distributions_two_pools(all_speed, groups: dict, window_sizes: list[int], tau: int | None = None, split_at: int | None = None):
+def plot_group_distributions_two_pools(
+    all_speed,
+    groups: dict,
+    window_sizes: list[int],
+    tau: int | None = None,
+    split_at: int | None = None,
+):
     """Plot per-group distributions for two window pools (equal count halves)."""
     import seaborn as sns
+
     first_idx, second_idx, info = _pu_split(window_sizes, split_at=split_at)
     print("Window split:", info)
 
@@ -308,10 +386,23 @@ def plot_group_distributions_two_pools(all_speed, groups: dict, window_sizes: li
         if vals.size == 0:
             continue
         label = f"{grp[0]}-{grp[1]}"
-        plt.hist(vals, bins=120, density=True, histtype="step", lw=1.7, alpha=0.85, label=label, color=color)
+        plt.hist(
+            vals,
+            bins=120,
+            density=True,
+            histtype="step",
+            lw=1.7,
+            alpha=0.85,
+            label=label,
+            color=color,
+        )
         sns.kdeplot(vals, bw_adjust=0.7, color=color, lw=2)
     plt.title("dFC Speed per group — Pool A")
-    plt.xlabel("Speed"); plt.ylabel("Density"); plt.legend(title="Group"); plt.tight_layout(); sns.despine(trim=True)
+    plt.xlabel("Speed")
+    plt.ylabel("Density")
+    plt.legend(title="Group")
+    plt.tight_layout()
+    sns.despine(trim=True)
 
     # Second pool figure
     plt.figure(figsize=(9, 6))
@@ -321,15 +412,37 @@ def plot_group_distributions_two_pools(all_speed, groups: dict, window_sizes: li
         if vals.size == 0:
             continue
         label = f"{grp[0]}-{grp[1]}"
-        plt.hist(vals, bins=120, density=True, histtype="step", lw=1.7, alpha=0.85, label=label, color=color)
+        plt.hist(
+            vals,
+            bins=120,
+            density=True,
+            histtype="step",
+            lw=1.7,
+            alpha=0.85,
+            label=label,
+            color=color,
+        )
         sns.kdeplot(vals, bw_adjust=0.7, color=color, lw=2)
     plt.title("dFC Speed per group — Pool B")
-    plt.xlabel("Speed"); plt.ylabel("Density"); plt.legend(title="Group"); plt.tight_layout(); sns.despine(trim=True)
-#%%
+    plt.xlabel("Speed")
+    plt.ylabel("Density")
+    plt.legend(title="Group")
+    plt.tight_layout()
+    sns.despine(trim=True)
 
-def plot_qq_between_groups(all_speed, groups: dict, window_sizes: list[int], tau: int | None = None, pool: str = "A", split_at: int | None = None):
+
+# %%
+
+
+def plot_qq_between_groups(
+    all_speed,
+    groups: dict,
+    window_sizes: list[int],
+    tau: int | None = None,
+    pool: str = "A",
+    split_at: int | None = None,
+):
     """QQ plots between selected groups for a given pool (A or B) and tau."""
-    import seaborn as sns
     first_idx, second_idx, info = _pu_split(window_sizes, split_at=split_at)
     idx_list = first_idx if str(pool).upper() == "A" else second_idx
     if not idx_list:
@@ -368,7 +481,9 @@ def plot_qq_between_groups(all_speed, groups: dict, window_sizes: list[int], tau
     n_pairs = len(group_vals) * (len(group_vals) - 1) // 2
     ncols = 3
     nrows = int(np.ceil(n_pairs / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 5.2 * nrows), squeeze=False)
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(5.2 * ncols, 5.2 * nrows), squeeze=False
+    )
     pairs = list(combinations(range(len(group_vals)), 2))
     q = np.linspace(0, 1, 400)
     for ax, (i, j) in zip(axes.flat, pairs, strict=False):
@@ -379,31 +494,34 @@ def plot_qq_between_groups(all_speed, groups: dict, window_sizes: list[int], tau
         M = max(x.max(), y.max())
         ax.plot([m, M], [m, M], "k--", lw=1)
         ax.set_title(f"QQ: {group_names[j]} vs {group_names[i]}")
-        ax.set_xlabel(group_names[i]); ax.set_ylabel(group_names[j])
+        ax.set_xlabel(group_names[i])
+        ax.set_ylabel(group_names[j])
         ax.grid(True, ls=":", alpha=0.3)
     # Hide unused axes
-    for ax in axes.flat[len(pairs):]:
-        ax.axis('off')
+    for ax in axes.flat[len(pairs) :]:
+        ax.axis("off")
     fig.suptitle(f"QQ plots (Pool {pool}, tau={'all' if tau is None else tau})", y=0.98)
     plt.tight_layout()
 
 
-def run_plot(subset_name: str | None = None,
-             tau: int | None = None,
-             no_group: bool = False,
-             no_medians: bool = False,
-             savefig: bool = False,
-             groups: list[str] | None = None,
-             split_pools: bool = False,
-             split_at: int | None = None,
-             tr: int | None = None,
-             equal_animal_weight: bool = False,
-             equal_method: str = "kde",
-             n_per_animal: int | None = None,
-             replace: bool = False,
-             normalize_density: bool = True,
-             dataset_name: str = "julien_caillette",
-             pooled_only: bool = False):
+def run_plot(
+    subset_name: str | None = None,
+    tau: int | None = None,
+    no_group: bool = False,
+    no_medians: bool = False,
+    savefig: bool = False,
+    groups: list[str] | None = None,
+    split_pools: bool = False,
+    split_at: int | None = None,
+    tr: int | None = None,
+    equal_animal_weight: bool = False,
+    equal_method: str = "kde",
+    n_per_animal: int | None = None,
+    replace: bool = False,
+    normalize_density: bool = True,
+    dataset_name: str = "julien_caillette",
+    pooled_only: bool = False,
+):
     """Run plotting end-to-end with parameters (usable from Jupyter)."""
     original_dataset = dataset_name
     try:
@@ -490,21 +608,28 @@ def run_plot(subset_name: str | None = None,
         data.get_metadata()
     else:
         from pathlib import Path as _Path
+
         preproc = _Path(data.paths["preprocessed"])  # type: ignore[index]
         cands = sorted(preproc.glob(f"metadata_animals_*_tr_{int(tr)}.pkl"))
         if not cands:
             raise FileNotFoundError(f"No metadata file for tr={tr} under {preproc}")
         data.get_metadata(meta_filename=cands[0].name)
-    data.get_ts_preprocessed(); data.get_cogdata_preprocessed(); data.get_temporal_parameters()
+    data.get_ts_preprocessed()
+    data.get_cogdata_preprocessed()
+    data.get_temporal_parameters()
 
     save_root = Path(data.paths["speed"])  # contains subfolders
     tau_count = int(data.tau + 1)
 
     try:
-        merged_path = find_merged_file(save_root, data.n_animals, data.regions, tau_count, subset_name)
+        merged_path = find_merged_file(
+            save_root, data.n_animals, data.regions, tau_count, subset_name
+        )
     except FileNotFoundError as err:
         LOGGER.error("%s", err)
-        LOGGER.error("Legacy merged PKL not found. Re-run with --pooled-only to use bootstrap NPZ pools instead.")
+        LOGGER.error(
+            "Legacy merged PKL not found. Re-run with --pooled-only to use bootstrap NPZ pools instead."
+        )
         raise
     print("Merged speeds PKL:", merged_path)
     with open(merged_path, "rb") as fh:
@@ -538,7 +663,12 @@ def run_plot(subset_name: str | None = None,
     # Overall distribution on last window
     last_window = all_speed[-1]
     vals = pool_window_speeds(last_window, tau=tau)
-    print("Last window pooled:", vals.size, "median:", np.nanmedian(vals) if vals.size else np.nan)
+    print(
+        "Last window pooled:",
+        vals.size,
+        "median:",
+        np.nanmedian(vals) if vals.size else np.nan,
+    )
 
     # Overall distribution
     plt.figure(figsize=(7, 5))
@@ -569,16 +699,21 @@ def run_plot(subset_name: str | None = None,
         plot_median_vs_window(all_speed, plot_groups, window_sizes, tau=tau)
         if savefig:
             out = merged_path.with_suffix("")
-            plt.savefig(out.as_posix() + f"_medians_tau{'all' if tau is None else tau}.png", dpi=200)
+            plt.savefig(
+                out.as_posix() + f"_medians_tau{'all' if tau is None else tau}.png",
+                dpi=200,
+            )
     plt.show()
 
     # Two pools (equal halves) per-group distributions
     if split_pools and not no_group:
-        plot_group_distributions_two_pools(all_speed, plot_groups, window_sizes, tau=tau, split_at=split_at)
+        plot_group_distributions_two_pools(
+            all_speed, plot_groups, window_sizes, tau=tau, split_at=split_at
+        )
         if savefig:
             out = merged_path.with_suffix("")
-            plt.savefig(out.as_posix() + f"_poolsA_groups.png", dpi=200)
-            plt.savefig(out.as_posix() + f"_poolsB_groups.png", dpi=200)
+            plt.savefig(out.as_posix() + "_poolsA_groups.png", dpi=200)
+            plt.savefig(out.as_posix() + "_poolsB_groups.png", dpi=200)
         plt.show()
 
     return {
@@ -598,7 +733,7 @@ def plot_speed_distribution_ines(
     bins=120,
     figsize=(8, 5),
     save_path=None,
-    ):
+):
     """
     Plot the pooled dFC-speed histogram for the ines dataset.
 
@@ -627,7 +762,9 @@ def plot_speed_distribution_ines(
         try:
             window, npz_path = next(pair for pair in windows if pair[0] == int(window))
         except StopIteration:
-            raise ValueError(f"Window {window} not found; available: {[w for w,_ in windows]}")
+            raise ValueError(
+                f"Window {window} not found; available: {[w for w,_ in windows]}"
+            )
 
     per_animal = load_per_animal_from_npz(npz_path, tau_index=tau_index)
     pooled = pool_per_animal(per_animal, range(len(per_animal)))
@@ -641,12 +778,20 @@ def plot_speed_distribution_ines(
     for grp, idxs in groups.items():
         vals = pool_per_animal(per_animal, idxs)
         if vals.size:
-            ax.hist(vals, bins=bins, alpha=0.5, density=True, label=str(grp), histtype="step", lw=1.7)
+            ax.hist(
+                vals,
+                bins=bins,
+                alpha=0.5,
+                density=True,
+                label=str(grp),
+                histtype="step",
+                lw=1.7,
+            )
 
     ax.set(
         title=f"ines dFC speed distribution (W={window}, tau={tau_index})",
         xlabel="Speed",
-        ylabel="Density"
+        ylabel="Density",
     )
     ax.legend()
     fig.tight_layout()
@@ -654,7 +799,8 @@ def plot_speed_distribution_ines(
         fig.savefig(save_path)
     return fig, ax
 
-#%%
+
+# %%
 
 
 def _normalize_group_label(label: object) -> str:
@@ -710,7 +856,11 @@ def plot_dataset_all_windows(
         raise FileNotFoundError(f"No speed NPZ files found in {region_dirs[0]}")
     win_lookup = {int(w): path for w, path in win_files}
 
-    pools = _pool_windows_indices([w for w, _ in win_files], pool_threshold) if pool_threshold else {}
+    pools = (
+        _pool_windows_indices([w for w, _ in win_files], pool_threshold)
+        if pool_threshold
+        else {}
+    )
     if include_all_pool:
         pools.setdefault("all", [w for w, _ in win_files])
     if not pools:
@@ -804,7 +954,9 @@ def plot_dataset_all_windows(
 
         figures = []
         for label_group in group_sets:
-            labels = [label_group] if isinstance(label_group, str) else list(label_group)
+            labels = (
+                [label_group] if isinstance(label_group, str) else list(label_group)
+            )
             fig, ax = plt.subplots(figsize=figsize)
             if plot_all_animals:
                 all_vals = pool_per_animal(per_animal, range(len(per_animal)))
@@ -893,14 +1045,21 @@ def _default_group_builder(ctx, requested_cols: tuple[str, ...] | None):
 
         dataset_defaults = {
             "julien_caillette": ("Genotype", "Treatment"),
-            "ines_abdullah": ("Genotype", "Sexe"),
+            "ines_abdallah": ("Genotype", "Sexe"),
         }
         _add_candidates(dataset_defaults.get(dataset_key))
 
         cfg = BootstrapConfig(dataset_name=dataset_key or "ines")
         _add_candidates(str(cfg.group_cols).split(","))
 
-        heuristic_pool = ["Genotype", "Sexe", "Treatment", "Phenotype", "Phenotype_OiP", "Phenotype_RO24h"]
+        heuristic_pool = [
+            "Genotype",
+            "Sexe",
+            "Treatment",
+            "Phenotype",
+            "Phenotype_OiP",
+            "Phenotype_RO24h",
+        ]
         _add_candidates(heuristic_pool)
 
         categorical_cols = [
@@ -926,7 +1085,9 @@ def _default_group_builder(ctx, requested_cols: tuple[str, ...] | None):
         if resolved is None:
             if last_error:
                 raise last_error
-            raise ValueError("Unable to determine default grouping columns for pooled plots.")
+            raise ValueError(
+                "Unable to determine default grouping columns for pooled plots."
+            )
 
     groups = build_groups_from_columns(ctx.cog_df, resolved)
     return groups, [list(groups.keys())]
@@ -936,7 +1097,7 @@ def _build_groups_ines(ctx, _=None):
     """Construct Ines-specific grouping masks using the preprocessed bundle."""
     pre_dir = Path(ctx.paths["preprocessed"])
     candidates = [
-        pre_dir / "ts_and_meta_ines_abdullah.npz",
+        pre_dir / "ts_and_meta_ines_abdallah.npz",
         pre_dir / "ts_and_meta_2m4m.npz",
     ]
     bundle_path = next((p for p in candidates if p.exists()), None)
@@ -944,9 +1105,13 @@ def _build_groups_ines(ctx, _=None):
         matches = sorted(pre_dir.glob("ts_and_meta*.npz"))
         bundle_path = matches[-1] if matches else None
     if bundle_path is None:
-        raise FileNotFoundError(f"Could not locate a ts_and_meta bundle under {pre_dir}")
+        raise FileNotFoundError(
+            f"Could not locate a ts_and_meta bundle under {pre_dir}"
+        )
 
-    grouping_path = next((p for p in sorted(pre_dir.glob("grouping_data*.pkl")) if p.exists()), None)
+    grouping_path = next(
+        (p for p in sorted(pre_dir.glob("grouping_data*.pkl")) if p.exists()), None
+    )
     bundle = load_timeseries_bundle(bundle_path, grouping_path)
     mask_groups = bundle.mask_groups or ()
     label_variables = bundle.label_variables or ()
@@ -982,37 +1147,143 @@ def _build_groups_ines(ctx, _=None):
     return group_dict, label_sets
 
 
-#%%
+# %%
+
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Plot merged dFC speed outputs",
-                                 allow_abbrev=False,
-                                 )
-    ap.add_argument("--subset-name", type=str, default=None, help="Subfolder in speed/ (e.g., 'all', 'regions-ACC-THAL', or custom via --subset-name during compute)")
-    ap.add_argument("--tau", type=int, default=None, help="Tau index to plot (default: pool all taus)")
-    ap.add_argument("--no-group", action="store_true", help="Skip per-group plots; only show overall")
-    ap.add_argument("--no-medians", action="store_true", help="Skip median vs window plot")
-    ap.add_argument("--savefig", action="store_true", help="Save figures next to merged file")
-    ap.add_argument("--split-pools", action="store_true", help="Also plot per-group distributions for two window pools (equal halves or at a specified split)")
-    ap.add_argument("--split-at", type=int, default=None, help="Window size threshold to split pools: Pool A <= split_at, Pool B > split_at")
-    ap.add_argument("--groups", type=str, default=None, help="Comma-separated group names 'GENOTYPE-TREATMENT' to include (e.g., 'WT-VEH,Dp1Yey-LCTB92')")
-    ap.add_argument("--tr", type=int, default=None, help="Select metadata by total_tr for plotting context (e.g., 400 or 500)")
-    ap.add_argument("--qq", action="store_true", help="Produce QQ plots between selected groups for the chosen pool and tau")
-    ap.add_argument("--qq-pool", type=str, default="A", choices=["A","B"], help="Pool to use for QQ plots (A or B)")
+    ap = argparse.ArgumentParser(
+        description="Plot merged dFC speed outputs",
+        allow_abbrev=False,
+    )
+    ap.add_argument(
+        "--subset-name",
+        type=str,
+        default=None,
+        help="Subfolder in speed/ (e.g., 'all', 'regions-ACC-THAL', or custom via --subset-name during compute)",
+    )
+    ap.add_argument(
+        "--tau",
+        type=int,
+        default=None,
+        help="Tau index to plot (default: pool all taus)",
+    )
+    ap.add_argument(
+        "--no-group",
+        action="store_true",
+        help="Skip per-group plots; only show overall",
+    )
+    ap.add_argument(
+        "--no-medians", action="store_true", help="Skip median vs window plot"
+    )
+    ap.add_argument(
+        "--savefig", action="store_true", help="Save figures next to merged file"
+    )
+    ap.add_argument(
+        "--split-pools",
+        action="store_true",
+        help="Also plot per-group distributions for two window pools (equal halves or at a specified split)",
+    )
+    ap.add_argument(
+        "--split-at",
+        type=int,
+        default=None,
+        help="Window size threshold to split pools: Pool A <= split_at, Pool B > split_at",
+    )
+    ap.add_argument(
+        "--groups",
+        type=str,
+        default=None,
+        help="Comma-separated group names 'GENOTYPE-TREATMENT' to include (e.g., 'WT-VEH,Dp1Yey-LCTB92')",
+    )
+    ap.add_argument(
+        "--tr",
+        type=int,
+        default=None,
+        help="Select metadata by total_tr for plotting context (e.g., 400 or 500)",
+    )
+    ap.add_argument(
+        "--qq",
+        action="store_true",
+        help="Produce QQ plots between selected groups for the chosen pool and tau",
+    )
+    ap.add_argument(
+        "--qq-pool",
+        type=str,
+        default="A",
+        choices=["A", "B"],
+        help="Pool to use for QQ plots (A or B)",
+    )
     # Cognition correlations
-    ap.add_argument("--cog-scatter", action="store_true", help="Scatter of per-animal dFC speed summary vs cognition")
-    ap.add_argument("--cog-var", type=str, default="index_NOR", help="Cognitive variable (column in cog df)")
-    ap.add_argument("--weighting", type=str, default="animal", choices=["animal","sample"], help="Per-animal summary weighting")
-    ap.add_argument("--equalize-length", action="store_true", help="Equalize sample count per animal before summary")
-    ap.add_argument("--reducer", type=str, default="median", help="Reducer: median|mean|qXX")
-    ap.add_argument("--corr-vs-window", action="store_true", help="Compute and plot Spearman correlation vs window size")
-    ap.add_argument("--equal-animal-weight", action="store_true", help="Equal animal weighting in group distributions (average per-animal KDE or subsample)")
-    ap.add_argument("--equal-method", type=str, default="kde", choices=["kde","subsample"], help="Equal-animal method")
-    ap.add_argument("--n-per-animal", type=int, default=None, help="Equal length per animal when using subsample method")
-    ap.add_argument("--replace", action="store_true", help="Allow replacement during subsample method")
-    ap.add_argument("--normalize-density", action="store_true", help="Normalize KDEs to density; unset to sum per-animal curves")
-    ap.add_argument("--dataset", type=str, default="julien_caillette", help="Dataset key (e.g., 'julien_caillette' or 'ines_abdullah')")
-    ap.add_argument("--pooled-only", action="store_true", help="Skip legacy merged-PKL workflow and plot pooled speeds from bootstrap NPZ files only")
+    ap.add_argument(
+        "--cog-scatter",
+        action="store_true",
+        help="Scatter of per-animal dFC speed summary vs cognition",
+    )
+    ap.add_argument(
+        "--cog-var",
+        type=str,
+        default="index_NOR",
+        help="Cognitive variable (column in cog df)",
+    )
+    ap.add_argument(
+        "--weighting",
+        type=str,
+        default="animal",
+        choices=["animal", "sample"],
+        help="Per-animal summary weighting",
+    )
+    ap.add_argument(
+        "--equalize-length",
+        action="store_true",
+        help="Equalize sample count per animal before summary",
+    )
+    ap.add_argument(
+        "--reducer", type=str, default="median", help="Reducer: median|mean|qXX"
+    )
+    ap.add_argument(
+        "--corr-vs-window",
+        action="store_true",
+        help="Compute and plot Spearman correlation vs window size",
+    )
+    ap.add_argument(
+        "--equal-animal-weight",
+        action="store_true",
+        help="Equal animal weighting in group distributions (average per-animal KDE or subsample)",
+    )
+    ap.add_argument(
+        "--equal-method",
+        type=str,
+        default="kde",
+        choices=["kde", "subsample"],
+        help="Equal-animal method",
+    )
+    ap.add_argument(
+        "--n-per-animal",
+        type=int,
+        default=None,
+        help="Equal length per animal when using subsample method",
+    )
+    ap.add_argument(
+        "--replace",
+        action="store_true",
+        help="Allow replacement during subsample method",
+    )
+    ap.add_argument(
+        "--normalize-density",
+        action="store_true",
+        help="Normalize KDEs to density; unset to sum per-animal curves",
+    )
+    ap.add_argument(
+        "--dataset",
+        type=str,
+        default="julien_caillette",
+        help="Dataset key (e.g., 'julien_caillette' or 'ines_abdallah')",
+    )
+    ap.add_argument(
+        "--pooled-only",
+        action="store_true",
+        help="Skip legacy merged-PKL workflow and plot pooled speeds from bootstrap NPZ files only",
+    )
     if argv is None:
         args, _ = ap.parse_known_args(sys.argv[1:])  # ← key fix
     else:
@@ -1050,14 +1321,23 @@ def main(argv=None):
     # Optional: Cognition scatter
     if args.cog_scatter:
         if pooled_ctx:
-            print("Cognition scatter is unavailable in pooled-only mode; rerun without --pooled-only.")
+            print(
+                "Cognition scatter is unavailable in pooled-only mode; rerun without --pooled-only."
+            )
             return 0
-        all_speed = ctx["all_speed"]; window_sizes = ctx["window_sizes"]; groups = ctx["groups"]; cog_df = ctx["cog_df"]
+        all_speed = ctx["all_speed"]
+        window_sizes = ctx["window_sizes"]
+        groups = ctx["groups"]
+        cog_df = ctx["cog_df"]
         # per-animal summary over selected taus and all windows
         try:
-            from julien_data.src.plots_utils import per_animal_summary as _pu_per_animal_summary
+            from julien_data.src.plots_utils import (
+                per_animal_summary as _pu_per_animal_summary,
+            )
         except ModuleNotFoundError:
-            from src.plots_utils import per_animal_summary as _pu_per_animal_summary  # type: ignore
+            from src.plots_utils import (
+                per_animal_summary as _pu_per_animal_summary,  # type: ignore
+            )
         x = _pu_per_animal_summary(
             all_speed,
             reducer=args.reducer,
@@ -1067,15 +1347,18 @@ def main(argv=None):
             equalize_length=args.equalize_length,
         )
         y = cog_df[args.cog_var].values
-        plt.figure(figsize=(7,5))
+        plt.figure(figsize=(7, 5))
         plt.scatter(x, y, c="k", alpha=0.85)
         mask = ~np.isnan(x) & ~np.isnan(y)
         if mask.sum() >= 3:
             rho, p = spearmanr(x[mask], y[mask])
-            plt.title(f"dFC speed ({args.reducer}) vs {args.cog_var} — rho={rho:.2f}, p={p:.2g}")
+            plt.title(
+                f"dFC speed ({args.reducer}) vs {args.cog_var} — rho={rho:.2f}, p={p:.2g}"
+            )
         else:
             plt.title(f"dFC speed ({args.reducer}) vs {args.cog_var}")
-        plt.xlabel(f"{args.reducer} dFC speed per animal"); plt.ylabel(args.cog_var)
+        plt.xlabel(f"{args.reducer} dFC speed per animal")
+        plt.ylabel(args.cog_var)
         if args.savefig:
             out = ctx["merged_path"].with_suffix("")
             plt.savefig(out.as_posix() + f"_cog_scatter_{args.cog_var}.png", dpi=200)
@@ -1085,13 +1368,22 @@ def main(argv=None):
     # Optional: Correlation vs window
     if args.corr_vs_window:
         if pooled_ctx:
-            print("Correlation vs window is unavailable in pooled-only mode; rerun without --pooled-only.")
+            print(
+                "Correlation vs window is unavailable in pooled-only mode; rerun without --pooled-only."
+            )
             return 0
-        all_speed = ctx["all_speed"]; window_sizes = ctx["window_sizes"]; groups = ctx["groups"]; cog_df = ctx["cog_df"]
+        all_speed = ctx["all_speed"]
+        window_sizes = ctx["window_sizes"]
+        groups = ctx["groups"]
+        cog_df = ctx["cog_df"]
         try:
-            from julien_data.src.plots_utils import per_animal_summary as _pu_per_animal_summary
+            from julien_data.src.plots_utils import (
+                per_animal_summary as _pu_per_animal_summary,
+            )
         except ModuleNotFoundError:
-            from src.plots_utils import per_animal_summary as _pu_per_animal_summary  # type: ignore
+            from src.plots_utils import (
+                per_animal_summary as _pu_per_animal_summary,  # type: ignore
+            )
         rows = []
         for w_idx, wsize in enumerate(window_sizes):
             x = _pu_per_animal_summary(
@@ -1107,23 +1399,31 @@ def main(argv=None):
                 idx = np.array(idxs)
                 mask = ~np.isnan(x[idx]) & ~np.isnan(y[idx])
                 n = int(mask.sum())
-                rho, p = (spearmanr(x[idx][mask], y[idx][mask]) if n >= 3 else (np.nan, np.nan))
-                rows.append({
-                    "window_idx": w_idx,
-                    "window_size": wsize,
-                    "group": "-".join(grp),
-                    "rho": rho,
-                    "p": p,
-                    "n": n,
-                    "weighting": args.weighting,
-                    "equalize_length": args.equalize_length,
-                    "reducer": args.reducer,
-                    "cog_var": args.cog_var,
-                })
+                rho, p = (
+                    spearmanr(x[idx][mask], y[idx][mask])
+                    if n >= 3
+                    else (np.nan, np.nan)
+                )
+                rows.append(
+                    {
+                        "window_idx": w_idx,
+                        "window_size": wsize,
+                        "group": "-".join(grp),
+                        "rho": rho,
+                        "p": p,
+                        "n": n,
+                        "weighting": args.weighting,
+                        "equalize_length": args.equalize_length,
+                        "reducer": args.reducer,
+                        "cog_var": args.cog_var,
+                    }
+                )
         import pandas as pd
+
         df = pd.DataFrame(rows)
         # Plot
         import seaborn as sns
+
         plt.figure(figsize=(12, 6))
         order = ["-".join(g) for g in groups.keys()]
         palette = sns.color_palette("tab10", n_colors=len(order))
@@ -1131,13 +1431,27 @@ def main(argv=None):
             sub = df[df["group"] == lab].sort_values("window_size")
             if sub.empty:
                 continue
-            plt.plot(sub["window_size"], sub["rho"], "-o", color=color, label=lab, zorder=2)
+            plt.plot(
+                sub["window_size"], sub["rho"], "-o", color=color, label=lab, zorder=2
+            )
             sig = sub[(sub["p"] < 0.05) & sub["rho"].notna()]
             if not sig.empty:
-                plt.scatter(sig["window_size"], sig["rho"], marker="*", s=120, color=color, edgecolor="k", linewidth=0.6, zorder=4)
+                plt.scatter(
+                    sig["window_size"],
+                    sig["rho"],
+                    marker="*",
+                    s=120,
+                    color=color,
+                    edgecolor="k",
+                    linewidth=0.6,
+                    zorder=4,
+                )
         plt.axhline(0, color="grey", linestyle="--", linewidth=1, zorder=1)
-        plt.xlabel("Window Size"); plt.ylabel(f"Spearman ρ (dFC speed, {args.cog_var})")
-        plt.ylim(-1, 1); plt.legend(title="Group"); plt.tight_layout()
+        plt.xlabel("Window Size")
+        plt.ylabel(f"Spearman ρ (dFC speed, {args.cog_var})")
+        plt.ylim(-1, 1)
+        plt.legend(title="Group")
+        plt.tight_layout()
         if args.savefig:
             out = ctx["merged_path"].with_suffix("")
             plt.savefig(out.as_posix() + f"_corr_vs_window_{args.cog_var}.png", dpi=200)
@@ -1145,7 +1459,9 @@ def main(argv=None):
     # Optional QQ plots
     if args.qq:
         if pooled_ctx:
-            print("QQ plots require the legacy merged-PKL workflow; rerun without --pooled-only.")
+            print(
+                "QQ plots require the legacy merged-PKL workflow; rerun without --pooled-only."
+            )
             return 0
         # Reuse same context
         data = DFCAnalysis(dataset_name=dataset_key)
@@ -1155,17 +1471,25 @@ def main(argv=None):
             preproc = Path(data.paths["preprocessed"])  # type: ignore[index]
             cands = sorted(preproc.glob(f"metadata_animals_*_tr_{int(args.tr)}.pkl"))
             if not cands:
-                raise FileNotFoundError(f"No metadata file for tr={args.tr} under {preproc}")
+                raise FileNotFoundError(
+                    f"No metadata file for tr={args.tr} under {preproc}"
+                )
             data.get_metadata(meta_filename=cands[0].name)
-        data.get_ts_preprocessed(); data.get_cogdata_preprocessed(); data.get_temporal_parameters()
+        data.get_ts_preprocessed()
+        data.get_cogdata_preprocessed()
+        data.get_temporal_parameters()
         save_root = Path(data.paths["speed"])
         tau_count = int(data.tau + 1)
-        merged_path = find_merged_file(save_root, data.n_animals, data.regions, tau_count, args.subset_name)
+        merged_path = find_merged_file(
+            save_root, data.n_animals, data.regions, tau_count, args.subset_name
+        )
         with open(merged_path, "rb") as fh:
             payload = pickle.load(fh)
         all_speed = payload["speeds"]
         meta = payload.get("meta", {})
-        window_sizes = meta.get("window_sizes") or list(map(int, data.time_window_range))
+        window_sizes = meta.get("window_sizes") or list(
+            map(int, data.time_window_range)
+        )
         # Build groups (filtered if provided)
         plot_groups = data.groups
         if groups_list:
@@ -1177,7 +1501,14 @@ def main(argv=None):
                     filtered[k] = idxs
             if filtered:
                 plot_groups = filtered
-        plot_qq_between_groups(all_speed, plot_groups, list(map(int, window_sizes)), tau=args.tau, pool=args.qq_pool, split_at=args.split_at)
+        plot_qq_between_groups(
+            all_speed,
+            plot_groups,
+            list(map(int, window_sizes)),
+            tau=args.tau,
+            pool=args.qq_pool,
+            split_at=args.split_at,
+        )
 
 
 if __name__ == "__main__":

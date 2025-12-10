@@ -7,7 +7,7 @@ import pandas as pd
 import pickle
 
 project_root = Path("/path/to/net_fluidity")
-dataset = "julien_caillette"  # or "ines_abdullah"
+dataset = "julien_caillette"  # or "ines_abdallah"
 pre_dir = project_root / "results" / dataset / "preprocessed"
 
 # Load canonical time-series bundle
