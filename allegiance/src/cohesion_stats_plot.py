@@ -498,7 +498,9 @@ def build_group_comparisons(
             cohorts = []  # list[(label, idx)]
             for sex_name in ("Female", "Male"):
                 for geno_key in ("wt", "dKI"):
-                    idx = np.intersect1d(sex_union[sex_name], geno_union[geno_key], assume_unique=False)
+                    idx = np.intersect1d(
+                        sex_union[sex_name], geno_union[geno_key], assume_unique=False
+                    )
                     if idx.size:
                         cohorts.append((f"{sex_name} {geno_key}-{age}", idx))
             # pairwise across cohorts within this age
@@ -718,7 +720,7 @@ def plot_matrices_per_column_group(
                 _vmin = -0.1 if vmin is None else vmin
                 _vmax = 0.1 if vmax is None else vmax
                 _cmap = "RdBu" if cmap is None else cmap
-                title = f"{block} — {label} ((1-p)×effect)"
+                title = f"{block} - {label} - Cohesion difference ratio"
                 fname = (
                     block_dir
                     / f"{_sanitize_fname(label)}_weighted_{_sanitize_fname(tag)}.png"
@@ -941,7 +943,9 @@ def main() -> int:
             elif args.p_adjust == "bonferroni-age":
                 p_grp_ba = _bonferroni_by_age_in_columns(p_grp)
                 if save_stats:
-                    p_grp_ba.to_csv(out_dir / f"pvals_group_mwu_bonferroni_age_{tag}.csv")
+                    p_grp_ba.to_csv(
+                        out_dir / f"pvals_group_mwu_bonferroni_age_{tag}.csv"
+                    )
                 p_grp_plot = p_grp_ba
                 title_suffix = " (Bonferroni by age group)"
 

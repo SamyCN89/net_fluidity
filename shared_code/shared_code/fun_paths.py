@@ -105,6 +105,7 @@ def build_paths(
         "allegiance": results / "allegiance",
         "trimers": results / "trimers",
         "cohesion": results / "cohesion",
+        "motif": results / "motif",
         # Figures paths
         "figures": figures,
         "f_cog": figures / "cog",
@@ -116,6 +117,7 @@ def build_paths(
         "f_mod": figures / "modularity",
         "f_allegiance": figures / "allegiance",
         "f_trimers": figures / "trimers",
+        "f_motif": figures / "motif",
     }
 
 
