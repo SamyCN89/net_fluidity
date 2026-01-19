@@ -25,12 +25,10 @@ from shared_code.fun_paths import get_paths
 
 logger = logging.getLogger(__name__)
 
-
 def setup_logging() -> None:
     if logger.handlers:
         return
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Cohesion stats and plots")
@@ -110,7 +108,6 @@ def parse_args() -> argparse.Namespace:
     )
     return p.parse_args()
 
-
 def load_npz(paths: dict, ws: int, lag: int, tau: int, scope: str) -> dict:
     f = (
         paths["allegiance"]
@@ -119,9 +116,7 @@ def load_npz(paths: dict, ws: int, lag: int, tau: int, scope: str) -> dict:
     )
     return dict(np.load(f, allow_pickle=True))
 
-
 # ---------------- Masks + stats helpers ----------------
-
 BLOCK_BASE: list[tuple] = [
     ("Sex", "single", 3),
     ("Genotype", "single", 2),
@@ -660,12 +655,10 @@ def _vec_to_sym_matrix(
     np.fill_diagonal(M, 0.0)
     return M
 
-
 def _sanitize_fname(s: str) -> str:
     import re
 
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", s)[:200]
-
 
 def plot_matrices_per_column_group(
     pvals_df: pd.DataFrame,
@@ -742,14 +735,12 @@ def plot_matrices_per_column_group(
             plt.close(fig)
     return out_paths
 
-
 def _bonferroni_adjust(pvals_df: pd.DataFrame) -> pd.DataFrame:
     if pvals_df.empty:
         return pvals_df.copy()
     m = pvals_df.shape[0]  # number of links per column
     arr = np.minimum(1.0, np.asarray(pvals_df.values, dtype=float) * float(m))
     return pd.DataFrame(arr, index=pvals_df.index, columns=pvals_df.columns)
-
 
 def _bonferroni_by_age_in_columns(pvals_df: pd.DataFrame) -> pd.DataFrame:
     """Apply Bonferroni across columns grouped by age (2m/4m) per link.
@@ -782,7 +773,6 @@ def _bonferroni_by_age_in_columns(pvals_df: pd.DataFrame) -> pd.DataFrame:
         k = float(len(idxs))
         A[:, idxs] = np.minimum(1.0, A[:, idxs] * k)
     return pd.DataFrame(A, index=pvals_df.index, columns=pvals_df.columns)
-
 
 def main() -> int:
     setup_logging()
@@ -1007,9 +997,7 @@ def main() -> int:
                     tag=tag,
                     save=args.save_plots,
                 )
-
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
