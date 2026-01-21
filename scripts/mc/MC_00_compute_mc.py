@@ -97,8 +97,9 @@ def main():
     if mc.shape != (n_animals, E_expected, E_expected):
         raise ValueError(f"Unexpected MC shape {mc.shape}, expected {(n_animals, E_expected, E_expected)}")
 
-    finite_frac = np.isfinite(mc)
-    print("finite fraction:", float(finite_frac.mean()))
+    finite_mask = np.isfinite(mc)
+    finite_frac = float(finite_mask.mean()) # overall fraction of finite values
+    print("finite fraction:", float(finite_frac))
 
     diag = np.array([np.diag(mc[a]) for a in range(n_animals)])
     diag_mean, diag_std = float(np.nanmean(diag)), float(np.nanstd(diag))
@@ -119,7 +120,7 @@ def main():
         max=float(np.nanmax(off)),
     )
 
-    params = dict(dataset=DATASET, window_size=WINDOW_SIZE, lag=LAG, n_jobs=N_JOBS)
+    params = dict(dataset=DATASET, window_size=WINDOW_SIZE, lag=LAG, n_jobs=N_JOBS, n_animals=n_animals, n_regions=regions)
     sanity = dict(
         seconds=dt,
         finite_fraction=finite_frac,
