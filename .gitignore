@@ -85,3 +85,8 @@ node_modules/
 *.jpg
 *.jpeg
 .env
+
+reports/metaconnectivity/ines_abdallah/allegiance/contingency_matrix_ref=wt_2m*_nruns=1000_gamma_repetitions=100.pkl
+reports/metaconnectivity/**/allegiance/*.pkl
+reports/metaconnectivity/**/allegiance/*.npz
+reports/metaconnectivity/**/allegiance/*.npy
