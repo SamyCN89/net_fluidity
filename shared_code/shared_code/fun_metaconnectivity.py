@@ -47,7 +47,7 @@ def compute_metaconnectivity(ts_data, window_size=7, lag=1, save_path=None, n_jo
     """Compute meta-connectivity matrices from time-series data using a sliding window approach.
     This function supports parallel computation and caching of results to optimize performance.
     Parameters:
-    - ts_data: 3D numpy array of shape (n_animals, n_regions, n_timepoints)
+    - ts_data: 3D numpy array of shape (n_animals, n_timepoints, n_regions)
     - window_size: Size of the sliding window (default: 7)
     - lag: Lag to apply to the time series (default: 1)
     - save_path: Path to save the computed meta-connectivity (default: None)

@@ -193,6 +193,16 @@ def prepare_cognitive_dataset(
     ts[:n2] = ts_2m
     ts[n2:] = ts_4m
 
+    # Expand mouse IDs to match stacked TS: [2m...][4m...]
+    mouse_ids = cog_data_filtered["Name"].astype(str).to_numpy()
+    mouse_ids_ts = np.concatenate([mouse_ids, mouse_ids])
+    age_ts = np.array(["2m"] * len(mouse_ids) + ["4m"] * len(mouse_ids), dtype=str)
+
+    assert ts.shape[0] == len(
+        mouse_ids_ts
+    ), f"Mismatch: ts has {ts.shape[0]} rows but expanded mouse_ids has {len(mouse_ids_ts)}"
+
+    # Prepare grouping masks based on cognitive phenotypes.
     anat_labels = [str(entry[1]).replace(".", " ") for entry in data_roi]
     is_2month_old = np.arange(n_animals) < n2
 
@@ -297,6 +307,9 @@ def prepare_cognitive_dataset(
         "transient": np.array(transient, dtype=np.int32),
         "dataset_name": np.asarray(dataset_name, dtype=str),
         "timecourse_folder": np.asarray(timecourse_folder, dtype=str),
+        "mouse_ids": mouse_ids,
+        "mouse_ids_ts": mouse_ids_ts,
+        "age_ts": age_ts,
     }
 
     return PrepResult(
@@ -347,7 +360,7 @@ def write_outputs(
     np.savez(
         canonical_npz,
         ts=result.ts,
-        mouse_ids=result.cog_data["Name"].astype(str).to_numpy(),
+        # mouse_ids=r   esult.cog_data["Name"].astype(str).to_numpy(),
         **result.metadata,
     )
 
