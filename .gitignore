@@ -91,3 +91,8 @@ reports/metaconnectivity/**/allegiance/*.pkl
 reports/metaconnectivity/**/allegiance/*.npz
 reports/metaconnectivity/**/allegiance/*.npy
 c
+
+# generated caches/results
+reports/
+results/
+*.pkl
