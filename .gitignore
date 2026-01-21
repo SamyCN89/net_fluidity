@@ -90,3 +90,4 @@ reports/metaconnectivity/ines_abdallah/allegiance/contingency_matrix_ref=wt_2m*_
 reports/metaconnectivity/**/allegiance/*.pkl
 reports/metaconnectivity/**/allegiance/*.npz
 reports/metaconnectivity/**/allegiance/*.npy
+c
