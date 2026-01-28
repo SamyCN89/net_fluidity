@@ -22,7 +22,7 @@ speed_pool = []
 for s in sf:
 
     #lag in number of frames
-    lag = int((s*.72) *.05)
+    lag = max(1, int(round(s*.005)))
 
     dfc_stream = ts2dfc_stream(data, s, lag, format_data='2D')
     fcd = dfc_stream2fcd(dfc_stream)

@@ -375,7 +375,7 @@ def save2disk(save_path, prefix, **data):
     Returns:
         Path or None: The path where data was saved, or None if save_path not given.
     """
-    print("here")
+    # print("here")
     if save_path:
         # file_path = save_path / f"{prefix}_window_size={window_size}_lag={lag}_animals={n_animals}_regions={nodes}.npz"
         print(f"Saving {prefix} stream to: {save_path}")

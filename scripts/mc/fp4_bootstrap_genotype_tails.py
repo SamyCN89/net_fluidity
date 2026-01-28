@@ -41,7 +41,7 @@ GROUP_A = "wt"             # genotype A
 GROUP_B = "dKI"            # genotype B
 
 # What to analyze
-SUBSET = "all"             # "all" | "module" | "trimer"
+SUBSET = "module"             # "all" | "module" | "trimer"
 MODULE_ID = 1              # used if SUBSET="module"
 TRIMER_ONLY = True         # used if SUBSET="trimer"
 
