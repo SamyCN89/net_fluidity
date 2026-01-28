@@ -1,39 +1,30 @@
 #!/usr/bin/env python3
 # %%
 """
-FP6b (FAST) — Bootstrap MC distribution summaries for FP6 conditions,
-parallel over conditions, and *no giant concatenations* per bootstrap replicate.
-
-What it does
-------------
-From FP6a per-animal pooled vectors, for each condition it computes:
-  - Observed pooled distribution summaries (PDF + quantiles on p-grid)
-  - Bootstrap CIs by resampling animals (A draws with replacement)
-
-Speed strategy
---------------
-- Avoid concatenating all sampled animals each replicate.
-- For each bootstrap replicate, draw a fixed EDGE_SUBSAMPLE of MC values by:
-    1) sampling animals with replacement (bootstrap)
-    2) allocating per-animal draws ~ proportional to that animal's available values
-    3) sampling values within each selected animal
-- Parallelize over conditions with joblib (no nested parallelism).
-- Stores only summaries + CIs (not raw bootstrap vectors).
+FP6b (CLEAN + FAST) — Bootstrap MC distribution summaries for FP6 conditions
+(no giant concatenations; robust bins; stable sampling even with empty animals).
 
 Consumes
 --------
-results/<dataset>/mc/mc_dist/fp6a_mc_topology_modularity_per_animal.npz
+results/<dataset>/mc/mc_dist/fp6a_mc_intra_inter_trimer_tetramer_per_animal.npz
 
 Produces
 --------
 results/<dataset>/mc/mc_dist/fp6b_bootstrap_mc_fp6_conditions_FAST.npz
+
+Key design choices
+------------------
+- Bootstrap unit: animal (resample animals with replacement).
+- Within each bootstrap replicate: draw EDGE_SUBSAMPLE MC values from the resampled animal pool.
+- Robust bins: auto-computed from obs_all pooled distribution (quantiles) to avoid mostly-empty bins.
+- Safe sampling: zero-length animals are dropped before multinomial allocation (prevents undersized draws).
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -48,32 +39,42 @@ TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
 COGNITIVE_FILE = "ROIs.xlsx"
 ANAT_LABELS_FILE = "41_Allen.txt"
 
-FP6A_NAME = "fp6a_mc_intra_inter_trimer_tetramer_per_animal.npz"
 OUT_SUBDIR = "mc_dist"
+FP6A_NAME = "fp6a_mc_intra_inter_trimer_tetramer_per_animal.npz"
+OUT_NAME = "fp6b_bootstrap_mc_fp6_conditions_FAST.npz"
 OVERWRITE = True
 
-# Bootstrap controls
+# Bootstrap
 N_BOOT = 2000
 SEED = 0
 
-# Performance / accuracy knob:
-#   This is the *number of MC values* used to estimate PDF + quantiles per replicate.
-#   200k–500k is usually a good compromise.
+# Sampling per replicate (values, not edges)
 EDGE_SUBSAMPLE = 300_000
 
-# Summaries
-P_GRID = np.linspace(0, 1, 101)          # includes tails (0..1)
-BINS = np.linspace(-1, 1, 401)       # wide support for tails
+# Quantiles to save (include tails)
+P_GRID = np.linspace(0.0, 1.0, 101).astype(np.float32)
 
-# Parallelism
-N_JOBS = -1  # parallel over conditions
+# Histogram resolution
+BINS_MIN = -0.8
+BINS_MAX = 0.8
+NBINS = 401  # keep whatever you want (401 => 400 bins)
+
+
+# Parallelism over conditions
+N_JOBS = -1
+JOBLIB_BACKEND = "loky"
+
+# Optional: run only a subset to save time (set to None to run all)
+# Example:
+# CONDITIONS_TO_RUN = ["obs_all", "null_all", "obs_intra", "obs_inter", "obs_trimer", "obs_tetramer"]
+CONDITIONS_TO_RUN: Optional[List[str]] = None
 
 
 # =========================
 # Helpers
 # =========================
 def _as_float_1d(x) -> np.ndarray:
-    """Convert a per-animal vector to 1D float32, finite only."""
+    """Convert a per-animal vector to 1D float32, finite-only."""
     arr = np.asarray(x)
     if arr.size == 0:
         return np.array([], dtype=np.float32)
@@ -108,13 +109,14 @@ def _pdf_density_from_counts(counts: np.ndarray, bins: np.ndarray, n: int) -> np
     return (counts.astype(np.float32) / (n * widths)).astype(np.float32)
 
 
-def _summaries_from_sample(x: np.ndarray, bins: np.ndarray, p_grid: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Return (pdf_density, quantiles). x is 1D finite float."""
+def _summaries_from_sample(
+    x: np.ndarray, bins: np.ndarray, p_grid: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return (pdf_density, quantiles). x is 1D finite float32."""
     if x.size == 0:
         pdf = np.full(bins.size - 1, np.nan, dtype=np.float32)
         q = np.full(p_grid.size, np.nan, dtype=np.float32)
         return pdf, q
-
     counts, _ = np.histogram(x, bins=bins, density=False)
     pdf = _pdf_density_from_counts(counts, bins, x.size)
     q = np.quantile(x, p_grid).astype(np.float32)
@@ -123,34 +125,33 @@ def _summaries_from_sample(x: np.ndarray, bins: np.ndarray, p_grid: np.ndarray) 
 
 def _sample_from_animals(
     values: List[np.ndarray],
-    pick_animals: np.ndarray,        # indices length A (with replacement)
+    pick_animals: np.ndarray,  # indices (with replacement) length A
     n_draws: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
     """
-    Draw n_draws values from the *bootstrap-resampled animal pool* without concatenation.
-
-    values: list of length A, each is 1D finite float array
-    pick_animals: length A bootstrap sample of animal indices
+    Draw n_draws values from the bootstrap-resampled animal pool without concatenation.
+    Critical: drop zero-length picked animals BEFORE multinomial allocation.
     """
-    A = len(values)
-    if A == 0:
+    if len(values) == 0 or n_draws <= 0:
         return np.array([], dtype=np.float32)
 
-    # lengths of the selected animals
     lens = np.fromiter((values[i].size for i in pick_animals), dtype=np.int64, count=pick_animals.size)
-    tot = int(lens.sum())
-    if tot == 0:
+
+    keep = lens > 0
+    if not np.any(keep):
         return np.array([], dtype=np.float32)
 
-    # If the pool is smaller than n_draws, just take all by concatenating once (rare).
-    if tot <= n_draws:
-        # still avoid giant concat most of the time; but tot is small here
-        return np.concatenate([values[i] for i in pick_animals if values[i].size], axis=0).astype(np.float32, copy=False)
+    pick_animals = pick_animals[keep]
+    lens = lens[keep]
 
-    # Allocate per-animal number of draws proportional to its available values
+    tot = int(lens.sum())
+    if tot <= n_draws:
+        # small pool -> concatenate once (safe)
+        return np.concatenate([values[i] for i in pick_animals], axis=0).astype(np.float32, copy=False)
+
     probs = lens / tot
-    draws = rng.multinomial(n_draws, probs)  # length = pick_animals.size
+    draws = rng.multinomial(n_draws, probs)
 
     out = np.empty(n_draws, dtype=np.float32)
     pos = 0
@@ -159,14 +160,11 @@ def _sample_from_animals(
             continue
         a_idx = int(pick_animals[j])
         v = values[a_idx]
-        if v.size == 0:
-            continue
-        # sample indices within that animal
         ii = rng.integers(0, v.size, size=n_j)
         out[pos : pos + n_j] = v[ii]
         pos += n_j
 
-    # In extremely rare cases (empty animals eaten draws), pos < n_draws; trim.
+    # With the keep-mask, pos should equal n_draws
     return out[:pos]
 
 
@@ -186,16 +184,11 @@ def summarize_condition_fast(
     values = [_as_float_1d(v) for v in list(values_per_animal_obj)]
     A = len(values)
 
-    # Observed: sample from ALL animals pooled by drawing edge_subsample points
     rng_obs = np.random.default_rng(seed + 999)
     pick_all = np.arange(A, dtype=np.int64)
-    # To mimic “pooled all animals”, we sample animals *with replacement* or not?
-    # Here: not needed. We want the pooled distribution over the dataset -> sample proportional to lengths.
-    # We implement it by "bootstrap sample equals identity" + multinomial weighting:
     x_obs = _sample_from_animals(values, pick_all, edge_subsample, rng_obs)
     pdf_obs, q_obs = _summaries_from_sample(x_obs, bins, p_grid)
 
-    # Bootstrap arrays
     nb = bins.size - 1
     nq = p_grid.size
     pdf_boot = np.empty((n_boot, nb), dtype=np.float32)
@@ -203,11 +196,10 @@ def summarize_condition_fast(
 
     rng = np.random.default_rng(seed)
     for b in range(n_boot):
-        pick = rng.integers(0, A, size=A)  # bootstrap animals
+        pick = rng.integers(0, A, size=A)  # bootstrap animals (with replacement)
         x = _sample_from_animals(values, pick, edge_subsample, rng)
         pdf_boot[b], q_boot[b] = _summaries_from_sample(x, bins, p_grid)
 
-    # CI bands
     pdf_lo = np.quantile(pdf_boot, 0.025, axis=0).astype(np.float32)
     pdf_hi = np.quantile(pdf_boot, 0.975, axis=0).astype(np.float32)
     q_lo = np.quantile(q_boot, 0.025, axis=0).astype(np.float32)
@@ -224,7 +216,6 @@ def summarize_condition_fast(
         q_ci_lo=q_lo,
         q_ci_hi=q_hi,
     )
-
 
 
 # =========================
@@ -256,7 +247,7 @@ base = {
     "null_inter_tetramer": d["null_inter_tetramer"],
 }
 
-# Derived marginals (your request)
+# Derived marginals
 derived = {
     "obs_all": _concat_per_animal(
         _concat_per_animal(base["obs_intra_trimer"], base["obs_inter_trimer"]),
@@ -277,18 +268,40 @@ derived = {
 }
 
 all_conditions = {**base, **derived}
+
+# Optional subset
+if CONDITIONS_TO_RUN is not None:
+    missing = [k for k in CONDITIONS_TO_RUN if k not in all_conditions]
+    if missing:
+        raise KeyError(f"Unknown CONDITIONS_TO_RUN keys: {missing}")
+    all_conditions = {k: all_conditions[k] for k in CONDITIONS_TO_RUN}
+
 cond_items = list(all_conditions.items())
 
-print(f"[FP6b FAST] Conditions: {len(cond_items)} | N_BOOT={N_BOOT} | EDGE_SUBSAMPLE={EDGE_SUBSAMPLE} | N_JOBS={N_JOBS}")
+# =========================
+# BINS (MANUAL)
+# =========================
+if not (np.isfinite(BINS_MIN) and np.isfinite(BINS_MAX) and BINS_MAX > BINS_MIN):
+    raise ValueError(f"Bad manual bins: BINS_MIN={BINS_MIN}, BINS_MAX={BINS_MAX}")
 
-# Parallel over conditions (each condition independent)
-results = Parallel(n_jobs=N_JOBS, backend="loky")(
+bins = np.linspace(BINS_MIN, BINS_MAX, NBINS, dtype=np.float32)
+bin_centers = ((bins[:-1] + bins[1:]) * 0.5).astype(np.float32)
+
+
+print(
+    f"[FP6b CLEAN] Conditions={len(cond_items)} | "
+    f"N_BOOT={N_BOOT} | EDGE_SUBSAMPLE={EDGE_SUBSAMPLE} | "
+    f"BINS=manual | range=({BINS_MIN},{BINS_MAX}) | NBINS={NBINS}"
+)
+
+
+results = Parallel(n_jobs=N_JOBS, backend=JOBLIB_BACKEND)(
     delayed(summarize_condition_fast)(
         key=k,
         values_per_animal_obj=v,
         n_boot=N_BOOT,
         seed=SEED + 1000 * i,
-        bins=BINS,
+        bins=bins,
         p_grid=P_GRID,
         edge_subsample=EDGE_SUBSAMPLE,
     )
@@ -298,38 +311,40 @@ results = Parallel(n_jobs=N_JOBS, backend="loky")(
 # Save
 out_dir = mc_dir / OUT_SUBDIR
 out_dir.mkdir(parents=True, exist_ok=True)
+out_path = out_dir / OUT_NAME
 
-out_path = out_dir / "fp6b_bootstrap_mc_fp6_conditions_FAST.npz"
 if out_path.exists() and not OVERWRITE:
     raise FileExistsError(out_path)
 
 save = {
-    "bins": BINS.astype(np.float32),
+    "bins": bins.astype(np.float32),
+    "bin_centers": bin_centers,
     "p_grid": P_GRID.astype(np.float32),
-    "bin_centers": ((BINS[:-1] + BINS[1:]) * 0.5).astype(np.float32),
 }
-
 
 for res in results:
     key = res["key"]
     for field in ["pdf_obs", "pdf_ci_lo", "pdf_ci_hi", "q_obs", "q_ci_lo", "q_ci_hi", "n_animals", "n_obs_used"]:
         save[f"{key}__{field}"] = res[field]
 
-
 params = dict(
     dataset=DATASET,
     fp6a_path=str(fp6a_path),
+    out_path=str(out_path),
     n_boot=int(N_BOOT),
     seed=int(SEED),
     edge_subsample=int(EDGE_SUBSAMPLE),
-    bins=[float(x) for x in BINS.tolist()],
+    nbins=int(NBINS),
+    bins_min=float(BINS_MIN),
+    bins_max=float(BINS_MAX),
     p_grid=[float(x) for x in P_GRID.tolist()],
     conditions=list(all_conditions.keys()),
     parallel_over="conditions",
 )
 
+
 save["params_json"] = json.dumps(params, sort_keys=True)
 
 np.savez_compressed(out_path, **save)
 
-print("[OK] Saved FP6b FAST:", out_path)
+print("[OK] Saved FP6b CLEAN:", out_path)
