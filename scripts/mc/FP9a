@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+# %%
+"""
+FP9a — Sanity plots for FP8b group contrasts (NO recompute)
+
+Loads:
+  - results/<dataset>/mc/mc_dist/fp8b_group_tail_contrasts.npz
+
+Plots:
+  - ΔQ(p) with CI bands for selected contrasts × conditions
+
+Purpose:
+  - Visual sanity check before FP9b / FP9c
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+import re
+import numpy as np
+import matplotlib.pyplot as plt
+
+from shared_code.fun_paths import get_paths
+
+# =============================================================================
+# CONFIG — CHANGE ONLY THIS BLOCK
+# =============================================================================
+DATASET = "ines_abdallah"
+FP8B_NAME = "fp8b_group_tail_contrasts.npz"
+
+# Pick a few *flagship* contrasts to inspect
+CONTRASTS_TO_PLOT = [
+    "age:2m-4m",
+    "genotype:wt-dKI",
+    "age×genotype:(2m_wt-2m_dKI)-(4m_wt-4m_dKI)",
+]
+
+# Pick conditions you care about most
+CONDITIONS_TO_PLOT = [
+    "obs_all",
+    "obs_intra_trimer",
+    "obs_inter_trimer",
+]
+
+SHOW_ZERO_LINE = True
+SAVE_FIGS = False
+OUTDIR = Path("./fp9a_sanity_plots")
+DPI = 120
+# =============================================================================
+
+
+def load_fp8b(dataset: str):
+    paths = get_paths()
+    p = Path(paths["results"]) / "mc" / "mc_dist" / FP8B_NAME
+
+
+    z = np.load(p, allow_pickle=True)
+    return p, {k: z[k] for k in z.files}
+
+
+def extract_available_contrasts(keys: list[str]) -> list[str]:
+    pat = re.compile(r"^contrast__(.*?)__condition__")
+    found = set()
+    for k in keys:
+        m = pat.match(k)
+        if m:
+            found.add(m.group(1))
+    return sorted(found)
+
+
+def extract_available_conditions(keys: list[str], contrast: str) -> list[str]:
+    pat = re.compile(rf"^contrast__{re.escape(contrast)}__condition__(.*?)__field__")
+    found = set()
+    for k in keys:
+        m = pat.match(k)
+        if m:
+            found.add(m.group(1))
+    return sorted(found)
+
+
+def ck(contrast: str, cond: str, field: str) -> str:
+    return f"contrast__{contrast}__condition__{cond}__field__{field}"
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+fp8b_path, d = load_fp8b(DATASET)
+keys = list(d.keys())
+
+print("[OK] Loaded FP8b:", fp8b_path)
+
+p_grid = np.asarray(d["p_grid"], dtype=float)
+
+all_contrasts = extract_available_contrasts(keys)
+print("[INFO] Available contrasts:", len(all_contrasts))
+
+for contrast in CONTRASTS_TO_PLOT:
+    if contrast not in all_contrasts:
+        print(f"[SKIP] Contrast not found: {contrast}")
+        continue
+
+    conds_avail = extract_available_conditions(keys, contrast)
+    conds = [c for c in CONDITIONS_TO_PLOT if c in conds_avail]
+
+    if not conds:
+        print(f"[SKIP] No requested conditions found for contrast: {contrast}")
+        continue
+
+    ncols = len(conds)
+    fig, axes = plt.subplots(1, ncols, figsize=(4*ncols, 3), sharey=True)
+
+    if ncols == 1:
+        axes = [axes]
+
+    for ax, cond in zip(axes, conds):
+        dq = np.asarray(d[ck(contrast, cond, "dq_obs")], dtype=float)
+        lo = np.asarray(d[ck(contrast, cond, "dq_ci_lo")], dtype=float)
+        hi = np.asarray(d[ck(contrast, cond, "dq_ci_hi")], dtype=float)
+
+        ax.plot(p_grid, dq, lw=2, label="ΔQ")
+        ax.fill_between(p_grid, lo, hi, alpha=0.3, label="CI")
+
+        if SHOW_ZERO_LINE:
+            ax.axhline(0, color="k", ls="--", lw=0.8)
+
+        ax.set_title(cond.replace("_", " "))
+        ax.set_xlabel("p")
+
+    axes[0].set_ylabel("ΔQ(p)")
+    fig.suptitle(contrast, fontsize=12)
+
+    handles, labels = axes[-1].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper right", frameon=False)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+
+    if SAVE_FIGS:
+        OUTDIR.mkdir(parents=True, exist_ok=True)
+        out = OUTDIR / f"FP9a_{contrast.replace(':','_').replace('×','x')}.png"
+        fig.savefig(out, dpi=DPI)
+        print("[OK] Saved:", out)
+
+    plt.show()
+
+print("[DONE] FP9a sanity plots.")
+
