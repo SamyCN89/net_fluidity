@@ -181,22 +181,19 @@ for a in range(A):
 
     acc = np.zeros(Ktri, dtype=np.float64)
     count = np.zeros(Ktri, dtype=np.int32)
-
+    # --- Surrogates ---
     for r_surr in range(N_SURR):
-        # --- Independent circular shift per ROI ---
-        ts_shifted = np.empty_like(ts_a)
-        for i in range(R):
-            k = rng_shift.integers(0, T)
-            ts_shifted[:, i] = np.roll(ts_a[:, i], k)
+        shifts = rng_shift.integers(0, T, size=R)
+        idx = (np.arange(T)[:, None] - shifts[None, :]) % T
+        ts_shifted = ts_a[idx, np.arange(R)]
 
-        # --- Compute MC ---
         mc_surr = compute_metaconnectivity(
             ts_shifted[None, ...],
             window_size=WINDOW_SIZE,
             lag=LAG,
             n_jobs=N_JOBS_MC,
             save_path=None,
-        )[0]  # (E,E)
+        )[0]
 
         # --- Extract aligned triangle ---
         x_full = mc_surr[tri].astype(np.float64, copy=False)

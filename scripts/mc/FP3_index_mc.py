@@ -25,7 +25,8 @@ Guaranteed outputs
 - mc_idx_tril        : (K, 2)  canonical np.tril(E, k=-1) ordering
 - mc_mod_idx         : (K,)    1=intra-module, 0=inter-module
 - mc_nplets_index    : (K,)    1=trimer, 0=tetramer
-- fc_idx_tril        : (K, 2)  FC-edge identities for each MC edge-pair
+- fc_edge_idx : (E,2) ROI-pair identity for each FC edge e
+- fc_k4 : (K,4) ROI identities for both FC edges in each MC entry k (optional
 
 This file defines the *only* valid MC vector ordering for downstream FP4+.
 """
@@ -118,8 +119,16 @@ mc_idx_tril = np.stack([tri[0], tri[1]], axis=1).astype(np.int64)
 K = mc_idx_tril.shape[0]
 
 # ---------- FC-edge identities ----------
-fc_idx_tril, _ = get_fc_mc_indices(regions)
-fc_idx_tril = fc_idx_tril[mc_idx_tril[:, 0]]  # align with MC ordering
+fc_edge_idx, _ = get_fc_mc_indices(regions)   # expect (E,2)
+fc_edge_idx = np.asarray(fc_edge_idx, dtype=np.int64)
+if fc_edge_idx.shape != (E, 2):
+    raise RuntimeError(f"Expected fc_edge_idx shape (E,2)={(E,2)}, got {fc_edge_idx.shape}")
+
+fc_edge_idx_sorted = fc_edge_idx[sort_idx]  # IMPORTANT
+
+e1 = mc_idx_tril[:, 0]
+e2 = mc_idx_tril[:, 1]
+fc_k4 = np.concatenate([fc_edge_idx_sorted[e1], fc_edge_idx_sorted[e2]], axis=1).astype(np.int64)
 
 # ---------- Extract observed MC vectors ----------
 mc_val_tril = mc_sorted[:, mc_idx_tril[:, 0], mc_idx_tril[:, 1]]
@@ -173,13 +182,15 @@ np.savez_compressed(
     out_path,
     mc_val_tril=mc_val_tril,
     mc_idx_tril=mc_idx_tril,
-    fc_idx_tril=fc_idx_tril,
+    fc_edge_idx=fc_edge_idx_sorted,          # (E,2)
+    fc_k4=fc_k4,                      # (K,4) optional
     mc_mod_idx=mc_mod_idx,
     mc_nplets_index=mc_nplets_index,
     allegiance_sort=sort_idx,
     communities=communities,
     params_json=json.dumps(params, sort_keys=True),
 )
+
 
 print("[OK] Saved FP3:", out_path)
 # %%

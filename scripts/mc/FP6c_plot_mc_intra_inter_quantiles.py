@@ -32,7 +32,7 @@ COGNITIVE_FILE = "ROIs.xlsx"
 ANAT_LABELS_FILE = "41_Allen.txt"
 
 MC_DIST_DIRNAME = "mc_dist"
-FP6B_NAME = "fp6b_bootstrap_mc_fp6_conditions_FAST.npz"
+FP6B_NAME = "fp6b_bootstrap_mc_fp6_conditions_POOLED_IID.npz"
 
 SAVE_PNG = True
 SAVE_PDF = True

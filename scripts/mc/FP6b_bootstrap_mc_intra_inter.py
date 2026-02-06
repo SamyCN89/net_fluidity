@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # %%
 """
-FP6b (CLEAN + FAST) — Bootstrap MC distribution summaries for FP6 conditions
-(no giant concatenations; robust bins; stable sampling even with empty animals).
+FP6b (POOLED-iid) — Bootstrap uncertainty of the *pooled empirical distribution*
+(i.i.d. value bootstrap). Observed summaries are deterministic (exact pooled).
 
 Consumes
 --------
@@ -10,14 +10,19 @@ results/<dataset>/mc/mc_dist/fp6a_mc_intra_inter_trimer_tetramer_per_animal.npz
 
 Produces
 --------
-results/<dataset>/mc/mc_dist/fp6b_bootstrap_mc_fp6_conditions_FAST.npz
+results/<dataset>/mc/mc_dist/fp6b_bootstrap_mc_fp6_conditions_POOLED_IID.npz
 
-Key design choices
-------------------
-- Bootstrap unit: animal (resample animals with replacement).
-- Within each bootstrap replicate: draw EDGE_SUBSAMPLE MC values from the resampled animal pool.
-- Robust bins: auto-computed from obs_all pooled distribution (quantiles) to avoid mostly-empty bins.
-- Safe sampling: zero-length animals are dropped before multinomial allocation (prevents undersized draws).
+Design
+------
+- Observed ("obs"): computed from the FULL pooled vector once (exact concat).
+- Bootstrap ("CI"): resample values from the pooled vector with replacement.
+- This quantifies uncertainty of the pooled empirical distribution under i.i.d. values.
+  (NOT between-animal uncertainty.)
+
+Notes
+-----
+- Pool concatenation happens ONCE per condition. Can be memory-heavy for obs_all/null_all.
+- Bootstrap draws use BOOT_DRAWS (EDGE_SUBSAMPLE) for speed.
 """
 
 from __future__ import annotations
@@ -41,14 +46,15 @@ ANAT_LABELS_FILE = "41_Allen.txt"
 
 OUT_SUBDIR = "mc_dist"
 FP6A_NAME = "fp6a_mc_intra_inter_trimer_tetramer_per_animal.npz"
-OUT_NAME = "fp6b_bootstrap_mc_fp6_conditions_FAST.npz"
+OUT_NAME = "fp6b_bootstrap_mc_fp6_conditions_POOLED_IID.npz"
 OVERWRITE = True
 
 # Bootstrap
 N_BOOT = 2000
 SEED = 0
 
-# Sampling per replicate (values, not edges)
+# Bootstrap draws per replicate (values)
+# (keep the same name to stay compatible with your pipeline)
 EDGE_SUBSAMPLE = 300_000
 
 # Quantiles to save (include tails)
@@ -57,16 +63,13 @@ P_GRID = np.linspace(0.0, 1.0, 101).astype(np.float32)
 # Histogram resolution
 BINS_MIN = -0.8
 BINS_MAX = 0.8
-NBINS = 401  # keep whatever you want (401 => 400 bins)
-
+NBINS = 401  # 401 => 400 bins
 
 # Parallelism over conditions
 N_JOBS = -1
 JOBLIB_BACKEND = "loky"
 
 # Optional: run only a subset to save time (set to None to run all)
-# Example:
-# CONDITIONS_TO_RUN = ["obs_all", "null_all", "obs_intra", "obs_inter", "obs_trimer", "obs_tetramer"]
 CONDITIONS_TO_RUN: Optional[List[str]] = None
 
 
@@ -123,71 +126,49 @@ def _summaries_from_sample(
     return pdf, q
 
 
-def _sample_from_animals(
-    values: List[np.ndarray],
-    pick_animals: np.ndarray,  # indices (with replacement) length A
-    n_draws: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
+def _pool_concat(values_per_animal_obj: np.ndarray) -> np.ndarray:
     """
-    Draw n_draws values from the bootstrap-resampled animal pool without concatenation.
-    Critical: drop zero-length picked animals BEFORE multinomial allocation.
+    Exact pooled vector across animals (finite-only), float32.
+    WARNING: can be large (done once per condition).
     """
-    if len(values) == 0 or n_draws <= 0:
+    parts = []
+    for v in values_per_animal_obj:
+        x = _as_float_1d(v)
+        if x.size:
+            parts.append(x)
+    if not parts:
         return np.array([], dtype=np.float32)
+    return np.concatenate(parts, axis=0)
 
-    lens = np.fromiter((values[i].size for i in pick_animals), dtype=np.int64, count=pick_animals.size)
 
-    keep = lens > 0
-    if not np.any(keep):
+def _bootstrap_sample_from_pool(x_pool: np.ndarray, n_draws: int, rng: np.random.Generator) -> np.ndarray:
+    """i.i.d. bootstrap sample from pooled values."""
+    n = x_pool.size
+    if n == 0:
         return np.array([], dtype=np.float32)
-
-    pick_animals = pick_animals[keep]
-    lens = lens[keep]
-
-    tot = int(lens.sum())
-    if tot <= n_draws:
-        # small pool -> concatenate once (safe)
-        return np.concatenate([values[i] for i in pick_animals], axis=0).astype(np.float32, copy=False)
-
-    probs = lens / tot
-    draws = rng.multinomial(n_draws, probs)
-
-    out = np.empty(n_draws, dtype=np.float32)
-    pos = 0
-    for j, n_j in enumerate(draws):
-        if n_j == 0:
-            continue
-        a_idx = int(pick_animals[j])
-        v = values[a_idx]
-        ii = rng.integers(0, v.size, size=n_j)
-        out[pos : pos + n_j] = v[ii]
-        pos += n_j
-
-    # With the keep-mask, pos should equal n_draws
-    return out[:pos]
+    if n_draws is None or n_draws <= 0:
+        n_draws = n
+    ii = rng.integers(0, n, size=n_draws, dtype=np.int64)
+    return x_pool[ii]
 
 
-def summarize_condition_fast(
+def summarize_condition_pooled_iid(
     key: str,
     values_per_animal_obj: np.ndarray,
     n_boot: int,
     seed: int,
     bins: np.ndarray,
     p_grid: np.ndarray,
-    edge_subsample: int,
+    boot_draws: int,
 ) -> Dict[str, np.ndarray]:
     """
-    Return obs summaries + bootstrap CI bands for one condition.
+    Observed: exact pooled concat.
+    Bootstrap: i.i.d. resampling from pooled vector.
     """
-    # Preconvert once: list of per-animal finite float arrays
-    values = [_as_float_1d(v) for v in list(values_per_animal_obj)]
-    A = len(values)
+    x_pool = _pool_concat(values_per_animal_obj)
 
-    rng_obs = np.random.default_rng(seed + 999)
-    pick_all = np.arange(A, dtype=np.int64)
-    x_obs = _sample_from_animals(values, pick_all, edge_subsample, rng_obs)
-    pdf_obs, q_obs = _summaries_from_sample(x_obs, bins, p_grid)
+    # Deterministic observed summaries (no EDGE_SUBSAMPLE randomness)
+    pdf_obs, q_obs = _summaries_from_sample(x_pool, bins, p_grid)
 
     nb = bins.size - 1
     nq = p_grid.size
@@ -196,8 +177,7 @@ def summarize_condition_fast(
 
     rng = np.random.default_rng(seed)
     for b in range(n_boot):
-        pick = rng.integers(0, A, size=A)  # bootstrap animals (with replacement)
-        x = _sample_from_animals(values, pick, edge_subsample, rng)
+        x = _bootstrap_sample_from_pool(x_pool, boot_draws, rng)
         pdf_boot[b], q_boot[b] = _summaries_from_sample(x, bins, p_grid)
 
     pdf_lo = np.quantile(pdf_boot, 0.025, axis=0).astype(np.float32)
@@ -207,8 +187,9 @@ def summarize_condition_fast(
 
     return dict(
         key=str(key),
-        n_animals=np.int32(A),
-        n_obs_used=np.int32(x_obs.size),
+        n_animals=np.int32(len(values_per_animal_obj)),
+        n_pool=np.int64(x_pool.size),
+        n_boot_draws=np.int64(boot_draws),
         pdf_obs=pdf_obs,
         pdf_ci_lo=pdf_lo,
         pdf_ci_hi=pdf_hi,
@@ -287,23 +268,21 @@ if not (np.isfinite(BINS_MIN) and np.isfinite(BINS_MAX) and BINS_MAX > BINS_MIN)
 bins = np.linspace(BINS_MIN, BINS_MAX, NBINS, dtype=np.float32)
 bin_centers = ((bins[:-1] + bins[1:]) * 0.5).astype(np.float32)
 
-
 print(
-    f"[FP6b CLEAN] Conditions={len(cond_items)} | "
-    f"N_BOOT={N_BOOT} | EDGE_SUBSAMPLE={EDGE_SUBSAMPLE} | "
+    f"[FP6b POOLED-iid] Conditions={len(cond_items)} | "
+    f"N_BOOT={N_BOOT} | BOOT_DRAWS={EDGE_SUBSAMPLE} | "
     f"BINS=manual | range=({BINS_MIN},{BINS_MAX}) | NBINS={NBINS}"
 )
 
-
 results = Parallel(n_jobs=N_JOBS, backend=JOBLIB_BACKEND)(
-    delayed(summarize_condition_fast)(
+    delayed(summarize_condition_pooled_iid)(
         key=k,
         values_per_animal_obj=v,
         n_boot=N_BOOT,
         seed=SEED + 1000 * i,
         bins=bins,
         p_grid=P_GRID,
-        edge_subsample=EDGE_SUBSAMPLE,
+        boot_draws=EDGE_SUBSAMPLE,
     )
     for i, (k, v) in enumerate(cond_items)
 )
@@ -324,7 +303,11 @@ save = {
 
 for res in results:
     key = res["key"]
-    for field in ["pdf_obs", "pdf_ci_lo", "pdf_ci_hi", "q_obs", "q_ci_lo", "q_ci_hi", "n_animals", "n_obs_used"]:
+    for field in [
+        "pdf_obs", "pdf_ci_lo", "pdf_ci_hi",
+        "q_obs", "q_ci_lo", "q_ci_hi",
+        "n_animals", "n_pool", "n_boot_draws",
+    ]:
         save[f"{key}__{field}"] = res[field]
 
 params = dict(
@@ -333,7 +316,9 @@ params = dict(
     out_path=str(out_path),
     n_boot=int(N_BOOT),
     seed=int(SEED),
-    edge_subsample=int(EDGE_SUBSAMPLE),
+    bootstrap_unit="pooled_values_iid",
+    obs_estimator="exact_pool_concat",
+    boot_draws=int(EDGE_SUBSAMPLE),
     nbins=int(NBINS),
     bins_min=float(BINS_MIN),
     bins_max=float(BINS_MAX),
@@ -342,9 +327,8 @@ params = dict(
     parallel_over="conditions",
 )
 
-
 save["params_json"] = json.dumps(params, sort_keys=True)
 
 np.savez_compressed(out_path, **save)
 
-print("[OK] Saved FP6b CLEAN:", out_path)
+print("[OK] Saved FP6b POOLED-iid:", out_path)

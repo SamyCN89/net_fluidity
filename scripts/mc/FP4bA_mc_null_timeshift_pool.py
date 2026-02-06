@@ -111,7 +111,7 @@ d0 = np.load(bundle_path, allow_pickle=True)
 
 ts = d0["ts"]  # (A, R, T)
 A, R, T = ts.shape
-
+#%%
 print("[FP0] Loaded:", bundle_path.name)
 print("      ts shape:", ts.shape)
 
@@ -206,3 +206,5 @@ np.savez_compressed(
 
 print("[OK] Saved FP4bA capped null pool:")
 print(" ", out_path)
+
+# %%

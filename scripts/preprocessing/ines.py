@@ -251,6 +251,7 @@ def prepare_cognitive_dataset(
         is_2month_old,
     )
 
+
     phenotypes = ["good", "impaired", "learners", "bad"]
     sexes = ["F", "M"]
     mask_combo_oip, label_combo_oip = make_combination_masks(
@@ -289,6 +290,17 @@ def prepare_cognitive_dataset(
         ),
     }
 
+    # Expand per-mouse metadata to match stacked TS: [2m...][4m...]
+    genotype_mouse = cog_data_filtered["Genotype"].astype(str).to_numpy()
+    sex_mouse = cog_data_filtered["Sexe"].astype(str).to_numpy()
+    pheno_oip_mouse = cog_data_filtered["Phenotype_OiP"].astype(str).to_numpy()
+    pheno_ro_mouse = cog_data_filtered["Phenotype_RO24h"].astype(str).to_numpy()
+
+    genotype_ts = np.concatenate([genotype_mouse, genotype_mouse]).astype(str)
+    sex_ts = np.concatenate([sex_mouse, sex_mouse]).astype(str)
+    phenotype_oip_ts = np.concatenate([pheno_oip_mouse, pheno_oip_mouse]).astype(str)
+    phenotype_ro24h_ts = np.concatenate([pheno_ro_mouse, pheno_ro_mouse]).astype(str)
+
     grouping = GroupingPayload(
         mask_groups=mask_groups,
         label_groups=label_groups,
@@ -310,6 +322,11 @@ def prepare_cognitive_dataset(
         "mouse_ids": mouse_ids,
         "mouse_ids_ts": mouse_ids_ts,
         "age_ts": age_ts,
+        "genotype_ts": genotype_ts,
+        "sex_ts": sex_ts,
+        "phenotype_oip_ts": phenotype_oip_ts,
+        "phenotype_ro24h_ts": phenotype_ro24h_ts,
+
     }
 
     return PrepResult(
@@ -379,6 +396,37 @@ def write_outputs(
     if write_extra_groups:
         with (output_dir / "grouping_data_new.pkl").open("wb") as handle:
             pickle.dump(result.grouping.extra_group_maps, handle)
+
+    # -------------------------
+    # B0: groups_table.csv for downstream group-wise MC distribution pipeline
+    # -------------------------
+    mc_dir = Path(result.paths["mc"])
+    dist_dir = mc_dir / "mc_dist"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+
+    A = int(result.ts.shape[0])
+    df_groups = pd.DataFrame(
+        {
+            "a": np.arange(A, dtype=int),
+            "mouse_id": result.metadata["mouse_ids_ts"].astype(str),
+            "age": result.metadata["age_ts"].astype(str),
+            "genotype": result.metadata.get("genotype_ts", np.array(["NA"] * A, dtype=str)).astype(str),
+            "sex": result.metadata.get("sex_ts", np.array(["NA"] * A, dtype=str)).astype(str),
+            "phenotype_oip": result.metadata.get("phenotype_oip_ts", np.array(["NA"] * A, dtype=str)).astype(str),
+            "phenotype_ro24h": result.metadata.get("phenotype_ro24h_ts", np.array(["NA"] * A, dtype=str)).astype(str),
+        }
+    )
+
+    # Default "group" used by pipeline Pathway B (edit as needed)
+    df_groups["group"] = (
+        "age=" + df_groups["age"]
+        + "|geno=" + df_groups["genotype"]
+        + "|sex=" + df_groups["sex"]
+    )
+
+    out_csv = dist_dir / "groups_table.csv"
+    LOGGER.info("Writing groups table to %s", out_csv)
+    df_groups.to_csv(out_csv, index=False)
 
     return result
 
@@ -467,6 +515,7 @@ def main(argv: Sequence[str] | None = None) -> PrepResult:
     write_outputs(
         result, dry_run=args.dry_run, write_extra_groups=not args.no_extra_groups
     )
+
 
     LOGGER.info(
         "Preprocessing bundle ready under %s (dry_run=%s)",
