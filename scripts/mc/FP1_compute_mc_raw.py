@@ -1,5 +1,5 @@
 """
-MC_00_freeze_mc.py
+FP1_compute_mc_raw.py
 
 Finish point A:
 - compute MC (animals, E, E)
@@ -8,10 +8,8 @@ Finish point A:
 Finish point B:
 - load allegiance cache (preferred) OR compute if missing
 - build module mask + trimer index
-- save ONE frozen artifact to results/<dataset>/mc_frozen/
+- save ONE frozen artifact to results/<dataset>/mc_raw/
 
-Run as blocks in VSCode (#%%) or as a script:
-    python scripts/mc/MC_00_freeze_mc.py
 """
 #%%
 from __future__ import annotations
@@ -21,8 +19,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import joblib
-
 
 from shared_code.fun_metaconnectivity import (
     compute_metaconnectivity,

@@ -36,6 +36,8 @@ DATASET = "ines_abdallah"
 TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
 COGNITIVE_FILE = "ROIs.xlsx"
 ANAT_LABELS_FILE = "41_Allen.txt"
+MC_RAW_PATH = "results/ines_abdallah/mc/mc_raw/mc_raw_w=7_lag=1_animals=63_regions=41.npz"
+ALLEG_PATH  = "results/ines_abdallah/mc/allegiance_ref/allegiance_ref_wt_2m_g=0.70-1.10_ng=10_runs=1000_gcons=1.20.npz"
 
 # Reference definition (simple + explicit)
 REF_GENOTYPE = "wt"   # "wt" or "dKI"
@@ -88,7 +90,7 @@ results_dir = Path(paths["mc"])
 preproc_dir = Path(paths["preprocessed"])
 
 # --- Load FP1 mc_raw ---
-mc_raw_path = find_latest(results_dir / "mc_raw", "mc_raw_*.npz")
+mc_raw_path = Path(MC_RAW_PATH)
 d = np.load(mc_raw_path, allow_pickle=True)
 
 mc = d["mc"]                                   # (A, E, E)
@@ -96,7 +98,7 @@ mouse_ids_ts = d["mouse_ids_ts"].astype(str)   # (A,)
 age_ts = d["age_ts"].astype(str)               # (A,)
 
 # --- Load per-mouse cognitive table ---
-cog_csv_path = find_latest(preproc_dir, "cog_data_filtered_*.csv")
+cog_csv_path = Path(COGNITIVE_FILE)
 cog = pd.read_csv(cog_csv_path)
 cog["Name"] = cog["Name"].astype(str)
 

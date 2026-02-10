@@ -203,7 +203,7 @@ def _plot_q(ax, p, s_obs, s_null, *, label):
             p, s_null["q_lo"], s_null["q_hi"], alpha=ALPHA_BAND * 0.6, linewidth=0
         )
 
-
+#%%
 # =========================
 # MAIN
 # =========================
@@ -240,7 +240,7 @@ print(
     "| boot_draws:",
     boot_draws,
 )
-
+#%%
 # output base dir
 out_base = Path(paths["f_mod"]) / "FP6G"
 out_base.mkdir(parents=True, exist_ok=True)

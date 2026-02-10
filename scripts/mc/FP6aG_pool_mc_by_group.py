@@ -132,6 +132,24 @@ for gi, g in enumerate(groups):
     group_sizes[gi] = idx.size
     print(f"  - {g}: A_g={idx.size}")
 
+    # ---- NEW: store animal ids aligned with per-animal vectors ----
+    if "mouse_id" in df.columns:
+        # keep one mouse_id per 'a' row in the same order as idx
+        # (assumes df has one row per a; if duplicates exist, first match is used)
+        id_map = df.loc[df["group"] == g, ["a", "mouse_id"]].copy()
+        id_map["a"] = id_map["a"].astype(int)
+        id_map["mouse_id"] = id_map["mouse_id"].astype(str)
+
+        # build aligned list for idx order
+        animal_ids = []
+        for a in idx:
+            hits = id_map.loc[id_map["a"] == int(a), "mouse_id"].values
+            animal_ids.append(hits[0] if len(hits) else str(int(a)))
+        out[f"{g}__animal_ids"] = np.array(animal_ids, dtype=object)
+    else:
+        # fallback: store the FP3 row indices as identity
+        out[f"{g}__animal_ids"] = np.array([str(int(a)) for a in idx], dtype=object)
+
     # allocate object arrays length A_g
     def make_obj():
         return np.empty(idx.size, dtype=object)
@@ -182,3 +200,5 @@ if out_path.exists() and not OVERWRITE:
 
 np.savez_compressed(out_path, **out)
 print("[OK] Saved FP6aG:", out_path)
+
+# %%

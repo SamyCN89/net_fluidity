@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+#%%
 import numpy as np
 import matplotlib.pyplot as plt
 from brainconn.modularity import modularity_louvain_und_sign
@@ -9,8 +10,8 @@ from shared_code.fun_allegiance_v2 import v2_prep_undirected_matrix
 
 def gamma_sweep_protocol(
     mc_ref,
-    gamma_vals=np.linspace(0.5, 2.0, 20),
-    n_repeats=10,
+    gamma_vals=np.linspace(0.5, 1.5, 20),
+    n_repeats=100,
     seed=0,
 ):
     """
@@ -28,6 +29,7 @@ def gamma_sweep_protocol(
 
         for _ in range(n_repeats):
             Ci, Q = modularity_louvain_und_sign(W, gamma=gamma)
+
             n_modules.append(len(np.unique(Ci)))
             Q_vals.append(Q)
 
@@ -95,3 +97,6 @@ if __name__ == "__main__":
 
     results = gamma_sweep_protocol(mc_ref)
     plot_gamma_protocol(results)
+#%%
+
+
