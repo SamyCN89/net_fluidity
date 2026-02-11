@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+
+
+"""
+FP7a2 — Bar plot of trimer root strength per ROI and per group (OBS only)
+
+Purpose:
+  Quick visual sanity check before bootstrap / stats.
+
+Consumes:
+  - fp7a1_trimer_root_strength_per_animal.npz
+  - groups_table.csv
+
+Produces:
+  - fig/.../FP7a2_root_barplots/
+"""
+
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from shared_code.fun_paths import get_paths
+
+
+# ======================
+# CONFIG
+# ======================
+
+DATASET = "ines_abdallah"
+TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
+COGNITIVE_FILE = "ROIs.xlsx"
+ANAT_LABELS_FILE = "41_Allen.txt"
+
+FP7A1_NAME = "fp7a1_trimer_root_strength_per_animal.npz"
+GROUPS_TABLE = "groups_table.csv"
+
+SAVE = True
+DPI = 200
+
+
+# ======================
+# MAIN
+# ======================
+
+paths = get_paths(
+    dataset_name=DATASET,
+    timecourse_folder=TIMECOURSE_FOLDER,
+    cognitive_data_file=COGNITIVE_FILE,
+    anat_labels_file=ANAT_LABELS_FILE,
+)
+
+mc_dir = Path(paths["mc"])
+dist_dir = mc_dir / "mc_dist"
+fig_dir = Path(paths["f_mod"]) / "mc" / "FP7a2_root_barplots"
+
+
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+
+# --- Load T_root ---
+z = np.load(dist_dir / FP7A1_NAME, allow_pickle=True)
+T = z["T_root"]          # (A,R)
+
+A, R = T.shape
+
+print("[LOAD] T_root:", T.shape)
+
+
+# --- Load groups ---
+df = pd.read_csv(dist_dir / GROUPS_TABLE)
+
+if "a" not in df.columns or "group" not in df.columns:
+    raise ValueError("groups_table.csv must contain columns: a, group")
+
+df = df.sort_values("a")
+
+groups = df["group"].values.astype(str)
+
+if len(groups) != A:
+    raise ValueError("groups_table length != n_animals")
+
+uniq_groups = np.unique(groups)
+
+print("Groups:", uniq_groups)
+
+
+# --- Compute summaries ---
+means = {}
+stds = {}
+
+for g in uniq_groups:
+
+    mask = groups == g
+
+    Tg = T[mask]
+
+    means[g] = Tg.mean(axis=0)
+    stds[g]  = Tg.std(axis=0, ddof=1)
+
+
+# --- Plot ---
+x = np.arange(R)
+width = 0.8 / len(uniq_groups)
+
+plt.figure(figsize=(14,5))
+
+for i, g in enumerate(uniq_groups):
+
+    y = means[g]
+    e = stds[g]
+
+    plt.bar(
+        x + i*width,
+        y,
+        width=width,
+        alpha=0.5,
+
+
+
+
+        label=g,
+    )
+
+plt.xlabel("ROI index")
+plt.ylabel("Mean trimer root strength")
+plt.title("Trimer root strength by ROI and group (OBS)")
+plt.legend(fontsize=8)
+plt.tight_layout()
+
+
+if SAVE:
+    out = fig_dir / "root_strength_by_group.png"
+    plt.savefig(out, dpi=DPI)
+    print("[SAVE]", out)
+
+plt.show()
+
+#%%
+#Plot the distribution of trimers for each group
+
+plt.figure(figsize=(6,4))
+for i, g in enumerate(uniq_groups):
+    if i >= 4:
+        break
+    mask = groups == g
+    Tg = T[mask]
+    plt.hist(Tg.flatten(), bins=50, alpha=0.7, histtype='step', density=True)
+    # legend the groups
+    plt.legend(uniq_groups)
+    plt.title(f"Distribution of trimer root strength for group {g}")
+    plt.xlabel("Trimer root strength")
+    plt.ylabel("Frequency")
+plt.tight_layout()
+
+    # if SAVE:
+    #     out = fig_dir / f"trimer_root_strength_distribution_{g}.png"
+    #     plt.savefig(out, dpi=DPI)
+    #     print("[SAVE]", out)
+
+plt.show()
+
+
+#%%
+plt.figure(figsize=(6,4))
+for i, g in enumerate(uniq_groups):
+    if i >=4:
+        mask = groups == g
+        print(g)
+        Tg = T[mask]
+        plt.hist(Tg.flatten(), bins=50, alpha=0.7, histtype='step', density=True)
+        # legend the groups
+        plt.legend(uniq_groups[4:])
+
+        plt.title(f"Distribution of trimer root strength for group {g}")
+        plt.xlabel("Trimer root strength")
+        plt.ylabel("Frequency")
+    else:
+        continue
+plt.tight_layout()
+
+    # if SAVE:
+    #     out = fig_dir / f"trimer_root_strength_distribution_{g}.png"
+    #     plt.savefig(out, dpi=DPI)
+    #     print("[SAVE]", out)
+
+plt.show()
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
+
+
+
+def kde_fun(data):
+    """Compute the kernel density estimate of the given data."""
+    kde = gaussian_kde(data)
+    xx = np.linspace(data.min(), data.max(), 500)
+    return kde, xx
+
+
+
+
+
+# Example data
+kde_groups, xx = kde_fun(T[mask].flatten())
+
+# Plot
+plt.plot(xx, kde_groups(xx), label=f"KDE of group {g}")
+plt.hist(T[mask].flatten(), bins=30, density=True, alpha=0.3)
+plt.xlabel("Value")
+plt.ylabel("Density")
+plt.legend()
+plt.show()

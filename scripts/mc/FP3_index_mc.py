@@ -139,13 +139,47 @@ mc_mod_idx = (
     comm_sorted[mc_idx_tril[:, 0]] == comm_sorted[mc_idx_tril[:, 1]]
 ).astype(np.int8)  # 1=intra, 0=inter
 
-# ---------- Trimer / tetramer ----------
-trimer_index, _, trimer_apex = compute_trimers_identity(regions)
-mc_nplets_mask = build_trimer_mask(trimer_index, trimer_apex, E)
-mc_nplets_mask = mc_nplets_mask[sort_idx][:, sort_idx]
-mc_nplets_index = mc_nplets_mask[
-    mc_idx_tril[:, 0], mc_idx_tril[:, 1]
-].astype(np.int8)  # 1=trimer, 0=tetramer
+# ---------- Trimer / tetramer (FIXED: based on shared ROI between the two FC edges) ----------
+e1 = mc_idx_tril[:, 0].astype(np.int64)   # (K,)
+e2 = mc_idx_tril[:, 1].astype(np.int64)
+
+ab = fc_edge_idx_sorted[e1]  # (K,2) -> (a,b)
+cd = fc_edge_idx_sorted[e2]  # (K,2) -> (c,d)
+
+a, b = ab[:, 0], ab[:, 1]
+c, d = cd[:, 0], cd[:, 1]
+
+# Count how many endpoints match between the two edges
+share_ac = (a == c)
+share_ad = (a == d)
+share_bc = (b == c)
+share_bd = (b == d)
+
+n_shared = (
+    share_ac.astype(np.int8)
+    + share_ad.astype(np.int8)
+    + share_bc.astype(np.int8)
+    + share_bd.astype(np.int8)
+)
+
+# Trimer iff exactly ONE shared ROI between the two edges
+is_trimer = (n_shared == 1)
+
+# Save as your pipeline convention: 1=trimer, 0=tetramer
+mc_nplets_index = is_trimer.astype(np.int8)
+
+
+# Optional: root ROI for trimers (shared node), -1 for tetramers/others
+root = np.full_like(a, -1, dtype=np.int16)
+root[share_ac] = a[share_ac]
+root[share_ad] = a[share_ad]
+root[share_bc] = b[share_bc]
+root[share_bd] = b[share_bd]
+
+# sanity: all trimers should have a valid root
+if not np.all(root[is_trimer] >= 0):
+    raise RuntimeError("Some trimers have no root; check fc_edge_idx_sorted or mc_idx_tril.")
+
 
 # ---------- Sanity ----------
 assert mc_val_tril.shape == (A, K)
@@ -188,6 +222,7 @@ np.savez_compressed(
     mc_nplets_index=mc_nplets_index,
     allegiance_sort=sort_idx,
     communities=communities,
+    root_trimer_root=root,
     params_json=json.dumps(params, sort_keys=True),
 )
 

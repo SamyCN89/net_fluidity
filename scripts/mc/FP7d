@@ -1,0 +1,89 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.stats.multitest import multipletests
+from shared_code.fun_paths import get_paths
+
+# =====================
+# CONFIG
+# =====================
+DATASET = "ines_abdallah"
+TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
+COGNITIVE_FILE = "ROIs.xlsx"
+ANAT_LABELS_FILE = "41_Allen.txt"
+
+paths = get_paths(
+    dataset_name=DATASET,
+    timecourse_folder=TIMECOURSE_FOLDER,
+    cognitive_data_file=COGNITIVE_FILE,
+    anat_labels_file=ANAT_LABELS_FILE,
+)
+
+
+
+# ---- LOAD ONE RESULT FILE ----
+schemes = ["g_age_geno", "g_age_sex", "g_age_geno_sex", "g_age_pheno_oip", "g_age_pheno_ro24h"]
+topologies = [("ALL"), ("INTRA"), ("INTER")]
+tags_all = ["dmean", "cliff"]
+for scheme in schemes:
+    for topo_name in topologies:
+        for tag in tags_all:
+            oud_dir_npz = paths["trimers"]/ scheme
+            print(f"Processing {topo_name} | {tag} | {scheme}")
+            z_path = oud_dir_npz / f"{topo_name}__{tag}__raw.npz"
+            z = np.load(z_path, allow_pickle=True)
+
+            P = z["P"]                 # raw p-values (pairs × regions)
+            pair_labels = z["pair_labels"].tolist()
+            region_labels = z["region_labels"].tolist()
+
+
+            # ---- FDR (BY DEFAULT: BH) ----
+            P_fdr = np.full_like(P, np.nan)
+
+            # Apply FDR correction column-wise (per contrast)
+
+            for i in range(P.shape[1]):  # per contrast
+                p = P[..., i]
+                mask = np.isfinite(p)
+
+                if mask.sum() < 2:
+                    continue
+
+                #
+                _, p_corr, _, _ = multipletests(
+                    p[mask],
+                    alpha=0.05,
+                    method="fdr_bh"
+                )
+
+                P_fdr[i, mask] = p_corr.T
+                
+
+            sig = P_fdr < 0.05
+
+
+
+            # ---- QUICK PLOT ----
+            fig, axs = plt.subplots(1, 3, figsize=(14, 5), sharey=True)
+
+            # Raw
+            axs[0].imshow(P, vmin=0, vmax=0.1, cmap="viridis_r", aspect="auto")
+            axs[0].set_title(f"Raw p _{scheme} | {topo_name} | {tag}")
+
+            # FDR
+            axs[1].imshow(P_fdr, vmin=0, vmax=0.1, cmap="viridis_r", aspect="auto")
+            axs[1].set_title(f"FDR p _{scheme} | {topo_name} | {tag}")
+            # Mask
+            axs[2].imshow(sig, vmin=0, vmax=1, cmap="gray_r", aspect="auto")
+            axs[2].set_title(f"Significant _{scheme} | {topo_name} | {tag}")
+
+            for ax in axs:
+                ax.set_yticks(range(len(pair_labels)))
+                ax.set_yticklabels(pair_labels)
+
+            axs[2].set_xticks(range(0, len(region_labels), 2))
+            axs[2].set_xticklabels(region_labels[::2], rotation=90)
+
+            plt.tight_layout()
+            plt.show()
+
