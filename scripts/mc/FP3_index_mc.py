@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from tkinter.tix import WINDOW
 import numpy as np
 
 from shared_code.fun_paths import get_paths
@@ -52,11 +53,33 @@ TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
 COGNITIVE_FILE = "ROIs.xlsx"
 ANAT_LABELS_FILE = "41_Allen.txt"
 
+WINDOW_SIZE = 15
+LAG = 1
 REF_LABEL = "wt_2m"
-FP2_FILE = "allegiance_ref_wt_2m_g=0.70-1.10_ng=10_runs=1000_gcons=1.20.npz"
+OUT_SUBDIR = "mc_indexed"
+
+paths = get_paths(
+    dataset_name=DATASET,
+    timecourse_folder=TIMECOURSE_FOLDER,
+    cognitive_data_file=COGNITIVE_FILE,
+    anat_labels_file=ANAT_LABELS_FILE,
+)
+
+# npz_path = paths["preprocessed"] / "ts_and_meta_ines_abdallah.npz"
+mc_dir = Path(paths["mc"])
+preproc_dir = Path(paths["preprocessed"])
+
+d = np.load(preproc_dir / "ts_and_meta_ines_abdallah.npz", allow_pickle=True)
+regions = int(d["regions"])
+n_animals = d["ts"].shape[0]
+
+# Directory for MC artifacts (FP1, FP2, FP3)
+
+FP2_FILE = f"allegiance_ref_{REF_LABEL}_w={WINDOW_SIZE}_lag={LAG}_g=0.70-1.10_ng=10_runs=1000_gcons=1.20.npz"
+FP1_FILE = f"mc_raw_w={WINDOW_SIZE}_lag={LAG}_animals={n_animals}_regions={regions}.npz"
 
 OVERWRITE = True
-
+#%%
 # =========================
 # Helpers
 # =========================
@@ -70,16 +93,10 @@ def find_latest(folder: Path, pattern: str) -> Path:
 # =========================
 # MAIN
 # =========================
-paths = get_paths(
-    dataset_name=DATASET,
-    timecourse_folder=TIMECOURSE_FOLDER,
-    cognitive_data_file=COGNITIVE_FILE,
-    anat_labels_file=ANAT_LABELS_FILE,
-)
-mc_dir = Path(paths["mc"])
 
 # ---------- Load FP1 (mc_raw) ----------
 mc_raw_path = find_latest(mc_dir / "mc_raw", "mc_raw_*.npz")
+mc_raw_path = mc_dir / "mc_raw" / FP1_FILE
 d1 = np.load(mc_raw_path, allow_pickle=True)
 mc = d1["mc"]  # (A, E, E)
 
@@ -194,7 +211,7 @@ print("  trimer frac:", mc_nplets_index.mean())
 # ---------- Save FP3 ----------
 out_dir = mc_dir / "mc_indexed"
 out_dir.mkdir(parents=True, exist_ok=True)
-out_path = out_dir / f"mc_indexed_ref={REF_LABEL}_animals={A}_E={E}.npz"
+out_path = out_dir / f"mc_w={WINDOW_SIZE}_lag={LAG}_indexed_ref={REF_LABEL}_animals={A}_N={n_regions}.npz"
 
 if out_path.exists() and not OVERWRITE:
     raise FileExistsError(out_path)

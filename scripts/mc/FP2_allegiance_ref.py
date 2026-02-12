@@ -32,16 +32,27 @@ from shared_code.fun_allegiance_v2 import (
 # =========================
 # CONFIG (edit only this)
 # =========================
-DATASET = "ines_abdallah"
-TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
-COGNITIVE_FILE = "ROIs.xlsx"
-ANAT_LABELS_FILE = "41_Allen.txt"
-MC_RAW_PATH = "results/ines_abdallah/mc/mc_raw/mc_raw_w=7_lag=1_animals=63_regions=41.npz"
-ALLEG_PATH  = "results/ines_abdallah/mc/allegiance_ref/allegiance_ref_wt_2m_g=0.70-1.10_ng=10_runs=1000_gcons=1.20.npz"
+# Time window definition for FP1 MC computation (keep consistent with FP1_compute_mc_raw.py)
+WINDOW_SIZE = 15
+LAG = 1
 
 # Reference definition (simple + explicit)
 REF_GENOTYPE = "wt"   # "wt" or "dKI"
 REF_AGE = "2m"        # "2m" or "4m"
+
+DATASET = "ines_abdallah"
+TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
+COGNITIVE_FILE = "ROIs.xlsx"
+ANAT_LABELS_FILE = "41_Allen.txt"
+
+paths = get_paths(
+    dataset_name=DATASET,
+    timecourse_folder=TIMECOURSE_FOLDER,
+    cognitive_data_file=COGNITIVE_FILE,
+    anat_labels_file=ANAT_LABELS_FILE,
+)
+results_dir = Path(paths["mc"])
+preproc_dir = Path(paths["preprocessed"])
 
 # --- New protocol params (from your gamma sweep plot) ---
 N_RUNS = 1000           # diagnostic / light; bump to 200-500 later, 1000 final if needed
@@ -53,8 +64,11 @@ N_JOBS = -1
 
 # IO
 OUT_SUBDIR = "allegiance_ref"
-OVERWRITE = False
+OVERWRITE = True
 
+MC_RAW_PATH = paths["mc"] / f"mc_raw/mc_raw_w={WINDOW_SIZE}_lag={LAG}_animals=126_regions=41.npz"
+ALLEG_PATH  = paths["mc"] / f"{OUT_SUBDIR}/allegiance_ref_wt_2m_w={WINDOW_SIZE}_lag={LAG}_g=0.70-1.10_ng=10_runs=1000_gcons=1.20.npz"
+#%%
 # =========================
 # Helpers
 # =========================
@@ -80,14 +94,6 @@ def blockiness_score(M: np.ndarray, communities: np.ndarray) -> tuple[float, flo
 # =========================
 # MAIN
 # =========================
-paths = get_paths(
-    dataset_name=DATASET,
-    timecourse_folder=TIMECOURSE_FOLDER,
-    cognitive_data_file=COGNITIVE_FILE,
-    anat_labels_file=ANAT_LABELS_FILE,
-)
-results_dir = Path(paths["mc"])
-preproc_dir = Path(paths["preprocessed"])
 
 # --- Load FP1 mc_raw ---
 mc_raw_path = Path(MC_RAW_PATH)
@@ -98,7 +104,7 @@ mouse_ids_ts = d["mouse_ids_ts"].astype(str)   # (A,)
 age_ts = d["age_ts"].astype(str)               # (A,)
 
 # --- Load per-mouse cognitive table ---
-cog_csv_path = Path(COGNITIVE_FILE)
+cog_csv_path = paths["preprocessed"] / f"cog_data_filtered_animals_126_regions_41_tr_450.csv"
 cog = pd.read_csv(cog_csv_path)
 cog["Name"] = cog["Name"].astype(str)
 
@@ -166,9 +172,11 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 out_path = out_dir / (
     f"allegiance_ref_{ref_label}"
+    f"_w={WINDOW_SIZE}_lag={LAG}"
     f"_g={GMIN:.2f}-{GMAX:.2f}_ng={N_GAMMA}"
     f"_runs={N_RUNS}_gcons={GAMMA_CONSENSUS:.2f}.npz"
 )
+
 if out_path.exists() and not OVERWRITE:
     raise FileExistsError(f"{out_path} exists. Set OVERWRITE=True to replace.")
 

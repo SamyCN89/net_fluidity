@@ -34,7 +34,7 @@ TIMECOURSE_FOLDER = "Timecourses_updated_03052024"
 COGNITIVE_FILE = "ROIs.xlsx"
 ANAT_LABELS_FILE = "41_Allen.txt"
 
-WINDOW_SIZE = 7
+WINDOW_SIZE = 15
 LAG = 1
 N_JOBS = -1
 
@@ -141,6 +141,7 @@ def main():
         sanity_json=json.dumps(_jsonable(sanity), sort_keys=True),
     )
     print("[OK] Saved", out_path)
+    # print(out_path)
 
 if __name__ == "__main__":
     main()
