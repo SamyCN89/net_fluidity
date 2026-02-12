@@ -211,7 +211,7 @@ print("  trimer frac:", mc_nplets_index.mean())
 # ---------- Save FP3 ----------
 out_dir = mc_dir / "mc_indexed"
 out_dir.mkdir(parents=True, exist_ok=True)
-out_path = out_dir / f"mc_w={WINDOW_SIZE}_lag={LAG}_indexed_ref={REF_LABEL}_animals={A}_N={n_regions}.npz"
+out_path = out_dir / f"mc_w={WINDOW_SIZE}_lag={LAG}_indexed_ref={REF_LABEL}_animals={A}_N={regions}.npz"
 
 if out_path.exists() and not OVERWRITE:
     raise FileExistsError(out_path)
