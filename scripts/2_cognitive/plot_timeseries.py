@@ -217,3 +217,5 @@ outdir = paths["figures"] / "ts"
 os.makedirs(outdir, exist_ok=True)
 plt.savefig(outdir / f"ts_extract_{timecourse_folder}_grouped_inverted.png", dpi=200)
 plt.show()
+
+# %%

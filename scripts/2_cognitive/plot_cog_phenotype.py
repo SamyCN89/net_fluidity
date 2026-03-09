@@ -18,7 +18,6 @@ from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import load_cognitive_data, set_figure_params
 
 save_fig = set_figure_params(False)
-
 timecourse_folder = "Timecourses_updated_03052024"
 paths = get_paths(
     dataset_name="ines_abdallah",

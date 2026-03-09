@@ -109,6 +109,7 @@ def build_paths(
         # Figures paths
         "figures": figures,
         "f_cog": figures / "cog",
+        "f_brainglass": figures / "brainglass",
         "f_fc": figures / "fc",
         "f_dfc": figures / "dfc",
         "f_speed": figures / "speed",

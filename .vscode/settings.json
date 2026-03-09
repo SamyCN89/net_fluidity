@@ -65,5 +65,7 @@
     "editor.defaultFormatter": "vscode.json-language-features"
   },
   "chatgpt.openOnStartup": false,
-  "chatgpt.commentCodeLensEnabled": true
+  "chatgpt.commentCodeLensEnabled": true,
+  "python-envs.defaultEnvManager": "ms-python.python:conda",
+  "python-envs.defaultPackageManager": "ms-python.python:conda"
 }

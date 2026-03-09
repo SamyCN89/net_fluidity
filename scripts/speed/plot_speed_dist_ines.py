@@ -410,6 +410,9 @@ n_animals = len(speeds[0])
 
 # speeds[j][i] = 1D np.array of all speed samples for animal i, at window j (time_windows_range)
 
+#AMO MUCHO A MARINE <3
+
+
 # %%
 # ========================== PRECOMPUTE DIMENSIONS ==========================
 
@@ -419,7 +422,6 @@ per_window_animal_means = [
     np.array([float(np.mean(speeds[j][i])) for i in range(n_animals)], dtype=float)
     for j in range(n_windows)
 ]
-
 
 # %% ========================== SPLITS IN POOLINGS & HIST SETUP ==========================
 
