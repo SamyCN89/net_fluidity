@@ -111,7 +111,9 @@ GROUPS_LIST = [
 ]
 
 # None -> process all subsets in SPEED_SUBSETS
-SUBSETS: list[str] | None = None
+SUBSETS       = ["per_region"]
+N_REGION_JOBS = 41
+N_JOBS        = 2
 
 VERBOSE = False  # print per-(segment, group) bootstrap timing
 
