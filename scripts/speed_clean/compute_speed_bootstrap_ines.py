@@ -58,6 +58,8 @@ from shared_code.fun_loaddata import load_timeseries_bundle
 from shared_code.fun_paths import get_paths
 from shared_code.fun_utils import load_cognitive_data
 
+from joblib import Parallel, delayed
+
 from dfc_speed_lib import (
     load_speed_stack,
     load_speed_stack_single_region,
@@ -90,7 +92,8 @@ SPEED_TAU          = 2
 N_RESAMPLES        = 10_000
 DOWNSAMPLE_FACTOR  = 10
 SEED               = 42
-N_JOBS             = 1            # parallel workers inside bootstrap inner loop
+N_JOBS             = 2            # parallel workers inside each bootstrap inner loop
+N_REGION_JOBS      = 40           # parallel regions (outer loop) — set to n_cores // N_JOBS
 
 PERCENTILES = np.linspace(0, 100, 100)
 
@@ -108,7 +111,7 @@ GROUPS_LIST = [
 ]
 
 # None -> process all subsets in SPEED_SUBSETS
-SUBSETS: list[str] | None = ['per_region']  # e.g. ['per_region', 'all_windows', 'short_windows', ...]
+SUBSETS: list[str] | None = None
 
 VERBOSE = False  # print per-(segment, group) bootstrap timing
 
@@ -310,9 +313,9 @@ def main() -> None:
                 print(f"  [WARN] per_region: {e}")
                 continue
 
-            print(f"  Found {len(region_descs)} regions")
-            for rd in region_descs:
-                print(f"\n  [per_region] {rd}")
+            print(f"  Found {len(region_descs)} regions — launching {N_REGION_JOBS} parallel workers")
+
+            def _process_region(rd: str) -> str:
                 try:
                     speeds = load_speed_stack_single_region(
                         subset_dir=subset_dir,
@@ -324,8 +327,7 @@ def main() -> None:
                         tau_count=SPEED_TAU,
                     )
                 except FileNotFoundError as e:
-                    print(f"    [WARN] {e}")
-                    continue
+                    return f"[WARN] {rd}: {e}"
 
                 run_bootstrap_for_subset(
                     subset_label=f"per_region_{rd}",
@@ -333,6 +335,13 @@ def main() -> None:
                     cog_data=cog_data,
                     bootstrap_folder=bootstrap_folder,
                 )
+                return f"[OK] {rd}"
+
+            results = Parallel(n_jobs=N_REGION_JOBS, prefer="processes", verbose=5)(
+                delayed(_process_region)(rd) for rd in region_descs
+            )
+            for r in results:
+                print(f"  {r}")
 
         else:
             template = _speed_template(paths, subset)
