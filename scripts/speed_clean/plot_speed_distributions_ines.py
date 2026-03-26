@@ -23,6 +23,7 @@ Run
   python scripts/speed_clean/plot_speed_distributions_ines.py
 """
 
+#%%
 from __future__ import annotations
 
 from pathlib import Path
@@ -103,12 +104,12 @@ GROUPS_LIST = [
 
 # ── Toggle sections ───────────────────────────────────────────────────────────
 
-RUN_QUANTILE_TENSOR = False  # ya existe
-RUN_QC_PLOTS = False  # ya existe
+RUN_QUANTILE_TENSOR = True  # ya existe
+RUN_QC_PLOTS = True  # ya existe
 RUN_GROUP_DISTS = True  # group mean distributions
 RUN_CI_BANDS = True  # bootstrapped CI bands
 RUN_AGE_CONTRASTS = True  # 4M - 2M contrast (only groupings containing "age")
-RUN_ANIMAL_HISTS = True  # per-animal overlaid histograms
+RUN_ANIMAL_HISTS = False  # per-animal overlaid histograms
 RUN_PER_REGION = True
 
 
@@ -152,7 +153,7 @@ def _speed_template(paths: dict, subset: str) -> str:
 # ── MAIN ─────────────────────────────────────────────────────────────────────
 # =============================================================================
 
-
+#%%
 def main() -> None:
     set_figure_params(True)
 
@@ -164,13 +165,23 @@ def main() -> None:
 
     speed_root = Path(paths["speed"])
     bootstrap_folder = speed_root / "bootstrap"
-    out_root = Path(paths["f_speed"]) / "analysis_ines"
-    out_root.mkdir(parents=True, exist_ok=True)
 
-    dir_qc = out_root / "qc"
+
+    #Figures directory
+    out_root_fig = Path(paths["f_speed"]) / "analysis_ines"
+    out_root_fig.mkdir(parents=True, exist_ok=True)
+
+    dir_qc = out_root_fig / "qc"
     dir_qc.mkdir(exist_ok=True)
-    dir_dist = out_root / "distribution"
+
+    dir_dist = out_root_fig / "distribution"
     dir_dist.mkdir(exist_ok=True)
+
+    dir_ci = out_root_fig / "ci_bands"
+    dir_ci.mkdir(exist_ok=True)
+
+    dir_acc = out_root_fig / "acceleration"
+    dir_acc.mkdir(exist_ok=True)
 
     # ── Primary speed stack (for tensor + QC) ─────────────────────────────────
     print(f"[INFO] Loading primary speed stack (subset={SPEED_SUBSET}) …")
@@ -209,7 +220,10 @@ def main() -> None:
             else None
         )
 
-        tensor_path = out_root / (
+        tensor_folder = speed_root / "tensors"
+        tensor_folder.mkdir(exist_ok=True)
+
+        tensor_path = tensor_folder / (
             f"session_window_speed_quantiles_dataset-{DATASET_NAME}"
             f"_subset-{SPEED_SUBSET}_lag{SPEED_LAG}_tau{SPEED_TAU}"
             f"_animals{n_animals}_regions{regions}"
@@ -249,13 +263,16 @@ def main() -> None:
                 print("  -> skipping (files missing)")
                 continue
 
+            dir_qc_all = dir_qc / "all"
+            dir_qc_all.mkdir(exist_ok=True)
+
             fig = plot_qc_3panel(
                 speeds=speeds_sub,
                 time_windows_range=TIME_WINDOWS_RANGE,
                 group_data=gd_qc,
                 subset_label=subset,
                 dataset_name=DATASET_NAME,
-                save_path=dir_qc / f"qc_speed_vs_window_{subset}.png",
+                save_path=dir_qc_all / f"qc_speed_vs_window_{subset}.png",
             )
             plt.close(fig)
 
@@ -270,13 +287,18 @@ def main() -> None:
                     speeds_reg = load_speed_stack_single_region(
                         per_region_dir, TIME_WINDOWS_RANGE, n_animals, regions, rd
                     )
+
+                    print(f"\n[QC] {rd}")
+                    dir_qc_reg = dir_qc / "per_region"
+                    dir_qc_reg.mkdir(exist_ok=True)
+
                     fig = plot_qc_3panel(
                         speeds=speeds_reg,
                         time_windows_range=TIME_WINDOWS_RANGE,
                         group_data=gd_qc,
                         subset_label=f"per_region_{rd}",
                         dataset_name=DATASET_NAME,
-                        save_path=dir_qc / f"qc_speed_vs_window_per_region_{rd}.png",
+                        save_path=dir_qc_reg / f"qc_speed_vs_window_per_region_{rd}.png",
                     )
                     plt.close(fig)
             except FileNotFoundError:
@@ -307,31 +329,51 @@ def main() -> None:
 
         # 3a. Group mean distributions
         if RUN_GROUP_DISTS and pool_group_hists:
+
+            dir_dist_all = dir_dist / "all"
+            dir_dist_all.mkdir(exist_ok=True)
+
+            dir_dist_all_group = dir_dist_all / f"{grouping}"
+            dir_dist_all_group.mkdir(exist_ok=True)
+
             fig = plot_group_speed_distributions(
                 group_means=pool_group_hists,
                 centers=centers,
                 seg_names=seg_names_bs,
                 groups_selected=grouping,
-                save_path=dir_dist / f"group_dists_{grouping}_{POOL_SPLIT}.png",
+                save_path=dir_dist_all_group / f"group_dists_{grouping}_{POOL_SPLIT}.png",
             )
             plt.close(fig)
             print("  -> group_dists saved")
 
         # 3b. CI bands
         if RUN_CI_BANDS:
+
+            dir_ci_all = dir_ci / "all"
+            dir_ci_all.mkdir(exist_ok=True)
+
+            dir_ci_all_group = dir_ci_all / f"{grouping}"
+            dir_ci_all_group.mkdir(exist_ok=True)
+
             fig = plot_ci_bands(
                 ci_low=ci_low_bs,
                 ci_high=ci_high_bs,
                 percentiles_=percentiles_bs,
                 seg_names=seg_names_bs,
                 groups_selected=grouping,
-                save_path=dir_dist / f"ci_bands_{grouping}_{POOL_SPLIT}.png",
+                save_path=dir_ci_all_group / f"ci_bands_{grouping}_{POOL_SPLIT}.png",
             )
             plt.close(fig)
             print("  -> ci_bands saved")
 
         # 3c. Age contrast (only for groupings that contain 'age')
         if RUN_AGE_CONTRASTS and "age" in grouping:
+            dir_acc_all = dir_acc / "all"
+            dir_acc_all.mkdir(exist_ok=True)
+
+            dir_acc_all_group = dir_acc_all / f"{grouping}"
+            dir_acc_all_group.mkdir(exist_ok=True)
+
             fig = plot_age_contrasts(
                 ci_low=ci_low_bs,
                 ci_high=ci_high_bs,
@@ -339,23 +381,23 @@ def main() -> None:
                 seg_names=seg_names_bs,
                 group_data=group_data_bs,
                 groups_selected=grouping,
-                save_path=dir_dist / f"age_contrast_{grouping}_{POOL_SPLIT}.png",
+                save_path=dir_acc_all_group / f"age_contrast_{grouping}_{POOL_SPLIT}.png",
             )
             plt.close(fig)
             print("  -> age_contrast saved")
 
-        # 3d. Per-animal histograms
-        if RUN_ANIMAL_HISTS and group_speed_seg:
-            plot_per_animal_histograms(
-                group_speed_by_segment=group_speed_seg,
-                seg_names=seg_names_bs,
-                group_data=group_data_bs,
-                save_dir=dir_dist,
-                bins=BINS_ANIMAL,
-            )
-            print("  -> animal histograms saved")
+        # # 3d. Per-animal histograms
+        # if RUN_ANIMAL_HISTS and group_speed_seg:
+        #     plot_per_animal_histograms(
+        #         group_speed_by_segment=group_speed_seg,
+        #         seg_names=seg_names_bs,
+        #         group_data=group_data_bs,
+        #         save_dir=dir_dist_group,
+        #         bins=BINS_ANIMAL,
+        #     )
+        #     print("  -> animal histograms saved")
 
-    print(f"\n[OK] All outputs written to: {out_root}")
+    print(f"\n[OK] All outputs written to: {out_root_fig}")
 
     # =========================================================================
     # 5. PER-REGION DISTRIBUTION PLOTS
@@ -380,8 +422,14 @@ def main() -> None:
                 region_descs = []
                 print("[WARN] No per_region speed files found")
 
-            dir_per_region = out_root / "distribution_per_region"
-            dir_per_region.mkdir(exist_ok=True)
+            dir_dist_per_region = dir_dist / "per_region"
+            dir_dist_per_region.mkdir(exist_ok=True)
+
+            dir_ci_per_region = dir_ci / "per_region"
+            dir_ci_per_region.mkdir(exist_ok=True)
+
+            dir_acc_per_region = dir_acc / "per_region"
+            dir_acc_per_region.mkdir(exist_ok=True)
 
             for rd in region_descs:
                 print(f"\n[PER_REGION] {rd}")
@@ -434,28 +482,39 @@ def main() -> None:
 
                     tag = f"{rd}_{grouping}_{POOL_SPLIT}"
 
+                    # 3a. Group mean distributions
                     if RUN_GROUP_DISTS and pool_group_hists:
+                        dir_dist_per_region_group = dir_dist_per_region / f"group_{grouping}"
+                        dir_dist_per_region_group.mkdir(exist_ok=True)
+
                         fig = plot_group_speed_distributions(
                             group_means=pool_group_hists,
                             centers=centers_reg,
                             seg_names=seg_names_bs,
                             groups_selected=grouping,
-                            save_path=dir_per_region / f"group_dists_{tag}.png",
+                            save_path=dir_dist_per_region_group / f"group_dists_{tag}.png",
                         )
                         plt.close(fig)
 
+                    # 3b. CI bands
                     if RUN_CI_BANDS:
+                        dir_ci_per_region_group = dir_ci_per_region / f"group_{grouping}"
+                        dir_ci_per_region_group.mkdir(exist_ok=True)
+
                         fig = plot_ci_bands(
                             ci_low=ci_low_bs,
                             ci_high=ci_high_bs,
                             percentiles_=percentiles_bs,
                             seg_names=seg_names_bs,
                             groups_selected=grouping,
-                            save_path=dir_per_region / f"ci_bands_{tag}.png",
+                        save_path=dir_ci_per_region_group / f"ci_bands_{tag}.png",
                         )
                         plt.close(fig)
 
                     if RUN_AGE_CONTRASTS and "age" in grouping:
+                        dir_acc_per_region_group = dir_acc_per_region / f"group_{grouping}"
+                        dir_acc_per_region_group.mkdir(exist_ok=True)
+
                         fig = plot_age_contrasts(
                             ci_low=ci_low_bs,
                             ci_high=ci_high_bs,
@@ -463,22 +522,22 @@ def main() -> None:
                             seg_names=seg_names_bs,
                             group_data=group_data_bs,
                             groups_selected=grouping,
-                            save_path=dir_per_region / f"age_contrast_{tag}.png",
+                            save_path=dir_acc_per_region_group / f"acceleration_{tag}.png",
                         )
                         plt.close(fig)
 
-                    if RUN_ANIMAL_HISTS and group_speed_seg:
-                        plot_per_animal_histograms(
-                            group_speed_by_segment=group_speed_seg,
-                            seg_names=seg_names_bs,
-                            group_data=group_data_bs,
-                            save_dir=dir_per_region,
-                            bins=BINS_ANIMAL,
-                        )
+                    # if RUN_ANIMAL_HISTS and group_speed_seg:
+                    #     plot_per_animal_histograms(
+                    #         group_speed_by_segment=group_speed_seg,
+                    #         seg_names=seg_names_bs,
+                    #         group_data=group_data_bs,
+                    #         save_dir=dir_animal_hists,
+                    #         bins=BINS_ANIMAL,
+                    #     )
 
                     print(f"  -> [{grouping}] figures saved")
 
-            print(f"\n[OK] Per-region outputs written to: {dir_per_region}")
+            print(f"\n[OK] Per-region outputs written to: {dir_dist_per_region}")
 
 
 if __name__ == "__main__":

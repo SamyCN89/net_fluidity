@@ -2390,3 +2390,1037 @@ def run_primary_analysis_from_df(
                     summary["signif_fdr_05"] = summary.get("q_value", pd.Series(dtype=float)) < 0.05
 
     return corr_summary, slopes_summary
+
+
+# =============================================================================
+# SPREAD COMPARISON  (IQR and q95-q05 per animal, WT vs dKI bootstrap CI)
+# =============================================================================
+
+def _compute_animal_spread(
+    speeds: list[list[np.ndarray]],
+    w_range: range,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    For each animal, pool all speed samples across windows in w_range and
+    compute IQR (q75-q25) and wide range (q95-q05).
+
+    Returns
+    -------
+    iqr   : ndarray shape (n_animals,)
+    wide  : ndarray shape (n_animals,)
+    """
+    n_animals = len(speeds[0])
+    iqr  = np.full(n_animals, np.nan)
+    wide = np.full(n_animals, np.nan)
+    for i in range(n_animals):
+        samples = np.concatenate([
+            np.ravel(speeds[j][i])
+            for j in w_range
+            if j < len(speeds) and len(speeds[j][i]) > 0
+        ]) if any(j < len(speeds) for j in w_range) else np.array([])
+        if samples.size < 10:
+            continue
+        q05, q25, q75, q95 = np.percentile(samples, [5, 25, 75, 95])
+        iqr[i]  = q75 - q25
+        wide[i] = q95 - q05
+    return iqr, wide
+
+
+def _bootstrap_diff_ci(
+    a: np.ndarray,
+    b: np.ndarray,
+    n_boot: int = 5000,
+    ci: float = 95.0,
+    seed: int = 0,
+) -> tuple[float, float, float]:
+    """
+    Bootstrap CI of mean(a) - mean(b).
+
+    Returns
+    -------
+    diff_obs : observed difference of means
+    ci_low   : lower bound of CI
+    ci_high  : upper bound of CI
+    """
+    rng = np.random.default_rng(seed)
+    a = a[np.isfinite(a)]
+    b = b[np.isfinite(b)]
+    if a.size == 0 or b.size == 0:
+        return np.nan, np.nan, np.nan
+    diff_obs = a.mean() - b.mean()
+    diffs = np.array([
+        rng.choice(a, size=a.size, replace=True).mean()
+        - rng.choice(b, size=b.size, replace=True).mean()
+        for _ in range(n_boot)
+    ])
+    lo = np.percentile(diffs, (100 - ci) / 2)
+    hi = np.percentile(diffs, 100 - (100 - ci) / 2)
+    return diff_obs, lo, hi
+
+
+def plot_spread_comparison(
+    speeds: list[list[np.ndarray]],
+    group_data: dict,
+    ranges: dict[str, range],
+    grouping_label: str = "genotype",
+    n_boot: int = 5000,
+    save_path: "str | Path | None" = None,
+) -> "plt.Figure":
+    """
+    Compare dFC speed spread (IQR and q95-q05) between groups across
+    window segments (short / mid / long).
+
+    Layout: 2 rows (IQR, wide range) × n_segments columns.
+    Each cell: individual animal values as a stripplot, group mean ± bootstrap
+    95% CI overlaid, and a summary of the pairwise difference with CI.
+
+    Parameters
+    ----------
+    speeds        : speeds[window][animal] → 1D float array
+    group_data    : {group_label: array of animal indices}
+    ranges        : {segment_name: range of window indices}
+    grouping_label: used in the figure title
+    n_boot        : bootstrap resamples for the difference CI
+    save_path     : if given, save the figure there
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.patheffects as pe
+
+    seg_names  = list(ranges.keys())
+    group_keys = list(group_data.keys())
+    metrics    = ["IQR  (q75−q25)", "Wide  (q95−q05)"]
+    n_seg      = len(seg_names)
+    n_groups   = len(group_keys)
+
+    # Palette — up to 8 groups, cycles if more
+    base_colors = ["#2196F3", "#F44336", "#4CAF50", "#FF9800",
+                   "#9C27B0", "#00BCD4", "#795548", "#607D8B"]
+    colors = {gk: base_colors[i % len(base_colors)] for i, gk in enumerate(group_keys)}
+
+    fig, axes = plt.subplots(
+        2, n_seg,
+        figsize=(3.5 * n_seg, 7),
+        sharey="row",
+    )
+    if n_seg == 1:
+        axes = axes.reshape(2, 1)
+
+    rng_jitter = np.random.default_rng(42)
+
+    for col, seg in enumerate(seg_names):
+        w_range = ranges[seg]
+        iqr_all, wide_all = _compute_animal_spread(speeds, w_range)
+
+        for row, (metric_vals, metric_label) in enumerate(
+            zip([iqr_all, wide_all], metrics)
+        ):
+            ax = axes[row, col]
+
+            group_vals = {gk: metric_vals[group_data[gk]] for gk in group_keys}
+
+            # ── Strip plot ──────────────────────────────────────────────────
+            x_positions = {gk: i for i, gk in enumerate(group_keys)}
+            for gk, vals in group_vals.items():
+                v = vals[np.isfinite(vals)]
+                x = x_positions[gk]
+                jitter = rng_jitter.uniform(-0.12, 0.12, size=v.size)
+                ax.scatter(
+                    np.full(v.size, x) + jitter, v,
+                    color=colors[gk], alpha=0.45, s=18, linewidths=0, zorder=2,
+                )
+                # Mean ± bootstrap CI
+                if v.size > 1:
+                    mean_v = v.mean()
+                    boot   = np.array([
+                        np.random.default_rng(s).choice(v, size=v.size, replace=True).mean()
+                        for s in range(n_boot)
+                    ])
+                    ci_lo, ci_hi = np.percentile(boot, [2.5, 97.5])
+                    ax.errorbar(
+                        x, mean_v, yerr=[[mean_v - ci_lo], [ci_hi - mean_v]],
+                        fmt="D", color=colors[gk], markersize=7,
+                        capsize=5, linewidth=2, zorder=4,
+                        path_effects=[pe.withStroke(linewidth=3.5, foreground="white")],
+                    )
+
+            # ── Pairwise difference annotations ─────────────────────────────
+            pair_y = ax.get_ylim()[1] if ax.get_ylim()[1] != 1.0 else None
+            # compute after drawing so we can use data range
+            ax.set_xlim(-0.6, n_groups - 0.4)
+
+            # For each consecutive pair, annotate difference + CI
+            y_max = np.nanmax([
+                np.nanmax(group_vals[gk]) for gk in group_keys
+                if np.any(np.isfinite(group_vals[gk]))
+            ])
+            y_step = (y_max - ax.get_ylim()[0]) * 0.12 if y_max > ax.get_ylim()[0] else 0.05
+
+            for pi, (gk1, gk2) in enumerate(
+                zip(group_keys[:-1], group_keys[1:])
+            ):
+                v1 = group_vals[gk1][np.isfinite(group_vals[gk1])]
+                v2 = group_vals[gk2][np.isfinite(group_vals[gk2])]
+                diff, lo, hi = _bootstrap_diff_ci(v1, v2, n_boot=n_boot, seed=pi)
+                if np.isnan(diff):
+                    continue
+                sig = "*" if not (lo <= 0 <= hi) else "ns"
+                y_ann = y_max + y_step * (pi + 1)
+                x1, x2 = x_positions[gk1], x_positions[gk2]
+                ax.annotate(
+                    "",
+                    xy=(x2, y_ann), xytext=(x1, y_ann),
+                    arrowprops=dict(arrowstyle="-", color="0.3", lw=1.2),
+                )
+                ax.text(
+                    (x1 + x2) / 2, y_ann,
+                    f"{sig}\nΔ={diff:+.3f}\n[{lo:+.3f}, {hi:+.3f}]",
+                    ha="center", va="bottom", fontsize=6.5, color="0.2",
+                )
+
+            # ── Labels ───────────────────────────────────────────────────────
+            ax.set_xticks(list(x_positions.values()))
+            ax.set_xticklabels(
+                [str(gk) for gk in group_keys],
+                fontsize=8, rotation=20, ha="right",
+            )
+            if col == 0:
+                ax.set_ylabel(metric_label, fontsize=9)
+            if row == 0:
+                ax.set_title(f"{seg}", fontsize=10, fontweight="bold")
+            ax.spines[["top", "right"]].set_visible(False)
+            ax.tick_params(labelsize=8)
+
+    fig.suptitle(
+        f"Speed spread by segment — {grouping_label}",
+        fontsize=11, fontweight="bold", y=1.01,
+    )
+    fig.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
+# =============================================================================
+# SPREAD CURVES  (continuous spread vs window size, bootstrap CI per group)
+# =============================================================================
+
+def _compute_spread_per_window(
+    speeds: list,
+    metric: str = "iqr",
+) -> np.ndarray:
+    """
+    For each window and each animal, compute spread of their speed samples.
+
+    Parameters
+    ----------
+    speeds : speeds[w][animal] → 1D float array
+    metric : "iqr"  → q75-q25
+             "wide" → q95-q05
+
+    Returns
+    -------
+    spread : ndarray shape (n_windows, n_animals)
+    """
+    n_windows = len(speeds)
+    n_animals = len(speeds[0])
+    out = np.full((n_windows, n_animals), np.nan)
+    pcts = [25, 75] if metric == "iqr" else [5, 95]
+    for w in range(n_windows):
+        for i in range(n_animals):
+            s = np.ravel(speeds[w][i])
+            if s.size < 4:
+                continue
+            lo, hi = np.percentile(s, pcts)
+            out[w, i] = hi - lo
+    return out
+
+
+def plot_spread_curves(
+    speeds: list,
+    group_data: dict,
+    time_windows_range: np.ndarray,
+    segment_boundaries: "dict | None" = None,
+    grouping_label: str = "genotype",
+    n_boot: int = 2000,
+    ci: float = 95.0,
+    save_path: "str | Path | None" = None,
+) -> "plt.Figure":
+    """
+    Plot spread (IQR and q95-q05) as a continuous function of window size,
+    with bootstrap CI bands per group.
+
+    Layout: 2 rows (IQR top, q95-q05 bottom), shared x-axis.
+    Each panel: mean ± CI band per group + optional vertical lines for
+    short/mid/long segment boundaries.
+
+    Parameters
+    ----------
+    speeds              : speeds[window][animal] → 1D float array
+    group_data          : {group_label: array of animal indices}
+    time_windows_range  : 1D array of window sizes (e.g. np.arange(5, 100))
+    segment_boundaries  : optional dict {"short": int, "mid": int, "long": int}
+                          values are the window-size boundaries to draw as vlines
+    grouping_label      : used in the title
+    n_boot              : bootstrap resamples per window (keep ≤2000 for speed)
+    ci                  : CI level in percent (default 95)
+    save_path           : if given, save figure there
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    import matplotlib.pyplot as plt
+
+    group_keys = list(group_data.keys())
+    base_colors = ["#1565C0", "#B71C1C", "#2E7D32", "#E65100",
+                   "#6A1B9A", "#00838F", "#4E342E", "#37474F"]
+    colors = {gk: base_colors[i % len(base_colors)] for i, gk in enumerate(group_keys)}
+
+    metrics = [
+        ("iqr",  "IQR  (q75 − q25)"),
+        ("wide", "Wide  (q95 − q05)"),
+    ]
+
+    fig, axes = plt.subplots(
+        2, 1,
+        figsize=(10, 7),
+        sharex=True,
+    )
+
+    rng = np.random.default_rng(42)
+    x   = np.asarray(time_windows_range)
+
+    for ax, (metric_key, metric_label) in zip(axes, metrics):
+        spread = _compute_spread_per_window(speeds, metric=metric_key)
+        # spread: (n_windows, n_animals)
+
+        for gk in group_keys:
+            idx   = group_data[gk]
+            gspr  = spread[:, idx]          # (n_windows, n_group_animals)
+            valid = np.isfinite(gspr)
+
+            # Mean per window (ignoring NaN)
+            mean_w = np.where(valid.any(axis=1),
+                              np.nanmean(gspr, axis=1), np.nan)
+
+            # Bootstrap CI per window
+            ci_lo = np.full(len(x), np.nan)
+            ci_hi = np.full(len(x), np.nan)
+            alpha = (100 - ci) / 2
+            for w in range(len(x)):
+                v = gspr[w][np.isfinite(gspr[w])]
+                if v.size < 2:
+                    continue
+                boot = rng.choice(v, size=(n_boot, v.size), replace=True).mean(axis=1)
+                ci_lo[w], ci_hi[w] = np.percentile(boot, [alpha, 100 - alpha])
+
+            # Plot
+            ax.fill_between(x, ci_lo, ci_hi,
+                            color=colors[gk], alpha=0.20, linewidth=0)
+            ax.plot(x, mean_w,
+                    color=colors[gk], linewidth=2.0, label=str(gk))
+
+        # Segment boundary lines
+        if segment_boundaries:
+            y_min, y_max = ax.get_ylim()
+            for si, (sname, sval) in enumerate(segment_boundaries.items()):
+                ax.axvline(sval, color="0.5", linestyle="--",
+                           linewidth=1.0, zorder=1)
+                ax.text(sval + 0.5, y_max * 0.97,
+                        sname, fontsize=7, color="0.4", va="top")
+
+        ax.set_ylabel(metric_label, fontsize=10)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.tick_params(labelsize=9)
+        ax.legend(title=grouping_label, fontsize=8, title_fontsize=8,
+                  framealpha=0.7, loc="upper right")
+
+    axes[-1].set_xlabel("Window size (TR)", fontsize=10)
+    fig.suptitle(
+        f"Speed spread vs window size — {grouping_label}",
+        fontsize=12, fontweight="bold",
+    )
+    fig.tight_layout()
+
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
+# =============================================================================
+# SPREAD BY SEGMENT  (pooled per animal, errorbar CI, no connecting lines)
+# =============================================================================
+
+def plot_spread_by_segment(
+    speeds: list,
+    group_data: dict,
+    ranges: dict,
+    grouping_label: str = "genotype",
+    n_boot: int = 5000,
+    ci: float = 95.0,
+    save_path: "str | Path | None" = None,
+) -> "plt.Figure":
+    """
+    For each segment (short / mid / long), pool all speed samples across windows
+    per animal, compute two spread metrics:
+      - Wide range : q99 - q01
+      - IQR        : q75 - q25
+    Show group mean ± bootstrap CI as errorbars (no connecting lines).
+    Annotate pairwise group differences with * / ns and Δ [CI].
+
+    Layout: 2 rows (wide range top, IQR bottom), X = segments.
+
+    Parameters
+    ----------
+    speeds         : speeds[window][animal] → 1D float array
+    group_data     : {group_label: array of animal indices}
+    ranges         : {segment_name: range of window indices}
+    grouping_label : used in title and legend
+    n_boot         : bootstrap resamples
+    ci             : CI level in percent
+    save_path      : if given, save figure there
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.patheffects as pe
+
+    group_keys = list(group_data.keys())
+    seg_names  = list(ranges.keys())
+    n_groups   = len(group_keys)
+    n_segs     = len(seg_names)
+
+    base_colors = ["#1565C0", "#B71C1C", "#2E7D32", "#E65100",
+                   "#6A1B9A", "#00838F", "#4E342E", "#37474F"]
+    colors = {gk: base_colors[i % len(base_colors)] for i, gk in enumerate(group_keys)}
+
+    # q95-q05 top, q99-q01 bottom
+    metrics    = ["q95q05", "q99q01"]
+    pct_ranges = {"q95q05": [5, 95], "q99q01": [1, 99]}
+    metric_labels = {
+        "q95q05": "Wide range  (q95 − q05)",
+        "q99q01": "Wide range  (q99 − q01)",
+    }
+
+    # ── Compute pooled spread per animal per segment ──────────────────────────
+    min_s = {"q95q05": 10, "q99q01": 20}
+
+    n_animals = len(speeds[0])
+    spread = {m: {seg: np.full(n_animals, np.nan) for seg in seg_names}
+              for m in metrics}
+
+    for seg, w_range in ranges.items():
+        for i in range(n_animals):
+            samples = np.concatenate([
+                np.ravel(speeds[w][i])
+                for w in w_range
+                if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
+            ]) if len(w_range) > 0 else np.array([])
+            for m in metrics:
+                if samples.size < min_s[m]:
+                    continue
+                lo, hi = np.percentile(samples, pct_ranges[m])
+                spread[m][seg][i] = hi - lo
+
+    # ── Bootstrap mean CI per group per segment ───────────────────────────────
+    rng   = np.random.default_rng(42)
+    alpha = (100 - ci) / 2
+
+    # results[metric][seg][group] = (mean, ci_lo, ci_hi)
+    results = {m: {seg: {} for seg in seg_names} for m in metrics}
+
+    for m in metrics:
+        for seg in seg_names:
+            for gk in group_keys:
+                v = spread[m][seg][group_data[gk]]
+                v = v[np.isfinite(v)]
+                if v.size < 2:
+                    results[m][seg][gk] = (np.nan, np.nan, np.nan)
+                    continue
+                mean_v = v.mean()
+                boot   = rng.choice(v, size=(n_boot, v.size), replace=True).mean(axis=1)
+                lo_b, hi_b = np.percentile(boot, [alpha, 100 - alpha])
+                results[m][seg][gk] = (mean_v, lo_b, hi_b)
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig, axes = plt.subplots(2, 1, figsize=(max(6, n_segs * 2.2), 8), sharex=True)
+
+    x_base  = np.arange(n_segs)
+    offsets = np.linspace(-0.15 * (n_groups - 1) / 2,
+                           0.15 * (n_groups - 1) / 2, n_groups)
+
+    for ax, m in zip(axes, metrics):
+
+        # ── Errorbars ────────────────────────────────────────────────────────
+        for gi, gk in enumerate(group_keys):
+            means  = np.array([results[m][seg][gk][0] for seg in seg_names], dtype=float)
+            ci_los = np.array([results[m][seg][gk][1] for seg in seg_names], dtype=float)
+            ci_his = np.array([results[m][seg][gk][2] for seg in seg_names], dtype=float)
+
+            ax.errorbar(
+                x_base + offsets[gi],
+                means,
+                yerr=[means - ci_los, ci_his - means],
+                fmt="o",
+                color=colors[gk],
+                markersize=8,
+                capsize=6,
+                linewidth=0,
+                elinewidth=2,
+                capthick=2,
+                label=str(gk),
+                path_effects=[pe.withStroke(linewidth=3, foreground="white")],
+                zorder=3,
+            )
+
+        # ── Statistical annotations (all consecutive pairs) ──────────────────
+        # Compute y ceiling after drawing
+        all_hi = [
+            results[m][seg][gk][2]
+            for seg in seg_names for gk in group_keys
+            if np.isfinite(results[m][seg][gk][2])
+        ]
+        y_top   = max(all_hi) if all_hi else 1.0
+        y_range = y_top - (min(
+            results[m][seg][gk][0]
+            for seg in seg_names for gk in group_keys
+            if np.isfinite(results[m][seg][gk][0])
+        ) if all_hi else 0)
+
+        pairs = [(group_keys[i], group_keys[i + 1])
+                 for i in range(len(group_keys) - 1)]
+
+        for si, seg in enumerate(seg_names):
+            y_ann = y_top + y_range * 0.06
+
+            for pi, (gk1, gk2) in enumerate(pairs):
+                v1 = spread[m][seg][group_data[gk1]]
+                v2 = spread[m][seg][group_data[gk2]]
+                v1 = v1[np.isfinite(v1)]
+                v2 = v2[np.isfinite(v2)]
+
+                diff, lo_d, hi_d = _bootstrap_diff_ci(v1, v2, n_boot=n_boot,
+                                                       seed=si * 10 + pi)
+                if np.isnan(diff):
+                    continue
+
+                sig_label = "*" if not (lo_d <= 0 <= hi_d) else "ns"
+                ann_text  = (
+                    f"{sig_label}\n"
+                    f"Δ={diff:+.3f}\n"
+                    f"[{lo_d:+.3f}, {hi_d:+.3f}]"
+                )
+
+                x1 = si + offsets[group_keys.index(gk1)]
+                x2 = si + offsets[group_keys.index(gk2)]
+                x_mid = (x1 + x2) / 2
+
+                # bracket
+                ax.annotate("", xy=(x2, y_ann), xytext=(x1, y_ann),
+                            arrowprops=dict(arrowstyle="-", color="0.4", lw=1.0))
+                ax.text(x_mid, y_ann, ann_text,
+                        ha="center", va="bottom", fontsize=6.5,
+                        color="0.2", linespacing=1.4)
+
+                y_ann += y_range * 0.20   # stack if multiple pairs
+
+        ax.set_ylabel(metric_labels[m], fontsize=10)
+        ax.set_xticks(x_base)
+        ax.set_xticklabels(seg_names, fontsize=10)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.tick_params(labelsize=9)
+        ax.legend(title=grouping_label, fontsize=8, title_fontsize=8,
+                  framealpha=0.7, loc="lower right")
+        ax.set_xlim(-0.5, n_segs - 0.5)
+
+    fig.suptitle(
+        f"Speed spread by segment — {grouping_label}",
+        fontsize=12, fontweight="bold",
+    )
+    fig.tight_layout()
+
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
+# =============================================================================
+# SPREAD MATRIX  (regions × segments, Δ / significance / masked Δ)
+# =============================================================================
+
+def compute_spread_matrix(
+    speeds_all: list,
+    speeds_per_region: "dict[str, list]",
+    group_data: dict,
+    ranges: dict,
+    metrics: "list[str]" = None,
+    n_boot: int = 5000,
+    ci: float = 95.0,
+) -> dict:
+    """
+    Compute spread statistics for all regions + 'all' subset.
+
+    For each location (all + each region), segment (short/mid/long), and metric
+    (q95-q05, q99-q01), compute:
+      - delta     : mean(group1) − mean(group0)  [group0 = first key in group_data]
+      - sig       : 1 if bootstrap CI of delta excludes 0, else 0
+      - delta_sig : delta where sig==1, else NaN
+
+    Parameters
+    ----------
+    speeds_all        : speeds[window][animal] for the 'all' subset
+    speeds_per_region : {region_descriptor: speeds list}
+    group_data        : {group_label: array of animal indices}  — exactly 2 groups
+    ranges            : {segment_name: range of window indices}
+    metrics           : list of metric keys, default ["q95q05", "q99q01"]
+    n_boot            : bootstrap resamples
+    ci                : CI level in percent
+
+    Returns
+    -------
+    result : dict with keys per metric, each containing:
+        "locations" : list of location names  (regions + "all")
+        "segments"  : list of segment names
+        "delta"     : ndarray (n_segments, n_locations)
+        "sig"       : ndarray bool (n_segments, n_locations)
+        "delta_sig" : ndarray (n_segments, n_locations), NaN where ns
+    """
+    if metrics is None:
+        metrics = ["q95q05", "q99q01"]
+
+    pct_map = {"q95q05": [5, 95], "q99q01": [1, 99]}
+    min_samples = {"q95q05": 10, "q99q01": 20}
+
+    group_keys = list(group_data.keys())
+    assert len(group_keys) == 2, "compute_spread_matrix requires exactly 2 groups"
+    seg_names = list(ranges.keys())
+
+    # Build ordered location list: individual regions first, then 'all'
+    region_names = list(speeds_per_region.keys())
+    locations    = region_names + ["all"]
+    speeds_map   = {r: speeds_per_region[r] for r in region_names}
+    speeds_map["all"] = speeds_all
+
+    rng   = np.random.default_rng(42)
+    alpha = (100 - ci) / 2
+
+    result = {}
+    for m in metrics:
+        pcts    = pct_map[m]
+        min_s   = min_samples[m]
+        n_loc   = len(locations)
+        n_seg   = len(seg_names)
+
+        delta     = np.full((n_seg, n_loc), np.nan)
+        sig       = np.zeros((n_seg, n_loc), dtype=bool)
+
+        for li, loc in enumerate(locations):
+            speeds = speeds_map[loc]
+            n_animals = len(speeds[0])
+
+            for si, (seg, w_range) in enumerate(ranges.items()):
+                # Pool samples per animal for this segment
+                animal_spread = np.full(n_animals, np.nan)
+                for i in range(n_animals):
+                    samples = np.concatenate([
+                        np.ravel(speeds[w][i])
+                        for w in w_range
+                        if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
+                    ]) if len(w_range) > 0 else np.array([])
+                    if samples.size < min_s:
+                        continue
+                    lo, hi = np.percentile(samples, pcts)
+                    animal_spread[i] = hi - lo
+
+                v0 = animal_spread[group_data[group_keys[0]]]
+                v1 = animal_spread[group_data[group_keys[1]]]
+                v0 = v0[np.isfinite(v0)]
+                v1 = v1[np.isfinite(v1)]
+
+                if v0.size < 2 or v1.size < 2:
+                    continue
+
+                diff, lo_d, hi_d = _bootstrap_diff_ci(
+                    v0, v1, n_boot=n_boot, seed=li * 100 + si
+                )
+                delta[si, li] = diff
+                sig[si, li]   = not (lo_d <= 0 <= hi_d)
+
+        delta_sig = np.where(sig, delta, np.nan)
+
+        result[m] = {
+            "locations": locations,
+            "segments":  seg_names,
+            "delta":     delta,
+            "sig":       sig,
+            "delta_sig": delta_sig,
+            "group_keys": group_keys,
+        }
+
+    return result
+
+
+def _plot_spread_matrix_single(
+    res: dict,
+    metric_label: str,
+    grouping_label: str,
+    save_path: "str | Path | None" = None,
+) -> "plt.Figure":
+    """
+    Plot 3 heatmaps for a single spread metric:
+      Row 1 — Δ (all values, divergent, * overlaid where significant)
+      Row 2 — * / ns  (binary)
+      Row 3 — Δ masked  (NaN where ns)
+
+    Parameters
+    ----------
+    res            : one metric entry from compute_spread_matrix output
+    metric_label   : display string, e.g. "q95 − q05"
+    grouping_label : used in suptitle
+    save_path      : if given, save figure there
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    row_titles = [
+        "Δ (all values)",
+        "Significance  (* = bootstrap CI excludes 0)",
+        "Δ masked  (only significant cells)",
+    ]
+
+    locations = res["locations"]
+    segments  = res["segments"]
+    delta     = res["delta"]
+    sig       = res["sig"].astype(float)
+    delta_sig = res["delta_sig"]
+    gk        = res["group_keys"]
+
+    vmax = np.nanmax(np.abs(delta))
+    vmax = vmax if np.isfinite(vmax) else 1.0
+
+    n_loc = len(locations)
+    n_seg = len(segments)
+    fig_w = max(14, n_loc * 0.35)
+
+    fig, axes = plt.subplots(
+        3, 1,
+        figsize=(fig_w, 3.5 * 3),
+        gridspec_kw={"hspace": 0.6},
+    )
+
+    for ri, (data, title_row) in enumerate(zip(
+        [delta, sig, delta_sig], row_titles
+    )):
+        ax = axes[ri]
+
+        if ri == 0 or ri == 2:
+            cmap     = plt.cm.RdBu_r
+            norm     = mcolors.TwoSlopeNorm(vcenter=0, vmin=-vmax, vmax=vmax)
+            im       = ax.imshow(data, aspect="auto", cmap=cmap, norm=norm,
+                                 interpolation="nearest")
+            label_cb = f"Δ  ({gk[0]} − {gk[1]})"
+        else:
+            cmap     = mcolors.ListedColormap(["#EEEEEE", "#1A237E"])
+            im       = ax.imshow(data, aspect="auto", cmap=cmap, vmin=0, vmax=1,
+                                 interpolation="nearest")
+            label_cb = "* (1) / ns (0)"
+
+        # Colorbar
+        divider = make_axes_locatable(ax)
+        cax     = divider.append_axes("right", size="1.5%", pad=0.08)
+        cb      = fig.colorbar(im, cax=cax)
+        cb.ax.tick_params(labelsize=7)
+        cb.set_label(label_cb, fontsize=7)
+
+        # Axes
+        ax.set_yticks(np.arange(n_seg))
+        ax.set_yticklabels(segments, fontsize=8)
+        ax.set_xticks(np.arange(n_loc))
+        ax.set_xticklabels(locations, rotation=45, ha="right", fontsize=6.5)
+        ax.set_title(f"{metric_label}  —  {title_row}",
+                     fontsize=9, fontweight="bold", pad=4)
+
+        # Vertical separator before 'all' (last column)
+        ax.axvline(n_loc - 1.5, color="white", linewidth=2, zorder=5)
+        ax.text(n_loc - 1, n_seg - 0.45, "all",
+                ha="center", va="top", fontsize=6,
+                color="white", fontweight="bold")
+
+        # Stars on Δ panel
+        if ri == 0:
+            for si_r in range(n_seg):
+                for li_c in range(n_loc):
+                    if res["sig"][si_r, li_c]:
+                        ax.text(li_c, si_r, "*", ha="center", va="center",
+                                fontsize=9, color="white", fontweight="bold")
+
+    fig.suptitle(
+        f"Speed spread — {metric_label}  |  {grouping_label}",
+        fontsize=12, fontweight="bold", y=1.01,
+    )
+
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
+def plot_spread_matrices(
+    spread_result: dict,
+    grouping_label: str = "genotype",
+    save_dir: "str | Path | None" = None,
+    save_prefix: str = "spread_matrices",
+) -> "dict[str, plt.Figure]":
+    """
+    Generate one figure per metric (3 heatmaps each).
+
+    Parameters
+    ----------
+    spread_result  : output of compute_spread_matrix
+    grouping_label : used in titles
+    save_dir       : directory where figures are saved (one file per metric)
+    save_prefix    : filename prefix, e.g. "spread_matrices_genotype"
+
+    Returns
+    -------
+    figs : {metric_key: Figure}
+    """
+    metric_labels = {
+        "q95q05": "q95 − q05",
+        "q99q01": "q99 − q01",
+    }
+
+    figs = {}
+    for m, res in spread_result.items():
+        label = metric_labels.get(m, m)
+        save_path = None
+        if save_dir is not None:
+            save_path = Path(save_dir) / f"{save_prefix}_{m}.png"
+
+        fig = _plot_spread_matrix_single(
+            res=res,
+            metric_label=label,
+            grouping_label=grouping_label,
+            save_path=save_path,
+        )
+        figs[m] = fig
+
+    return figs
+
+
+# =============================================================================
+# ALL-PAIRS SPREAD MATRIX  (one Δ-masked row per pair, one figure per grouping)
+# =============================================================================
+
+def compute_spread_matrix_all_pairs(
+    speeds_all: list,
+    speeds_per_region: "dict[str, list]",
+    group_data: dict,
+    ranges: dict,
+    metric: str = "q95q05",
+    n_boot: int = 5000,
+    ci: float = 95.0,
+) -> dict:
+    """
+    Compute Δ-masked spread for every pairwise combination of groups.
+
+    Parameters
+    ----------
+    speeds_all        : speeds[window][animal] for 'all' subset
+    speeds_per_region : {region_descriptor: speeds list}
+    group_data        : {group_label: array of animal indices}  — any number of groups
+    ranges            : {segment_name: range of window indices}
+    metric            : "q95q05" or "q99q01"
+    n_boot            : bootstrap resamples
+    ci                : CI level in percent
+
+    Returns
+    -------
+    result : dict with keys:
+        "pairs"         : list of (gk0, gk1) tuples
+        "locations"     : list of location names (regions + "all")
+        "segments"      : list of segment names
+        "delta_masked"  : ndarray (n_pairs, n_segments, n_locations)
+                          NaN where ns or where data insufficient
+        "sig"           : ndarray bool (n_pairs, n_segments, n_locations)
+    """
+    from itertools import combinations
+
+    pct_map     = {"q95q05": [5, 95], "q99q01": [1, 99]}
+    min_samples = {"q95q05": 10,      "q99q01": 20}
+
+    pcts  = pct_map[metric]
+    min_s = min_samples[metric]
+
+    group_keys = list(group_data.keys())
+    seg_names  = list(ranges.keys())
+    pairs      = list(combinations(group_keys, 2))
+
+    region_names = list(speeds_per_region.keys())
+    locations    = region_names + ["all"]
+    speeds_map   = {r: speeds_per_region[r] for r in region_names}
+    speeds_map["all"] = speeds_all
+
+    n_pairs = len(pairs)
+    n_seg   = len(seg_names)
+    n_loc   = len(locations)
+
+    rng   = np.random.default_rng(42)
+    alpha = (100 - ci) / 2
+
+    delta_masked = np.full((n_pairs, n_seg, n_loc), np.nan)
+    sig          = np.zeros((n_pairs, n_seg, n_loc), dtype=bool)
+
+    for li, loc in enumerate(locations):
+        speeds    = speeds_map[loc]
+        n_animals = len(speeds[0])
+
+        # Pre-compute pooled spread per animal for this location
+        animal_spread = np.full(n_animals, np.nan)
+
+        for si, (seg, w_range) in enumerate(ranges.items()):
+            for i in range(n_animals):
+                samples = np.concatenate([
+                    np.ravel(speeds[w][i])
+                    for w in w_range
+                    if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
+                ]) if len(w_range) > 0 else np.array([])
+                if samples.size < min_s:
+                    continue
+                lo, hi = np.percentile(samples, pcts)
+                animal_spread[i] = hi - lo
+
+            for pi, (gk0, gk1) in enumerate(pairs):
+                v0 = animal_spread[group_data[gk0]]
+                v1 = animal_spread[group_data[gk1]]
+                v0 = v0[np.isfinite(v0)]
+                v1 = v1[np.isfinite(v1)]
+
+                if v0.size < 2 or v1.size < 2:
+                    continue
+
+                diff, lo_d, hi_d = _bootstrap_diff_ci(
+                    v0, v1, n_boot=n_boot, seed=li * 1000 + si * 100 + pi
+                )
+                is_sig = not (lo_d <= 0 <= hi_d)
+                sig[pi, si, li]          = is_sig
+                delta_masked[pi, si, li] = diff if is_sig else np.nan
+
+    return {
+        "pairs":        pairs,
+        "locations":    locations,
+        "segments":     seg_names,
+        "delta_masked": delta_masked,
+        "sig":          sig,
+        "metric":       metric,
+    }
+
+
+def plot_spread_matrix_all_pairs(
+    result: dict,
+    grouping_label: str = "grouping",
+    save_path: "str | Path | None" = None,
+) -> "plt.Figure":
+    """
+    One figure per grouping: one row of Δ-masked heatmap per pair.
+
+    Layout: n_pairs rows × 1 column.
+    Each row: heatmap (segments × locations), color = Δ masked (NaN where ns).
+
+    Parameters
+    ----------
+    result         : output of compute_spread_matrix_all_pairs
+    grouping_label : used in title
+    save_path      : if given, save figure there
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    pairs        = result["pairs"]
+    locations    = result["locations"]
+    segments     = result["segments"]
+    delta_masked = result["delta_masked"]   # (n_pairs, n_seg, n_loc)
+    metric       = result["metric"]
+
+    metric_label = {"q95q05": "q95 − q05", "q99q01": "q99 − q01"}.get(metric, metric)
+
+    n_pairs = len(pairs)
+    n_loc   = len(locations)
+    n_seg   = len(segments)
+
+    # Shared symmetric color scale across all pairs
+    vmax = np.nanmax(np.abs(delta_masked))
+    vmax = vmax if np.isfinite(vmax) else 1.0
+
+    fig_h = max(3.0 * n_pairs, 6)
+    fig_w = max(14, n_loc * 0.35)
+
+    fig, axes = plt.subplots(
+        n_pairs, 1,
+        figsize=(fig_w, fig_h),
+        gridspec_kw={"hspace": 0.7},
+    )
+    if n_pairs == 1:
+        axes = [axes]
+
+    cmap = plt.cm.RdBu_r
+    norm = mcolors.TwoSlopeNorm(vcenter=0, vmin=-vmax, vmax=vmax)
+
+    for pi, (ax, (gk0, gk1)) in enumerate(zip(axes, pairs)):
+        data = delta_masked[pi]   # (n_seg, n_loc)
+
+        im = ax.imshow(data, aspect="auto", cmap=cmap, norm=norm,
+                       interpolation="nearest")
+
+        # Colorbar
+        divider = make_axes_locatable(ax)
+        cax     = divider.append_axes("right", size="1.5%", pad=0.08)
+        cb      = fig.colorbar(im, cax=cax)
+        cb.ax.tick_params(labelsize=7)
+        cb.set_label(f"Δ ({gk0} − {gk1})", fontsize=7)
+
+        # Axes
+        ax.set_yticks(np.arange(n_seg))
+        ax.set_yticklabels(segments, fontsize=8)
+        ax.set_xticks(np.arange(n_loc))
+        ax.set_xticklabels(locations, rotation=45, ha="right", fontsize=6.5)
+        ax.set_title(f"{gk0}  vs  {gk1}",
+                     fontsize=8, fontweight="bold", pad=3)
+
+        # Vertical separator before 'all'
+        ax.axvline(n_loc - 1.5, color="white", linewidth=2, zorder=5)
+
+        # Grey overlay for NaN cells (ns)
+        for si in range(n_seg):
+            for li in range(n_loc):
+                if np.isnan(data[si, li]):
+                    ax.add_patch(plt.Rectangle(
+                        (li - 0.5, si - 0.5), 1, 1,
+                        color="#DDDDDD", zorder=2,
+                    ))
+
+    fig.suptitle(
+        f"Δ masked — {metric_label}  |  {grouping_label}  (grey = ns)",
+        fontsize=11, fontweight="bold", y=1.002,
+    )
+
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
