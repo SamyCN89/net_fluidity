@@ -11,8 +11,8 @@ from tracemalloc import start
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+import seaborn as sns
 
-from scripts.mc.FP7c_fdr_by_contrast import ALPHA
 
 # ---------------------------------------------------------------------------
 # Ensure repo root is on sys.path so both packages are importable
@@ -381,8 +381,8 @@ speed_split = dfc_speed_split(
 print("speed_split shape:", speed_split.shape)
 #%%#plot the speed_split to visualize the data
 plt.figure(figsize=(10, 6))
-for i in range(speed_split.shape[0]):
-    plt.plot(speed_split[i], marker="o", label=f"tau={i}")
+for i, tau in enumerate(TAU_RANGE):
+    plt.plot(speed_split[i], marker="o", label=f"tau={tau}")
 plt.title("Speeds from dfc_speed_split")
 plt.xlabel("Time Steps")
 plt.ylabel("Speed")
@@ -392,12 +392,12 @@ plt.show()
 
 # plot the histogram of speed_split to visualize the distribution
 plt.figure(figsize=(10, 6))
-for i in range(speed_split.shape[0]):
+for i, tau in enumerate(TAU_RANGE):
     plt.hist(
         speed_split[i],
         bins=20,
         alpha=0.5,
-        label=f"tau={i}",
+        label=f"tau={tau}",
         histtype="step",
         linewidth=3,
         density=True,
@@ -411,13 +411,13 @@ plt.show()
 
 # plot kde of speed_split to visualize the distribution
 plt.figure(figsize=(10, 6))
-for i in range(speed_split.shape[0]):
+for i, tau in enumerate(TAU_RANGE):
     sns.kdeplot(
         speed_split[i],
         bw_adjust=0.3,
         common_norm=True,
         # cumulative=True,
-        label=f"tau={i}",
+        label=f"tau={tau}",
         fill=False,
         linewidth=3,
     )
