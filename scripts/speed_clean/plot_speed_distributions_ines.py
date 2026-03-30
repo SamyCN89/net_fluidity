@@ -105,7 +105,7 @@ GROUPS_LIST = [
 # ── Toggle sections ───────────────────────────────────────────────────────────
 
 RUN_QUANTILE_TENSOR = True  # ya existe
-RUN_QC_PLOTS = True  # ya existe
+RUN_QC_PLOTS = False  # ya existe
 RUN_GROUP_DISTS = True  # group mean distributions
 RUN_CI_BANDS = True  # bootstrapped CI bands
 RUN_AGE_CONTRASTS = True  # 4M - 2M contrast (only groupings containing "age")

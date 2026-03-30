@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 dfc_speed_lib.py
 ================
@@ -74,13 +73,13 @@ Public API (all importable):
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from glob import glob
+import hashlib
+import json
 from pathlib import Path
+import re
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -94,6 +93,7 @@ except Exception:  # pragma: no cover
 
 try:
     from joblib import Memory
+
     _joblib_available = True
 except ImportError:
     _joblib_available = False
@@ -101,6 +101,7 @@ except ImportError:
 try:
     import statsmodels.formula.api as smf
     from statsmodels.stats.multitest import multipletests
+
     _statsmodels_available = True
 except ImportError:
     _statsmodels_available = False
@@ -116,21 +117,21 @@ RNG_SEED = 123
 # ---------------------------------------------------------------------------
 
 GROUP_RECIPES_INES: dict[str, list[str]] = {
-    "sex":                  ["Sexe"],
-    "age":                  ["Age"],
-    "genotype":             ["Genotype"],
-    "phenotype_oip":        ["Phenotype_OiP"],
-    "phenotype_nor":        ["Phenotype_RO24h"],
-    "age_sex":              ["Age", "Sexe"],
-    "age_genotype":         ["Age", "Genotype"],
-    "age_phenotype_oip":    ["Age", "Phenotype_OiP"],
-    "age_phenotype_nor":    ["Age", "Phenotype_RO24h"],
-    "sex_genotype":         ["Sexe", "Genotype"],
-    "sex_phenotype_oip":    ["Sexe", "Phenotype_OiP"],
-    "sex_phenotype_nor":    ["Sexe", "Phenotype_RO24h"],
-    "age_sex_genotype":     ["Sexe", "Age", "Genotype"],
-    "age_sex_phenotype_oip":["Sexe", "Age", "Phenotype_OiP"],
-    "age_sex_phenotype_nor":["Sexe", "Age", "Phenotype_RO24h"],
+    "sex": ["Sexe"],
+    "age": ["Age"],
+    "genotype": ["Genotype"],
+    "phenotype_oip": ["Phenotype_OiP"],
+    "phenotype_nor": ["Phenotype_RO24h"],
+    "age_sex": ["Age", "Sexe"],
+    "age_genotype": ["Age", "Genotype"],
+    "age_phenotype_oip": ["Age", "Phenotype_OiP"],
+    "age_phenotype_nor": ["Age", "Phenotype_RO24h"],
+    "sex_genotype": ["Sexe", "Genotype"],
+    "sex_phenotype_oip": ["Sexe", "Phenotype_OiP"],
+    "sex_phenotype_nor": ["Sexe", "Phenotype_RO24h"],
+    "age_sex_genotype": ["Sexe", "Age", "Genotype"],
+    "age_sex_phenotype_oip": ["Sexe", "Age", "Phenotype_OiP"],
+    "age_sex_phenotype_nor": ["Sexe", "Age", "Phenotype_RO24h"],
 }
 
 GROUP_RECIPES_JULIEN: dict[str, list[str]] = {
@@ -138,7 +139,7 @@ GROUP_RECIPES_JULIEN: dict[str, list[str]] = {
 }
 
 GROUP_RECIPES: dict[str, dict[str, list[str]]] = {
-    "ines":   GROUP_RECIPES_INES,
+    "ines": GROUP_RECIPES_INES,
     "julien": GROUP_RECIPES_JULIEN,
 }
 
@@ -156,16 +157,29 @@ PRIMARY_METRICS: list[str] = [
 # Standard speed subsets
 SPEED_SUBSETS: list[str] = [
     "all",
-    "dmn_touching", "1st_touching", "2nd_touching", "3rd_touching",
-    "4th_touching",  "lat_touching", "mem_touching", "sal_touching",
-    "dmn_within",   "1st_within",   "2nd_within",   "3rd_within",
-    "4th_within",   "lat_within",   "mem_within",   "sal_within",
+    "dmn_touching",
+    "1st_touching",
+    "2nd_touching",
+    "3rd_touching",
+    "4th_touching",
+    "lat_touching",
+    "mem_touching",
+    "sal_touching",
+    "dmn_within",
+    "1st_within",
+    "2nd_within",
+    "3rd_within",
+    "4th_within",
+    "lat_within",
+    "mem_within",
+    "sal_within",
 ]
 
 
 # =============================================================================
 # CACHING HELPERS
 # =============================================================================
+
 
 def configure_cache(cache_dir: str | Path) -> None:
     """Enable joblib caching for bootstrap_spearman to the given directory."""
@@ -186,6 +200,7 @@ def make_cache_key(config: dict) -> str:
 # =============================================================================
 # I/O
 # =============================================================================
+
 
 def load_speed_stack(
     template: str,
@@ -219,9 +234,7 @@ def load_speed_stack(
         s = arr["speeds"]
         s_flat = [np.asarray(x, dtype=float).ravel() for x in s]
         if len(s_flat) != n_animals:
-            raise ValueError(
-                f"{fp}: expected {n_animals} animals, got {len(s_flat)}"
-            )
+            raise ValueError(f"{fp}: expected {n_animals} animals, got {len(s_flat)}")
         speeds.append(s_flat)
     return speeds
 
@@ -284,7 +297,9 @@ def discover_per_region_subset_labels(bootstrap_folder: Path) -> list[str]:
     the corresponding subset labels (e.g. ['per_region_region-AI', ...]).
     """
     labels: set[str] = set()
-    for p in bootstrap_folder.glob("bootstrap_downsample_repeat_subset_per_region_region-*_group_*.pkl"):
+    for p in bootstrap_folder.glob(
+        "bootstrap_downsample_repeat_subset_per_region_region-*_group_*.pkl"
+    ):
         m = re.search(r"subset_(per_region_region-[^_]+)_group_", p.name)
         if m:
             labels.add(m.group(1))
@@ -295,7 +310,8 @@ def discover_per_region_subset_labels(bootstrap_folder: Path) -> list[str]:
 # GROUPING HELPERS
 # =============================================================================
 
-def make_long_cog(cog_data: "pd.DataFrame", dataset_name: str) -> "pd.DataFrame":
+
+def make_long_cog(cog_data: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
     """
     Standardise cognitive data to a long-form DataFrame.
 
@@ -341,7 +357,7 @@ def make_long_cog(cog_data: "pd.DataFrame", dataset_name: str) -> "pd.DataFrame"
 
 
 def group_indices(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     by: Sequence[str],
 ) -> dict:
     """
@@ -356,7 +372,7 @@ def group_indices(
 
 
 def get_group_data(
-    cog_data: "pd.DataFrame",
+    cog_data: pd.DataFrame,
     dataset_name: str,
     groups_selected: str,
 ) -> dict:
@@ -373,13 +389,16 @@ def get_group_data(
     df_long = make_long_cog(cog_data, dataset_name)
     missing = [c for c in cols if c not in df_long.columns]
     if missing:
-        raise ValueError(f"Grouping {groups_selected!r} needs missing columns: {missing}")
+        raise ValueError(
+            f"Grouping {groups_selected!r} needs missing columns: {missing}"
+        )
     return group_indices(df_long, cols)
 
 
 # =============================================================================
 # WINDOWING / POOLING
 # =============================================================================
+
 
 def count_samples_per_window(speeds: list) -> np.ndarray:
     """Total number of speed samples per time window (across all animals)."""
@@ -397,8 +416,8 @@ def cdf_split_indices(speeds: list) -> tuple[int, int, int]:
     else:
         cdf = np.zeros_like(counts, dtype=float)
 
-    i_third     = max(1, int(np.searchsorted(cdf, 1 / 3)))
-    i_half      = max(1, int(np.searchsorted(cdf, 0.5)))
+    i_third = max(1, int(np.searchsorted(cdf, 1 / 3)))
+    i_half = max(1, int(np.searchsorted(cdf, 0.5)))
     i_two_third = max(i_third + 1, int(np.searchsorted(cdf, 2 / 3)))
     return i_third, i_half, i_two_third
 
@@ -421,8 +440,8 @@ def select_windows(
         return {"short": range(i_half), "long": range(i_half, n_windows)}
     return {
         "short": range(i_third),
-        "mid":   range(i_third, i_two_third),
-        "long":  range(i_two_third, n_windows),
+        "mid": range(i_third, i_two_third),
+        "long": range(i_two_third, n_windows),
     }
 
 
@@ -433,9 +452,7 @@ def flatten_windows(
 ) -> np.ndarray:
     """Concatenate all speed samples across windows [start, end) and all animals."""
     arrays = [
-        np.asarray(s, dtype=float).ravel()
-        for win in speeds[start:end]
-        for s in win
+        np.asarray(s, dtype=float).ravel() for win in speeds[start:end] for s in win
     ]
     return np.concatenate(arrays) if arrays else np.empty(0, dtype=float)
 
@@ -473,6 +490,7 @@ def pool_speeds_per_animal(
 
 # ── Histogram helpers for bootstrap distribution plots ────────────────────────
 
+
 def build_per_animal_normalized_hists(
     speeds: list[list[np.ndarray]],
     w_range: range,
@@ -499,11 +517,17 @@ def build_per_animal_normalized_hists(
     n_animals = len(speeds[0])
     H = np.zeros((n_animals, bins), dtype=float)
     for i in range(n_animals):
-        data = np.concatenate([
-            np.ravel(speeds[j][i])
-            for j in w_range
-            if j < len(speeds) and len(speeds[j][i]) > 0
-        ]) if any(j < len(speeds) for j in w_range) else np.array([])
+        data = (
+            np.concatenate(
+                [
+                    np.ravel(speeds[j][i])
+                    for j in w_range
+                    if j < len(speeds) and len(speeds[j][i]) > 0
+                ]
+            )
+            if any(j < len(speeds) for j in w_range)
+            else np.array([])
+        )
         if data.size == 0:
             continue
         h, _ = np.histogram(data, bins=bins, range=speed_range)
@@ -579,18 +603,20 @@ def get_group_animals_over_windows(
 # METRICS
 # =============================================================================
 
+
 @dataclass
 class SpeedMetrics:
     """Per-animal dFC speed distribution metrics."""
+
     q01: float
     q05: float
     q50: float
     q90: float
     q95: float
     q99: float
-    width50: float         # q95 - q05
-    width_extreme: float   # q99 - q01
-    asymmetry: float       # (q95 - q50) - (q50 - q05)
+    width50: float  # q95 - q05
+    width_extreme: float  # q99 - q01
+    asymmetry: float  # (q95 - q50) - (q50 - q05)
 
 
 def compute_speed_metrics(samples: np.ndarray) -> SpeedMetrics:
@@ -599,7 +625,12 @@ def compute_speed_metrics(samples: np.ndarray) -> SpeedMetrics:
         samples[np.isfinite(samples)], [1, 5, 50, 90, 95, 99]
     )
     return SpeedMetrics(
-        q01=q01, q05=q05, q50=q50, q90=q90, q95=q95, q99=q99,
+        q01=q01,
+        q05=q05,
+        q50=q50,
+        q90=q90,
+        q95=q95,
+        q99=q99,
         width50=q95 - q05,
         width_extreme=q99 - q01,
         asymmetry=(q95 - q50) - (q50 - q05),
@@ -611,15 +642,15 @@ def _infer_animal_group_labels(
     n_animals: int,
 ) -> tuple[list[str], list[str | None], list[str | None]]:
     group_labels: list[str | None] = [None] * n_animals
-    genotypes:    list[str | None] = [None] * n_animals
-    treatments:   list[str | None] = [None] * n_animals
+    genotypes: list[str | None] = [None] * n_animals
+    treatments: list[str | None] = [None] * n_animals
 
     for gkey, idxs in group_data.items():
         label = "_".join(map(str, gkey)) if isinstance(gkey, tuple) else str(gkey)
         for i in idxs:
             group_labels[i] = label
             if isinstance(gkey, tuple) and len(gkey) == 2:
-                genotypes[i]  = str(gkey[0])
+                genotypes[i] = str(gkey[0])
                 treatments[i] = str(gkey[1])
 
     for i in range(n_animals):
@@ -635,7 +666,7 @@ def build_subset_metrics_df(
     nor_index: np.ndarray,
     group_data: dict,
     window_indices: Sequence[int] | None = None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """
     Build a tidy DataFrame of per-animal speed metrics for one subset.
 
@@ -653,30 +684,34 @@ def build_subset_metrics_df(
     pooled = pool_speeds_per_animal(speeds, window_indices)
     n_animals = len(pooled)
 
-    group_labels, genotypes, treatments = _infer_animal_group_labels(group_data, n_animals)
+    group_labels, genotypes, treatments = _infer_animal_group_labels(
+        group_data, n_animals
+    )
 
     rows = []
     for i, samples in enumerate(pooled):
         if samples.size == 0:
             continue
         m = compute_speed_metrics(samples)
-        rows.append({
-            "animal_id":           i,
-            "group":               group_labels[i],
-            "genotype":            genotypes[i],
-            "treatment":           treatments[i],
-            "subset":              subset_name,
-            "nor":                 float(nor_index[i]),
-            "speed_q01":           m.q01,
-            "speed_q05":           m.q05,
-            "speed_median":        m.q50,
-            "speed_q90":           m.q90,
-            "speed_q95":           m.q95,
-            "speed_q99":           m.q99,
-            "speed_width50":       m.width50,
-            "speed_width_extreme": m.width_extreme,
-            "speed_asymmetry":     m.asymmetry,
-        })
+        rows.append(
+            {
+                "animal_id": i,
+                "group": group_labels[i],
+                "genotype": genotypes[i],
+                "treatment": treatments[i],
+                "subset": subset_name,
+                "nor": float(nor_index[i]),
+                "speed_q01": m.q01,
+                "speed_q05": m.q05,
+                "speed_median": m.q50,
+                "speed_q90": m.q90,
+                "speed_q95": m.q95,
+                "speed_q99": m.q99,
+                "speed_width50": m.width50,
+                "speed_width_extreme": m.width_extreme,
+                "speed_asymmetry": m.asymmetry,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -686,7 +721,7 @@ def compute_subset_metrics_with_segments(
     nor_index: np.ndarray,
     group_data: dict,
     pool_split: str = "third",
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """
     Compute per-animal metrics for one subset, splitting windows into
     short / mid / long (or all / half) segments.
@@ -722,7 +757,7 @@ def build_metrics_with_segments(
     nor_index: np.ndarray,
     group_data: dict,
     pool_split: str = "third",
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Build a combined tidy DataFrame across all subsets and window segments."""
     if pd is None:
         raise ImportError("pandas is required")
@@ -744,7 +779,7 @@ def build_metrics_with_segments(
     return pd.concat(dfs, ignore_index=True)
 
 
-def add_subset_segment_columns(df: "pd.DataFrame") -> "pd.DataFrame":
+def add_subset_segment_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Derive 'subset_base' and 'segment' columns from 'subset' labels
     like 'sal_within__short'. If no '__', segment='all'.
@@ -752,13 +787,14 @@ def add_subset_segment_columns(df: "pd.DataFrame") -> "pd.DataFrame":
     """
     parts = df["subset"].str.rsplit("__", n=1, expand=True)
     df["subset_base"] = parts.iloc[:, 0]
-    df["segment"]     = parts.iloc[:, 1].fillna("all") if parts.shape[1] > 1 else "all"
+    df["segment"] = parts.iloc[:, 1].fillna("all") if parts.shape[1] > 1 else "all"
     return df
 
 
 # =============================================================================
 # STATISTICS
 # =============================================================================
+
 
 def _bootstrap_spearman_pure(
     x: np.ndarray,
@@ -777,11 +813,11 @@ def _bootstrap_spearman_pure(
         boot_rhos[b], _ = spearmanr(x[idx], y[idx])
     lo, hi = np.percentile(boot_rhos, [ci_low, ci_high])
     return {
-        "rho":           float(rho_obs),
-        "p_value":       float(p_obs),
+        "rho": float(rho_obs),
+        "p_value": float(p_obs),
         "rho_boot_mean": float(boot_rhos.mean()),
-        "ci_low":        float(lo),
-        "ci_high":       float(hi),
+        "ci_low": float(lo),
+        "ci_high": float(hi),
     }
 
 
@@ -807,18 +843,22 @@ def bootstrap_spearman(
         func = _bootstrap_spearman_pure
 
     return func(
-        np.asarray(x, float), np.asarray(y, float),
-        int(n_boot), float(ci[0]), float(ci[1]), random_state,
+        np.asarray(x, float),
+        np.asarray(y, float),
+        int(n_boot),
+        float(ci[0]),
+        float(ci[1]),
+        random_state,
     )
 
 
 def compute_within_group_correlations(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     subset: str,
     metrics: Sequence[str] = ("speed_median", "speed_q95"),
     n_boot: int = 2000,
     random_state: int | None = RNG_SEED,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """
     Spearman ρ + bootstrapped 95% CI for NOR vs each metric, within each group.
 
@@ -839,13 +879,20 @@ def compute_within_group_correlations(
                 continue
             x = dfg[metric].to_numpy()
             stats = bootstrap_spearman(x, y, n_boot=n_boot, random_state=random_state)
-            results.append({"subset": subset, "group": group, "metric": metric,
-                             "n": len(dfg), **stats})
+            results.append(
+                {
+                    "subset": subset,
+                    "group": group,
+                    "metric": metric,
+                    "n": len(dfg),
+                    **stats,
+                }
+            )
     return pd.DataFrame(results)
 
 
 def fit_speed_nor_interaction(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     subset: str,
     metric: str = "speed_q95",
     ref_group: str = "WT_VEH",
@@ -867,15 +914,16 @@ def fit_speed_nor_interaction(
     if df_sub.empty:
         raise ValueError(f"No rows for subset={subset!r}")
 
-    df_sub["group"] = pd.Categorical(df_sub["group"],
-                                      categories=sorted(df_sub["group"].unique()))
+    df_sub["group"] = pd.Categorical(
+        df_sub["group"], categories=sorted(df_sub["group"].unique())
+    )
     formula = f"nor ~ {metric} * C(group, Treatment(reference='{ref_group}'))"
     model = smf.ols(formula, data=df_sub).fit()
 
-    params  = model.params
-    cov     = model.cov_params()
+    params = model.params
+    cov = model.cov_params()
     df_resid = model.df_resid
-    groups  = list(df_sub["group"].cat.categories)
+    groups = list(df_sub["group"].cat.categories)
 
     rows = []
     for g in groups:
@@ -887,23 +935,35 @@ def fit_speed_nor_interaction(
                 L[params.index.get_loc(key)] = 1.0
 
         slope = float(L @ params.to_numpy())
-        var   = float(L @ cov.to_numpy() @ L)
-        se    = float(np.sqrt(max(var, 0.0)))
+        var = float(L @ cov.to_numpy() @ L)
+        se = float(np.sqrt(max(var, 0.0)))
         t_val = slope / se if se > 0 else np.nan
-        p_val = float(2 * student_t.sf(abs(t_val), df_resid)) if np.isfinite(t_val) else np.nan
+        p_val = (
+            float(2 * student_t.sf(abs(t_val), df_resid))
+            if np.isfinite(t_val)
+            else np.nan
+        )
 
-        rows.append({
-            "subset": subset, "metric": metric, "group": g, "ref_group": ref_group,
-            "slope": slope, "se": se,
-            "ci_low": slope - 1.96 * se, "ci_high": slope + 1.96 * se,
-            "p_value": p_val, "df_resid": df_resid,
-        })
+        rows.append(
+            {
+                "subset": subset,
+                "metric": metric,
+                "group": g,
+                "ref_group": ref_group,
+                "slope": slope,
+                "se": se,
+                "ci_low": slope - 1.96 * se,
+                "ci_high": slope + 1.96 * se,
+                "p_value": p_val,
+                "df_resid": df_resid,
+            }
+        )
 
     return model, pd.DataFrame(rows)
 
 
 def fit_segment_group_interaction(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     subset_base: str,
     metric: str = "speed_q95",
     ref_group: str = "WT_VEH",
@@ -926,8 +986,12 @@ def fit_segment_group_interaction(
     if df_sub.empty:
         raise ValueError(f"No rows for subset_base={subset_base!r}")
 
-    df_sub["group"]   = pd.Categorical(df_sub["group"],   categories=sorted(df_sub["group"].unique()))
-    df_sub["segment"] = pd.Categorical(df_sub["segment"], categories=sorted(df_sub["segment"].unique()))
+    df_sub["group"] = pd.Categorical(
+        df_sub["group"], categories=sorted(df_sub["group"].unique())
+    )
+    df_sub["segment"] = pd.Categorical(
+        df_sub["segment"], categories=sorted(df_sub["segment"].unique())
+    )
 
     formula = (
         f"nor ~ {metric} * "
@@ -938,11 +1002,11 @@ def fit_segment_group_interaction(
 
 
 def leave_one_out_slopes(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     subset: str,
     metric: str = "speed_q95",
     ref_group: str = "WT_VEH",
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """
     LOO robustness: drop each animal in turn, refit NOR ~ metric * group,
     return per-group slopes for each leave-one-out iteration.
@@ -958,22 +1022,32 @@ def leave_one_out_slopes(
     for aid in sorted(df_sub["animal_id"].unique()):
         _, slopes_df = fit_speed_nor_interaction(
             df_sub[df_sub["animal_id"] != aid],
-            subset=subset, metric=metric, ref_group=ref_group,
+            subset=subset,
+            metric=metric,
+            ref_group=ref_group,
         )
         for _, r in slopes_df.iterrows():
-            rows.append({"subset": subset, "metric": metric,
-                         "group": r["group"], "animal_id": aid,
-                         "slope": r["slope"], "se": r["se"],
-                         "ci_low": r["ci_low"], "ci_high": r["ci_high"]})
+            rows.append(
+                {
+                    "subset": subset,
+                    "metric": metric,
+                    "group": r["group"],
+                    "animal_id": aid,
+                    "slope": r["slope"],
+                    "se": r["se"],
+                    "ci_low": r["ci_low"],
+                    "ci_high": r["ci_high"],
+                }
+            )
     return pd.DataFrame(rows)
 
 
 def leave_one_out_slopes_all(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     metrics: Sequence[str] = PRIMARY_METRICS,
     ref_group: str = "WT_VEH",
     subsets: Sequence[str] | None = None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Run leave_one_out_slopes for all subset × metric combinations."""
     if pd is None:
         raise ImportError("pandas is required")
@@ -989,10 +1063,12 @@ def leave_one_out_slopes_all(
             if metric not in df.columns:
                 continue
             print(f"[LOO] {subset} / {metric}")
-            loo = leave_one_out_slopes(df, subset=subset, metric=metric, ref_group=ref_group)
+            loo = leave_one_out_slopes(
+                df, subset=subset, metric=metric, ref_group=ref_group
+            )
             parts = subset.rsplit("__", 1)
             loo["subset_base"] = parts[0]
-            loo["segment"]     = parts[1] if len(parts) > 1 else "all"
+            loo["segment"] = parts[1] if len(parts) > 1 else "all"
             dfs.append(loo)
 
     if not dfs:
@@ -1001,11 +1077,11 @@ def leave_one_out_slopes_all(
 
 
 def summarize_segment_group_models(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     metrics: Sequence[str] = PRIMARY_METRICS,
     ref_group: str = "WT_VEH",
     ref_segment: str = "mid",
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """
     For each subset_base × metric, fit the 3-way interaction model and
     extract model fit statistics + minimum p-values for key contrasts.
@@ -1025,8 +1101,11 @@ def summarize_segment_group_models(
                 continue
             try:
                 model = fit_segment_group_interaction(
-                    df, subset_base=subset_base, metric=metric,
-                    ref_group=ref_group, ref_segment=ref_segment,
+                    df,
+                    subset_base=subset_base,
+                    metric=metric,
+                    ref_group=ref_group,
+                    ref_segment=ref_segment,
                 )
             except ValueError as e:
                 print(f"[WARN] {subset_base} / {metric}: {e}")
@@ -1035,26 +1114,37 @@ def summarize_segment_group_models(
             pvals = model.pvalues
 
             def _min_p(prefix: str, must_contain: str | None = None) -> float:
-                ps = [pvals[n] for n in pvals.index
-                      if n.startswith(prefix)
-                      and (must_contain is None or must_contain in n)]
+                ps = [
+                    pvals[n]
+                    for n in pvals.index
+                    if n.startswith(prefix)
+                    and (must_contain is None or must_contain in n)
+                ]
                 return float(np.min(ps)) if ps else np.nan
 
-            rows.append({
-                "subset_base":               subset_base,
-                "metric":                    metric,
-                "n":                         int(model.nobs),
-                "rsq":                       float(model.rsquared),
-                "rsq_adj":                   float(model.rsquared_adj),
-                "fvalue":                    float(model.fvalue) if model.fvalue is not None else np.nan,
-                "f_pvalue":                  float(model.f_pvalue) if model.f_pvalue is not None else np.nan,
-                "p_metric":                  float(pvals.get(metric, np.nan)),
-                "p_metric_group_min":        _min_p(f"{metric}:C(group"),
-                "p_metric_segment_min":      _min_p(f"{metric}:C(segment"),
-                "p_metric_group_segment_min":_min_p(f"{metric}:C(group", must_contain="C(segment"),
-                "ref_group":                 ref_group,
-                "ref_segment":               ref_segment,
-            })
+            rows.append(
+                {
+                    "subset_base": subset_base,
+                    "metric": metric,
+                    "n": int(model.nobs),
+                    "rsq": float(model.rsquared),
+                    "rsq_adj": float(model.rsquared_adj),
+                    "fvalue": (
+                        float(model.fvalue) if model.fvalue is not None else np.nan
+                    ),
+                    "f_pvalue": (
+                        float(model.f_pvalue) if model.f_pvalue is not None else np.nan
+                    ),
+                    "p_metric": float(pvals.get(metric, np.nan)),
+                    "p_metric_group_min": _min_p(f"{metric}:C(group"),
+                    "p_metric_segment_min": _min_p(f"{metric}:C(segment"),
+                    "p_metric_group_segment_min": _min_p(
+                        f"{metric}:C(group", must_contain="C(segment"
+                    ),
+                    "ref_group": ref_group,
+                    "ref_segment": ref_segment,
+                }
+            )
 
     if not rows:
         raise ValueError("No segment×group models could be fitted.")
@@ -1062,10 +1152,10 @@ def summarize_segment_group_models(
 
 
 def build_effect_summary(
-    corr_summary: "pd.DataFrame",
-    slopes_summary: "pd.DataFrame",
-    loo_all: "pd.DataFrame",
-) -> "pd.DataFrame":
+    corr_summary: pd.DataFrame,
+    slopes_summary: pd.DataFrame,
+    loo_all: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Merge within-group correlations, group slopes, and LOO robustness into a
     single ranked summary per (subset_base, segment, metric, group).
@@ -1079,7 +1169,7 @@ def build_effect_summary(
 
     # Ensure q_value / signif columns exist
     for df_part in (corr_summary, slopes_summary):
-        df_part.setdefault("q_value",      np.nan)
+        df_part.setdefault("q_value", np.nan)
         df_part.setdefault("signif_fdr_05", False)
 
     # LOO: aggregate per (subset, metric, group)
@@ -1102,13 +1192,19 @@ def build_effect_summary(
     key_cols = ["subset_base", "segment", "metric", "group"]
     merged = (
         corr_summary[key_cols + ["rho_boot_mean", "q_value", "signif_fdr_05"]]
-        .rename(columns={"rho_boot_mean": "corr_rho_boot",
-                         "q_value": "corr_q",
-                         "signif_fdr_05": "corr_signif"})
+        .rename(
+            columns={
+                "rho_boot_mean": "corr_rho_boot",
+                "q_value": "corr_q",
+                "signif_fdr_05": "corr_signif",
+            }
+        )
         .merge(
-            slopes_summary[key_cols + ["slope", "q_value", "signif_fdr_05"]]
-            .rename(columns={"q_value": "slope_q", "signif_fdr_05": "slope_signif"}),
-            on=key_cols, how="outer",
+            slopes_summary[key_cols + ["slope", "q_value", "signif_fdr_05"]].rename(
+                columns={"q_value": "slope_q", "signif_fdr_05": "slope_signif"}
+            ),
+            on=key_cols,
+            how="outer",
         )
         .merge(loo_agg, on=key_cols, how="left")
     )
@@ -1122,10 +1218,10 @@ def build_effect_summary(
 
 
 def get_top_effects(
-    effect_summary: "pd.DataFrame",
+    effect_summary: pd.DataFrame,
     n: int = 10,
     min_loo_same_sign: float = 0.0,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """
     Return the top-n rows from effect_summary ranked by score,
     optionally filtered by minimum LOO same-sign rate.
@@ -1139,6 +1235,7 @@ def get_top_effects(
 # =============================================================================
 # DOWNSAMPLING BOOTSTRAP  (Inès dataset — CI bands over full distribution)
 # =============================================================================
+
 
 def _downsample_once(
     x: np.ndarray,
@@ -1159,7 +1256,7 @@ def _one_downsample_repeat(
     data: np.ndarray,
     q: np.ndarray,
     downsample_n: int | None,
-    seed_seq: "np.random.SeedSequence",
+    seed_seq: np.random.SeedSequence,
 ) -> np.ndarray:
     """One repeat: optional downsample then compute percentiles q."""
     rng = np.random.default_rng(seed_seq)
@@ -1208,6 +1305,7 @@ def bootstrap_downsampling_repeat(
     """
     try:
         from joblib import Parallel, delayed as jdelayed
+
         _joblib = True
     except ImportError:
         _joblib = False
@@ -1226,10 +1324,12 @@ def bootstrap_downsampling_repeat(
             for i in range(repeat)
         )
     else:
-        rows = [_one_downsample_repeat(data, q, downsample_n, child_ss[i])
-                for i in range(repeat)]
+        rows = [
+            _one_downsample_repeat(data, q, downsample_n, child_ss[i])
+            for i in range(repeat)
+        ]
 
-    ci_matrix = np.vstack(rows)                                  # (repeat, K)
+    ci_matrix = np.vstack(rows)  # (repeat, K)
     ci_low, ci_high = np.percentile(ci_matrix, [0, 100], axis=0)
     return ci_low, ci_high, ci_matrix
 
@@ -1276,32 +1376,37 @@ def compute_bootstrap_ci_bands(
 
     q = np.asarray(percentiles, dtype=float).ravel()
 
-    ci_low_repeat: dict  = {}
+    ci_low_repeat: dict = {}
     ci_high_repeat: dict = {}
     ci_matrix_dict: dict = {}
 
     base_ss = np.random.SeedSequence(None if seed is None else int(seed))
     pair_list = [(seg, gt) for seg in ranges for gt in group_data]
-    child_ss  = iter(base_ss.spawn(len(pair_list)))
+    child_ss = iter(base_ss.spawn(len(pair_list)))
 
     for seg_name in ranges:
-        ci_low_seg:    dict = {}
-        ci_high_seg:   dict = {}
+        ci_low_seg: dict = {}
+        ci_high_seg: dict = {}
         ci_matrix_seg: dict = {}
 
         for gt in group_data:
-            if seg_name not in pooled_group_speed_by_segment or \
-               gt not in pooled_group_speed_by_segment[seg_name]:
+            if (
+                seg_name not in pooled_group_speed_by_segment
+                or gt not in pooled_group_speed_by_segment[seg_name]
+            ):
                 raise KeyError(
                     f"Missing pooled speed data for segment='{seg_name}', group='{gt}'"
                 )
 
             data = np.ravel(pooled_group_speed_by_segment[seg_name][gt])
-            ds_n = max(1, int(data.size // downsample_factor)) \
-                   if (downsample_factor and downsample_factor > 1) else None
+            ds_n = (
+                max(1, int(data.size // downsample_factor))
+                if (downsample_factor and downsample_factor > 1)
+                else None
+            )
 
-            ss   = next(child_ss)
-            t0   = _time.time()
+            ss = next(child_ss)
+            t0 = _time.time()
             lo, hi, mat = bootstrap_downsampling_repeat(
                 data=data,
                 percentiles=q,
@@ -1317,11 +1422,11 @@ def compute_bootstrap_ci_bands(
                     f"repeats={repeat}  {_time.time()-t0:.1f}s"
                 )
 
-            ci_low_seg[gt]    = lo
-            ci_high_seg[gt]   = hi
+            ci_low_seg[gt] = lo
+            ci_high_seg[gt] = hi
             ci_matrix_seg[gt] = mat
 
-        ci_low_repeat[seg_name]  = ci_low_seg
+        ci_low_repeat[seg_name] = ci_low_seg
         ci_high_repeat[seg_name] = ci_high_seg
         ci_matrix_dict[seg_name] = ci_matrix_seg
 
@@ -1332,6 +1437,7 @@ def compute_bootstrap_ci_bands(
 # WINDOW × PERCENTILE CORRELATION ANALYSIS
 # =============================================================================
 
+
 def compute_window_nor_correlations(
     speeds_by_subset: dict,
     nor_index: np.ndarray,
@@ -1339,7 +1445,7 @@ def compute_window_nor_correlations(
     time_windows_range: np.ndarray,
     ranges: dict[str, range],
     q_grid: np.ndarray | None = None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """
     For every subset × window × percentile × group, compute Spearman and Pearson
     correlation between the per-animal speed percentile value and NOR.
@@ -1377,8 +1483,6 @@ def compute_window_nor_correlations(
     if pd is None:
         raise ImportError("pandas required")
 
-    from scipy.stats import pearsonr
-
     if q_grid is None:
         q_grid = np.array([1, 5, 25, 50, 75, 95, 99], dtype=float)
 
@@ -1401,8 +1505,15 @@ def compute_window_nor_correlations(
                 x = q_vals[:, qi]
 
                 # All-animals row (group = '__ALL__')
-                _append_cor_row(rows, roi=roi, window=int(win_size), q=q_val,
-                                group="__ALL__", x=x, y=nor_index)
+                _append_cor_row(
+                    rows,
+                    roi=roi,
+                    window=int(win_size),
+                    q=q_val,
+                    group="__ALL__",
+                    x=x,
+                    y=nor_index,
+                )
 
                 # Per-group rows
                 for grp, idxs in group_data.items():
@@ -1410,37 +1521,62 @@ def compute_window_nor_correlations(
                     mask = idxs[idxs < n_animals]
                     if len(mask) < 3:
                         continue
-                    _append_cor_row(rows, roi=roi, window=int(win_size), q=q_val,
-                                    group=_pretty_label(grp),
-                                    x=x[mask], y=nor_index[mask])
+                    _append_cor_row(
+                        rows,
+                        roi=roi,
+                        window=int(win_size),
+                        q=q_val,
+                        group=_pretty_label(grp),
+                        x=x[mask],
+                        y=nor_index[mask],
+                    )
 
         # ── Pooled (segment) rows ────────────────────────────────────────────
         for seg_name, seg_range in ranges.items():
             # Pool all speed samples across windows in segment, per animal
             q_vals_seg = np.full((n_animals, len(q_grid)), np.nan)
             for i in range(n_animals):
-                pooled = np.concatenate([
-                    speeds[j][i]
-                    for j in seg_range
-                    if j < n_windows and speeds[j][i].size > 0
-                ]) if any(j < n_windows for j in seg_range) else np.array([])
+                pooled = (
+                    np.concatenate(
+                        [
+                            speeds[j][i]
+                            for j in seg_range
+                            if j < n_windows and speeds[j][i].size > 0
+                        ]
+                    )
+                    if any(j < n_windows for j in seg_range)
+                    else np.array([])
+                )
                 if pooled.size >= 3:
                     q_vals_seg[i, :] = np.percentile(pooled, q_grid)
 
             for qi, q_val in enumerate(q_grid):
                 x = q_vals_seg[:, qi]
 
-                _append_cor_row(rows, roi=roi, window=seg_name, q=q_val,
-                                group="__ALL__", x=x, y=nor_index)
+                _append_cor_row(
+                    rows,
+                    roi=roi,
+                    window=seg_name,
+                    q=q_val,
+                    group="__ALL__",
+                    x=x,
+                    y=nor_index,
+                )
 
                 for grp, idxs in group_data.items():
                     idxs = np.asarray(idxs, dtype=int)
                     mask = idxs[idxs < n_animals]
                     if len(mask) < 3:
                         continue
-                    _append_cor_row(rows, roi=roi, window=seg_name, q=q_val,
-                                    group=_pretty_label(grp),
-                                    x=x[mask], y=nor_index[mask])
+                    _append_cor_row(
+                        rows,
+                        roi=roi,
+                        window=seg_name,
+                        q=q_val,
+                        group=_pretty_label(grp),
+                        x=x[mask],
+                        y=nor_index[mask],
+                    )
 
     return pd.DataFrame(rows)
 
@@ -1462,27 +1598,41 @@ def _append_cor_row(
     n = int(valid.sum())
 
     if n < 3:
-        rows.append({
-            "roi": roi, "window": window, "q": q, "group": group,
-            "n": n,
-            "spearman_rho": np.nan, "spearman_p": np.nan,
-            "pearson_r":    np.nan, "pearson_p":  np.nan,
-        })
+        rows.append(
+            {
+                "roi": roi,
+                "window": window,
+                "q": q,
+                "group": group,
+                "n": n,
+                "spearman_rho": np.nan,
+                "spearman_p": np.nan,
+                "pearson_r": np.nan,
+                "pearson_p": np.nan,
+            }
+        )
         return
 
     sp_rho, sp_p = spearmanr(xv, yv)
-    pe_r,   pe_p = pearsonr(xv, yv)
+    pe_r, pe_p = pearsonr(xv, yv)
 
-    rows.append({
-        "roi": roi, "window": window, "q": q, "group": group,
-        "n": n,
-        "spearman_rho": float(sp_rho), "spearman_p": float(sp_p),
-        "pearson_r":    float(pe_r),   "pearson_p":  float(pe_p),
-    })
+    rows.append(
+        {
+            "roi": roi,
+            "window": window,
+            "q": q,
+            "group": group,
+            "n": n,
+            "spearman_rho": float(sp_rho),
+            "spearman_p": float(sp_p),
+            "pearson_r": float(pe_r),
+            "pearson_p": float(pe_p),
+        }
+    )
 
 
 def plot_window_nor_correlations(
-    df_cor: "pd.DataFrame",
+    df_cor: pd.DataFrame,
     metric: str = "spearman",
     alpha: float = 0.05,
     fdr: bool = True,
@@ -1518,7 +1668,7 @@ def plot_window_nor_correlations(
         raise ImportError("pandas required")
 
     rho_col = "spearman_rho" if metric == "spearman" else "pearson_r"
-    p_col   = "spearman_p"   if metric == "spearman" else "pearson_p"
+    p_col = "spearman_p" if metric == "spearman" else "pearson_p"
 
     def _fdr_bh(pvals: np.ndarray) -> np.ndarray:
         """Benjamini-Hochberg FDR correction."""
@@ -1542,13 +1692,26 @@ def plot_window_nor_correlations(
 
     prop_cycle = plt.rcParams.get("axes.prop_cycle", None)
     BASE_COLORS = (
-        prop_cycle.by_key()["color"] if prop_cycle is not None
-        else ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
-              "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf"]
+        prop_cycle.by_key()["color"]
+        if prop_cycle is not None
+        else [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",
+            "#bcbd22",
+            "#17becf",
+        ]
     )
 
     def _color_map(keys):
-        return {k: BASE_COLORS[i % len(BASE_COLORS)] for i, k in enumerate(sorted(keys))}
+        return {
+            k: BASE_COLORS[i % len(BASE_COLORS)] for i, k in enumerate(sorted(keys))
+        }
 
     seg_order = ["short", "mid", "long", "all"]
 
@@ -1558,12 +1721,12 @@ def plot_window_nor_correlations(
 
     for roi, df_roi in df_cor.groupby("roi"):
         qs = sorted(df_roi["q"].unique())
-        color_q     = _color_map(qs)
-        groups_all  = sorted(df_roi[df_roi["group"] != "__ALL__"]["group"].unique())
+        color_q = _color_map(qs)
+        groups_all = sorted(df_roi[df_roi["group"] != "__ALL__"]["group"].unique())
         color_group = _color_map(groups_all) if groups_all else {}
 
-        df_bywin   = df_roi[~df_roi["_is_pooled"]]
-        df_pooled  = df_roi[df_roi["_is_pooled"]]
+        df_bywin = df_roi[~df_roi["_is_pooled"]]
+        df_pooled = df_roi[df_roi["_is_pooled"]]
 
         # ── Figure 1: by-window, all animals ─────────────────────────────────
         df_all = df_bywin[df_bywin["group"] == "__ALL__"]
@@ -1572,30 +1735,39 @@ def plot_window_nor_correlations(
             ax.set_title(f"{roi} | {metric.capitalize()} vs window")
 
             # Collect all p-values for FDR across this ROI
-            all_p   = df_all[p_col].to_numpy()
+            all_p = df_all[p_col].to_numpy()
             all_adj = _fdr_bh(all_p) if fdr else all_p
-            df_all  = df_all.copy()
+            df_all = df_all.copy()
             df_all["_p_adj"] = all_adj
 
             for q_val in qs:
                 sub = df_all[df_all["q"] == q_val].sort_values("window")
-                wins  = sub["window"].to_numpy()
+                wins = sub["window"].to_numpy()
                 corrs = sub[rho_col].to_numpy()
-                padj  = sub["_p_adj"].to_numpy()
+                padj = sub["_p_adj"].to_numpy()
                 color = color_q[q_val]
                 ax.plot(wins, corrs, color=color, label=f"q{int(q_val)}")
                 sig = np.isfinite(padj) & (padj <= alpha)
-                ax.scatter(wins[sig],  corrs[sig],  color=color, s=18, zorder=3)
-                ax.scatter(wins[~sig], corrs[~sig], color=color, s=18,
-                           facecolors="none", zorder=3)
+                ax.scatter(wins[sig], corrs[sig], color=color, s=18, zorder=3)
+                ax.scatter(
+                    wins[~sig],
+                    corrs[~sig],
+                    color=color,
+                    s=18,
+                    facecolors="none",
+                    zorder=3,
+                )
             ax.axhline(0, color="k", lw=0.8, alpha=0.4)
             ax.set_xlabel("Window size (TRs)")
             ax.set_ylabel(f"{metric.capitalize()} ρ")
             ax.legend(title="Percentile", loc="best", fontsize=7)
             fig.tight_layout()
             if save_dir:
-                fig.savefig(save_dir / f"cor_bywin_{roi}_{metric}.png",
-                            dpi=150, bbox_inches="tight")
+                fig.savefig(
+                    save_dir / f"cor_bywin_{roi}_{metric}.png",
+                    dpi=150,
+                    bbox_inches="tight",
+                )
             plt.close(fig)
 
         # ── Figure 2: pooled (short/mid/long) ────────────────────────────────
@@ -1607,19 +1779,31 @@ def plot_window_nor_correlations(
             ax.set_title(f"{roi} | {metric.capitalize()} pooled segments")
             for q_val in qs:
                 sub_q = df_pool_all[df_pool_all["q"] == q_val]
-                corrs = [sub_q[sub_q["window"] == p][rho_col].values[0]
-                         if p in sub_q["window"].values else np.nan
-                         for p in pools_present]
-                padj  = _fdr_bh(sub_q[p_col].to_numpy()) if fdr \
-                        else sub_q[p_col].to_numpy()
-                sig   = [np.isfinite(v) and v <= alpha for v in padj]
+                corrs = [
+                    (
+                        sub_q[sub_q["window"] == p][rho_col].values[0]
+                        if p in sub_q["window"].values
+                        else np.nan
+                    )
+                    for p in pools_present
+                ]
+                padj = (
+                    _fdr_bh(sub_q[p_col].to_numpy()) if fdr else sub_q[p_col].to_numpy()
+                )
+                sig = [np.isfinite(v) and v <= alpha for v in padj]
                 color = color_q[q_val]
                 ax.plot(x_pos, corrs, "o-", color=color, label=f"q{int(q_val)}")
-                for xi, yi, s in zip(x_pos, corrs, sig):
+                for xi, yi, s in zip(x_pos, corrs, sig, strict=False):
                     if not np.isfinite(yi):
                         continue
-                    ax.scatter([xi], [yi], color=color, s=30,
-                               facecolors=(color if s else "none"), zorder=3)
+                    ax.scatter(
+                        [xi],
+                        [yi],
+                        color=color,
+                        s=30,
+                        facecolors=(color if s else "none"),
+                        zorder=3,
+                    )
             ax.axhline(0, color="k", lw=0.8, alpha=0.4)
             ax.set_xticks(x_pos, pools_present)
             ax.set_xlabel("Segment")
@@ -1627,26 +1811,29 @@ def plot_window_nor_correlations(
             ax.legend(title="Percentile", loc="best", fontsize=7)
             fig.tight_layout()
             if save_dir:
-                fig.savefig(save_dir / f"cor_pooled_{roi}_{metric}.png",
-                            dpi=150, bbox_inches="tight")
+                fig.savefig(
+                    save_dir / f"cor_pooled_{roi}_{metric}.png",
+                    dpi=150,
+                    bbox_inches="tight",
+                )
             plt.close(fig)
 
         # ── Figure 3: group grid (one subplot per percentile) ─────────────────
         df_grp = df_bywin[df_bywin["group"] != "__ALL__"]
         if not df_grp.empty and groups_all:
-            n_q   = len(qs)
-            cols  = max(1, grid_cols)
+            n_q = len(qs)
+            cols = max(1, grid_cols)
             rows_n = int(np.ceil(n_q / cols))
-            fig, axes = plt.subplots(rows_n, cols,
-                                     figsize=(5 * cols, 3.8 * rows_n),
-                                     squeeze=False)
+            fig, axes = plt.subplots(
+                rows_n, cols, figsize=(5 * cols, 3.8 * rows_n), squeeze=False
+            )
             for qi_idx, q_val in enumerate(qs):
                 r, c = divmod(qi_idx, cols)
                 ax = axes[r, c]
                 sub_q = df_grp[df_grp["q"] == q_val]
                 # FDR across all groups × windows for this quantile
                 if fdr:
-                    all_p_q  = sub_q[p_col].to_numpy()
+                    all_p_q = sub_q[p_col].to_numpy()
                     all_adj_q = _fdr_bh(all_p_q)
                     sub_q = sub_q.copy()
                     sub_q["_p_adj"] = all_adj_q
@@ -1658,15 +1845,21 @@ def plot_window_nor_correlations(
                     sg = sub_q[sub_q["group"] == grp].sort_values("window")
                     if sg.empty:
                         continue
-                    wins  = sg["window"].to_numpy()
+                    wins = sg["window"].to_numpy()
                     corrs = sg[rho_col].to_numpy()
-                    padj  = sg["_p_adj"].to_numpy()
+                    padj = sg["_p_adj"].to_numpy()
                     color = color_group.get(grp, BASE_COLORS[0])
                     ax.plot(wins, corrs, color=color, label=str(grp))
                     sig = np.isfinite(padj) & (padj <= alpha)
-                    ax.scatter(wins[sig],  corrs[sig],  color=color, s=14, zorder=3)
-                    ax.scatter(wins[~sig], corrs[~sig], color=color, s=14,
-                               facecolors="none", zorder=3)
+                    ax.scatter(wins[sig], corrs[sig], color=color, s=14, zorder=3)
+                    ax.scatter(
+                        wins[~sig],
+                        corrs[~sig],
+                        color=color,
+                        s=14,
+                        facecolors="none",
+                        zorder=3,
+                    )
                 ax.axhline(0, color="k", lw=0.8, alpha=0.4)
                 ax.set_title(f"q{int(q_val)}", fontsize=9)
                 ax.set_xlabel("Window (TRs)", fontsize=8)
@@ -1680,19 +1873,24 @@ def plot_window_nor_correlations(
             # Shared legend
             handles, labels = axes[0, 0].get_legend_handles_labels()
             if handles:
-                fig.legend(handles, labels, loc="upper right",
-                           title="Group", fontsize=7)
+                fig.legend(
+                    handles, labels, loc="upper right", title="Group", fontsize=7
+                )
             fig.suptitle(f"{roi} | {metric.capitalize()} vs window (by group)")
             fig.tight_layout(rect=[0, 0, 0.97, 0.95])
             if save_dir:
-                fig.savefig(save_dir / f"cor_bywin_group_{roi}_{metric}.png",
-                            dpi=150, bbox_inches="tight")
+                fig.savefig(
+                    save_dir / f"cor_bywin_group_{roi}_{metric}.png",
+                    dpi=150,
+                    bbox_inches="tight",
+                )
             plt.close(fig)
 
 
 # =============================================================================
 # QUANTILE TENSOR
 # =============================================================================
+
 
 def _safe_percentiles(x: np.ndarray, q_grid: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=float).ravel()
@@ -1711,7 +1909,7 @@ def compute_quantile_tensor(
 
     Q[i, j, k] = speed value at percentile q_grid[k] for session i at window j.
     """
-    n_windows  = len(speeds)
+    n_windows = len(speeds)
     n_sessions = len(speeds[0])
     Q = np.full((n_sessions, n_windows, len(q_grid)), np.nan, dtype=np.float32)
     for j in range(n_windows):
@@ -1732,13 +1930,15 @@ def save_quantile_npz(
 ) -> None:
     """Save quantile tensor + metadata to a compressed NPZ file."""
     payload: dict[str, Any] = {
-        "Q":                  Q.astype(np.float32),
-        "q_grid":             q_grid.astype(np.float32),
+        "Q": Q.astype(np.float32),
+        "q_grid": q_grid.astype(np.float32),
         "time_windows_range": time_windows_range.astype(np.int32),
-        "session_name":       session_name.astype(str),
+        "session_name": session_name.astype(str),
     }
-    if genotype  is not None: payload["genotype"]  = genotype.astype(str)
-    if treatment is not None: payload["treatment"] = treatment.astype(str)
+    if genotype is not None:
+        payload["genotype"] = genotype.astype(str)
+    if treatment is not None:
+        payload["treatment"] = treatment.astype(str)
     if extra:
         payload.update(extra)
     np.savez_compressed(outpath, **payload)
@@ -1753,8 +1953,16 @@ _TAB20 = plt.cm.tab20(np.linspace(0, 1, 20))
 _TAB10 = plt.cm.tab10.colors
 
 AGE_CONTRAST_PALETTE = [
-    "tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple",
-    "tab:brown", "tab:pink", "tab:gray", "tab:olive", "tab:cyan",
+    "tab:blue",
+    "tab:orange",
+    "tab:green",
+    "tab:red",
+    "tab:purple",
+    "tab:brown",
+    "tab:pink",
+    "tab:gray",
+    "tab:olive",
+    "tab:cyan",
 ]
 
 
@@ -1772,9 +1980,7 @@ def _age_contrast_label(gt_4m) -> str:
     return " | ".join(parts) if parts else "all"
 
 
-def _make_age_contrast_color_map(
-    group_keys, groups_selected: str
-) -> dict[str, str]:
+def _make_age_contrast_color_map(group_keys, groups_selected: str) -> dict[str, str]:
     """Map each non-age label to a fixed color from AGE_CONTRAST_PALETTE."""
     example = next(iter(group_keys))
     if groups_selected == "age" and isinstance(example, str):
@@ -1786,8 +1992,10 @@ def _make_age_contrast_color_map(
         lbl = _age_contrast_label(k)
         if lbl not in labels:
             labels.append(lbl)
-    return {lbl: AGE_CONTRAST_PALETTE[i % len(AGE_CONTRAST_PALETTE)]
-            for i, lbl in enumerate(labels)}
+    return {
+        lbl: AGE_CONTRAST_PALETTE[i % len(AGE_CONTRAST_PALETTE)]
+        for i, lbl in enumerate(labels)
+    }
 
 
 def plot_group_speed_distributions(
@@ -1819,11 +2027,16 @@ def plot_group_speed_distributions(
         means = group_means.get(seg, {})
 
         for scale_row, (ax, use_log) in enumerate(
-            zip(axes[:, col], [False, True])
+            zip(axes[:, col], [False, True], strict=False)
         ):
             for gt, hist in means.items():
-                ax.plot(centers, hist, lw=1.2, alpha=0.8,
-                        label=_pretty_label(gt) if not scale_row else None)
+                ax.plot(
+                    centers,
+                    hist,
+                    lw=1.2,
+                    alpha=0.8,
+                    label=_pretty_label(gt) if not scale_row else None,
+                )
 
             ax.set_xlabel("Speed")
             ax.set_ylabel("Density" + (" (log)" if use_log else ""))
@@ -1834,20 +2047,23 @@ def plot_group_speed_distributions(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(
-        dict(zip(labels, handles)).values(),
-        dict(zip(labels, handles)).keys(),
+        dict(zip(labels, handles, strict=False)).values(),
+        dict(zip(labels, handles, strict=False)).keys(),
         title=groups_selected,
-        loc="center left", bbox_to_anchor=(0.92, 0.5),
-        fontsize=10, frameon=False,
+        loc="center left",
+        bbox_to_anchor=(0.92, 0.5),
+        fontsize=10,
+        frameon=False,
     )
     plt.tight_layout(rect=[0, 0, 0.88, 1])
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"[OK] Saved distribution figure → {save_path}")
     return fig
 
 
 def plot_ci_bands(
-    ci_low: dict,   # seg_name → {group_key: ndarray}
+    ci_low: dict,  # seg_name → {group_key: ndarray}
     ci_high: dict,
     percentiles_: np.ndarray,
     seg_names: list[str],
@@ -1866,13 +2082,15 @@ def plot_ci_bands(
     plt.rcParams["axes.prop_cycle"] = plt.cycler(color=_TAB20)
 
     handles_all: list = []
-    labels_all:  list = []
+    labels_all: list = []
 
     for col, seg in enumerate(seg_names):
         lo = ci_low.get(seg, {})
         hi = ci_high.get(seg, {})
 
-        for scale_row, (ax, use_log) in enumerate(zip(axes[:, col], [False, True])):
+        for scale_row, (ax, use_log) in enumerate(
+            zip(axes[:, col], [False, True], strict=False)
+        ):
             ax.set_title(f"{seg} ({'log' if use_log else 'linear'})")
             ax.set_xlabel("Percentiles")
             ax.set_ylabel("Speed" + (" (log)" if use_log else ""))
@@ -1882,27 +2100,35 @@ def plot_ci_bands(
 
             for gt in lo:
                 band = ax.fill_between(
-                    percentiles_, lo[gt], hi[gt],
-                    alpha=0.6, label=_pretty_label(gt),
+                    percentiles_,
+                    lo[gt],
+                    hi[gt],
+                    alpha=0.6,
+                    label=_pretty_label(gt),
                 )
                 if not scale_row:
                     handles_all.append(band)
                     labels_all.append(_pretty_label(gt))
 
-    uniq = dict(zip(labels_all, handles_all))
+    uniq = dict(zip(labels_all, handles_all, strict=False))
     fig.legend(
-        uniq.values(), uniq.keys(),
-        title=groups_selected, loc="center left", bbox_to_anchor=(0.92, 0.5),
-        fontsize=10, frameon=False,
+        uniq.values(),
+        uniq.keys(),
+        title=groups_selected,
+        loc="center left",
+        bbox_to_anchor=(0.92, 0.5),
+        fontsize=10,
+        frameon=False,
     )
     plt.tight_layout(rect=[0, 0, 0.88, 1])
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"[OK] Saved CI bands figure → {save_path}")
     return fig
 
 
 def plot_age_contrasts(
-    ci_low: dict,   # seg_name → {group_key: ndarray}
+    ci_low: dict,  # seg_name → {group_key: ndarray}
     ci_high: dict,
     percentiles_: np.ndarray,
     seg_names: list[str],
@@ -1915,14 +2141,13 @@ def plot_age_contrasts(
     Each non-age sub-group gets its own color from AGE_CONTRAST_PALETTE.
     """
     n_seg = len(seg_names)
-    fig, axes = plt.subplots(1, n_seg, figsize=(6 * n_seg, 5),
-                              sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, n_seg, figsize=(6 * n_seg, 5), sharex=True, sharey=True)
     if n_seg == 1:
         axes = [axes]
 
     color_map = _make_age_contrast_color_map(group_data.keys(), groups_selected)
 
-    for ax, seg in zip(axes, seg_names):
+    for ax, seg in zip(axes, seg_names, strict=False):
         lo = ci_low.get(seg, {})
         hi = ci_high.get(seg, {})
 
@@ -1948,11 +2173,12 @@ def plot_age_contrasts(
                     continue
                 diff_lo = lo[gt] - hi[gt_2m]
                 diff_hi = hi[gt] - lo[gt_2m]
-                label   = _age_contrast_label(gt)
-                color   = color_map.get(label, "gray")
+                label = _age_contrast_label(gt)
+                color = color_map.get(label, "gray")
 
-            ax.fill_between(percentiles_, diff_lo, diff_hi,
-                            alpha=0.45, color=color, label=label)
+            ax.fill_between(
+                percentiles_, diff_lo, diff_hi, alpha=0.45, color=color, label=label
+            )
             ax.axhline(0, color="black", lw=0.8)
 
         ax.set_title(seg)
@@ -1965,6 +2191,7 @@ def plot_age_contrasts(
     plt.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"[OK] Saved age contrast figure → {save_path}")
     return fig
 
 
@@ -1987,8 +2214,7 @@ def _flatten_animal_entry(entry) -> np.ndarray:
             # Already a numeric array — just flatten
             return entry.ravel().astype(float)
         # Object array: each element is a numeric array (one per window)
-        parts = [np.asarray(entry[j], dtype=float).ravel()
-                 for j in range(entry.size)]
+        parts = [np.asarray(entry[j], dtype=float).ravel() for j in range(entry.size)]
         return np.concatenate(parts) if parts else np.empty(0, dtype=float)
 
     # Plain Python list/tuple of arrays (fallback)
@@ -2019,7 +2245,9 @@ def plot_per_animal_histograms(
             # Structure: tuple(1,) -> ndarray(n_animals, n_windows, dtype=object)
             # Unwrap the outer tuple
             if isinstance(speeds_entry, (tuple, list)) and len(speeds_entry) == 1:
-                animal_matrix = speeds_entry[0]  # shape (n_animals, n_windows), dtype=object
+                animal_matrix = speeds_entry[
+                    0
+                ]  # shape (n_animals, n_windows), dtype=object
             else:
                 animal_matrix = speeds_entry
 
@@ -2058,6 +2286,7 @@ def plot_per_animal_histograms(
             if save_dir:
                 gt_str = str(gt).translate(str.maketrans("", "", "(),'\" "))
                 fig.savefig(save_dir / f"animal_histograms_{seg}_{gt_str}.png", dpi=200)
+                print(f"[OK] Saved per-animal histograms figure → {save_dir / f'animal_histograms_{seg}_{gt_str}.png'}")
             plt.close(fig)
 
 
@@ -2096,7 +2325,7 @@ def plot_qc_3panel(
             flat = np.concatenate([speeds[j][i].ravel() for i in idxs])
             flat = flat[np.isfinite(flat)]
             ps = np.percentile(flat, qs) if flat.size else [np.nan] * 3
-            for q, p in zip(qs, ps):
+            for q, p in zip(qs, ps, strict=False):
                 qdict[q].append(p)
         pct_tracks[gt] = {q: np.array(v) for q, v in qdict.items()}
 
@@ -2109,9 +2338,13 @@ def plot_qc_3panel(
     for gt, idxs in group_data.items():
         col = colors[gt]
         for i in idxs:
-            axA.plot(time_windows_range,
-                     [animal_means[j][i] for j in range(n_windows)],
-                     color=col, alpha=0.25, lw=1.0)
+            axA.plot(
+                time_windows_range,
+                [animal_means[j][i] for j in range(n_windows)],
+                color=col,
+                alpha=0.25,
+                lw=1.0,
+            )
     axA.set_title("Per-animal mean speed vs window")
     axA.set_xlabel("Window size (TR)")
     axA.set_ylabel("Mean dFC speed")
@@ -2119,8 +2352,15 @@ def plot_qc_3panel(
 
     # Panel B: pooled median
     for gt, qd in pct_tracks.items():
-        axB.plot(time_windows_range, qd[50], "o-", ms=2, lw=1.5,
-                 color=colors[gt], label=_pretty_label(gt))
+        axB.plot(
+            time_windows_range,
+            qd[50],
+            "o-",
+            ms=2,
+            lw=1.5,
+            color=colors[gt],
+            label=_pretty_label(gt),
+        )
     axB.set_title("Pooled median dFC speed vs window")
     axB.set_xlabel("Window size (TR)")
     axB.set_ylabel("Median dFC speed")
@@ -2128,8 +2368,15 @@ def plot_qc_3panel(
 
     # Panel C: spread
     for gt, qd in pct_tracks.items():
-        axC.plot(time_windows_range, qd[99] - qd[1], "o-", ms=2, lw=1.5,
-                 color=colors[gt], label=_pretty_label(gt))
+        axC.plot(
+            time_windows_range,
+            qd[99] - qd[1],
+            "o-",
+            ms=2,
+            lw=1.5,
+            color=colors[gt],
+            label=_pretty_label(gt),
+        )
     axC.set_title("Spread (99th−1st pct) vs window")
     axC.set_xlabel("Window size (TR)")
     axC.set_ylabel("Distribution width")
@@ -2140,20 +2387,24 @@ def plot_qc_3panel(
     plt.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        print(f"[OK] Saved QC figure → {save_path}")
     return fig
 
 
 def _p_to_star(p: float) -> str:
     if not np.isfinite(p):
         return ""
-    if p < 0.001: return "***"
-    if p < 0.01:  return "**"
-    if p < 0.05:  return "*"
+    if p < 0.001:
+        return "***"
+    if p < 0.01:
+        return "**"
+    if p < 0.05:
+        return "*"
     return ""
 
 
 def plot_nor_vs_metric_by_group(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     subset: str,
     metric: str = "speed_q95",
     model=None,
@@ -2178,12 +2429,14 @@ def plot_nor_vs_metric_by_group(
     cmap = plt.cm.get_cmap("tab10", len(groups))
     for i, g in enumerate(groups):
         dfg = df_sub[df_sub["group"] == g]
-        ax.scatter(dfg[metric], dfg["nor"],
-                   label=g, alpha=0.8, color=cmap(i), edgecolor="none")
+        ax.scatter(
+            dfg[metric], dfg["nor"], label=g, alpha=0.8, color=cmap(i), edgecolor="none"
+        )
 
     if model is None and _statsmodels_available:
-        model, _ = fit_speed_nor_interaction(df, subset=subset,
-                                              metric=metric, ref_group="WT_VEH")
+        model, _ = fit_speed_nor_interaction(
+            df, subset=subset, metric=metric, ref_group="WT_VEH"
+        )
 
     if model is not None:
         xs = np.linspace(df_sub[metric].min(), df_sub[metric].max(), 100)
@@ -2200,7 +2453,7 @@ def plot_nor_vs_metric_by_group(
 
 
 def plot_group_slopes(
-    slopes_df: "pd.DataFrame",
+    slopes_df: pd.DataFrame,
     subset: str,
     metric: str = "speed_q95",
     ax: plt.Axes | None = None,
@@ -2222,19 +2475,20 @@ def plot_group_slopes(
         return fig, ax
 
     groups = df_sub["group"].tolist()
-    x   = np.arange(len(groups))
-    y   = df_sub["slope"].to_numpy()
-    lo  = df_sub["ci_low"].to_numpy()
-    hi  = df_sub["ci_high"].to_numpy()
+    x = np.arange(len(groups))
+    y = df_sub["slope"].to_numpy()
+    lo = df_sub["ci_low"].to_numpy()
+    hi = df_sub["ci_high"].to_numpy()
 
-    ax.errorbar(x, y, yerr=np.vstack([y - lo, hi - y]),
-                fmt="o", capsize=3, linestyle="none")
+    ax.errorbar(
+        x, y, yerr=np.vstack([y - lo, hi - y]), fmt="o", capsize=3, linestyle="none"
+    )
     ax.axhline(0, linestyle="--", lw=1)
 
     if "p_value" in df_sub.columns:
         span = (max(hi) - min(lo)) or 1.0
         offset = 0.05 * span
-        for xi, yi, p in zip(x, y, df_sub["p_value"]):
+        for xi, yi, p in zip(x, y, df_sub["p_value"], strict=False):
             s = _p_to_star(p)
             if s:
                 ax.text(xi, yi + offset, s, ha="center", va="bottom", fontsize=10)
@@ -2248,7 +2502,7 @@ def plot_group_slopes(
 
 
 def plot_multi_segment_scatter_row(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     subset_base: str,
     metric: str = "speed_q95",
     ref_group: str = "WT_VEH",
@@ -2258,12 +2512,13 @@ def plot_multi_segment_scatter_row(
     Row of scatter panels (one per segment) for NOR vs metric, with regression
     lines, for a given base subset and metric.
     """
-    fig, axes = plt.subplots(1, len(segments),
-                              figsize=(5 * len(segments), 4), sharey=True)
+    fig, axes = plt.subplots(
+        1, len(segments), figsize=(5 * len(segments), 4), sharey=True
+    )
     if len(segments) == 1:
         axes = [axes]
 
-    for ax, seg in zip(axes, segments):
+    for ax, seg in zip(axes, segments, strict=False):
         label = f"{subset_base}__{seg}"
         if label not in df["subset"].unique():
             ax.set_visible(False)
@@ -2276,8 +2531,7 @@ def plot_multi_segment_scatter_row(
                 )
             except Exception:
                 pass
-        plot_nor_vs_metric_by_group(df, subset=label, metric=metric,
-                                    model=model, ax=ax)
+        plot_nor_vs_metric_by_group(df, subset=label, metric=metric, model=model, ax=ax)
         ax.set_title(f"{subset_base} — {seg}")
 
     fig.suptitle(f"NOR vs {metric} by segment — {subset_base}", y=1.02)
@@ -2289,14 +2543,15 @@ def plot_multi_segment_scatter_row(
 # HIGH-LEVEL ANALYSIS RUNNER
 # =============================================================================
 
+
 def run_primary_analysis_from_df(
-    df_metrics: "pd.DataFrame",
+    df_metrics: pd.DataFrame,
     primary_subsets: Sequence[str] | None = None,
     primary_metrics: Sequence[str] = PRIMARY_METRICS,
     ref_group: str = "WT_VEH",
     save_plots: bool = False,
     fig_root: Path | None = None,
-) -> tuple["pd.DataFrame | None", "pd.DataFrame | None"]:
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     """
     High-level driver starting from a pre-built df_metrics.
 
@@ -2318,18 +2573,21 @@ def run_primary_analysis_from_df(
     if "subset_base" not in df_metrics.columns:
         df_metrics = add_subset_segment_columns(df_metrics)
 
-    subsets = primary_subsets if primary_subsets is not None \
+    subsets = (
+        primary_subsets
+        if primary_subsets is not None
         else sorted(df_metrics["subset"].unique())
+    )
 
     scatter_dir = slopes_dir = None
     if save_plots and fig_root is not None:
         scatter_dir = fig_root / "scatter"
-        slopes_dir  = fig_root / "slopes"
+        slopes_dir = fig_root / "slopes"
         scatter_dir.mkdir(parents=True, exist_ok=True)
         slopes_dir.mkdir(parents=True, exist_ok=True)
 
-    all_corr:   list["pd.DataFrame"] = []
-    all_slopes: list["pd.DataFrame"] = []
+    all_corr: list[pd.DataFrame] = []
+    all_slopes: list[pd.DataFrame] = []
 
     for subset in subsets:
         df_sub = df_metrics[df_metrics["subset"] == subset]
@@ -2341,7 +2599,9 @@ def run_primary_analysis_from_df(
             continue
 
         corr_df = compute_within_group_correlations(
-            df_metrics, subset=subset, metrics=primary_metrics,
+            df_metrics,
+            subset=subset,
+            metrics=primary_metrics,
         )
         if not corr_df.empty:
             all_corr.append(corr_df)
@@ -2351,7 +2611,10 @@ def run_primary_analysis_from_df(
                 continue
             try:
                 model, slopes_df = fit_speed_nor_interaction(
-                    df_metrics, subset=subset, metric=metric, ref_group=ref_group,
+                    df_metrics,
+                    subset=subset,
+                    metric=metric,
+                    ref_group=ref_group,
                 )
             except Exception as e:
                 print(f"[WARN] {subset}/{metric}: {e}")
@@ -2359,22 +2622,31 @@ def run_primary_analysis_from_df(
 
             parts = subset.rsplit("__", 1)
             slopes_df["subset_base"] = parts[0]
-            slopes_df["segment"]     = parts[1] if len(parts) > 1 else "all"
+            slopes_df["segment"] = parts[1] if len(parts) > 1 else "all"
             all_slopes.append(slopes_df)
 
             if save_plots and scatter_dir and slopes_dir:
                 fig1, _ = plot_nor_vs_metric_by_group(
-                    df_metrics, subset=subset, metric=metric, model=model)
-                fig1.savefig(scatter_dir / f"scatter_{subset}_{metric}.png",
-                             dpi=300, bbox_inches="tight")
+                    df_metrics, subset=subset, metric=metric, model=model
+                )
+                fig1.savefig(
+                    scatter_dir / f"scatter_{subset}_{metric}.png",
+                    dpi=300,
+                    bbox_inches="tight",
+                )
                 plt.close(fig1)
+                print(f"[OK] Saved scatter figure → {scatter_dir / f'scatter_{subset}_{metric}.png'}")
 
                 fig2, _ = plot_group_slopes(slopes_df, subset=subset, metric=metric)
-                fig2.savefig(slopes_dir / f"slopes_{subset}_{metric}.png",
-                             dpi=300, bbox_inches="tight")
+                fig2.savefig(
+                    slopes_dir / f"slopes_{subset}_{metric}.png",
+                    dpi=300,
+                    bbox_inches="tight",
+                )
                 plt.close(fig2)
+                print(f"[OK] Saved slopes figure → {slopes_dir / f'slopes_{subset}_{metric}.png'}")
 
-    corr_summary   = pd.concat(all_corr,   ignore_index=True) if all_corr   else None
+    corr_summary = pd.concat(all_corr, ignore_index=True) if all_corr else None
     slopes_summary = pd.concat(all_slopes, ignore_index=True) if all_slopes else None
 
     # FDR correction
@@ -2386,8 +2658,10 @@ def run_primary_analysis_from_df(
                     _, qvals, _, _ = multipletests(
                         summary.loc[mask, "p_value"], method="fdr_bh"
                     )
-                    summary.loc[mask, "q_value"]      = qvals
-                    summary["signif_fdr_05"] = summary.get("q_value", pd.Series(dtype=float)) < 0.05
+                    summary.loc[mask, "q_value"] = qvals
+                    summary["signif_fdr_05"] = (
+                        summary.get("q_value", pd.Series(dtype=float)) < 0.05
+                    )
 
     return corr_summary, slopes_summary
 
@@ -2395,6 +2669,7 @@ def run_primary_analysis_from_df(
 # =============================================================================
 # SPREAD COMPARISON  (IQR and q95-q05 per animal, WT vs dKI bootstrap CI)
 # =============================================================================
+
 
 def _compute_animal_spread(
     speeds: list[list[np.ndarray]],
@@ -2410,18 +2685,24 @@ def _compute_animal_spread(
     wide  : ndarray shape (n_animals,)
     """
     n_animals = len(speeds[0])
-    iqr  = np.full(n_animals, np.nan)
+    iqr = np.full(n_animals, np.nan)
     wide = np.full(n_animals, np.nan)
     for i in range(n_animals):
-        samples = np.concatenate([
-            np.ravel(speeds[j][i])
-            for j in w_range
-            if j < len(speeds) and len(speeds[j][i]) > 0
-        ]) if any(j < len(speeds) for j in w_range) else np.array([])
+        samples = (
+            np.concatenate(
+                [
+                    np.ravel(speeds[j][i])
+                    for j in w_range
+                    if j < len(speeds) and len(speeds[j][i]) > 0
+                ]
+            )
+            if any(j < len(speeds) for j in w_range)
+            else np.array([])
+        )
         if samples.size < 10:
             continue
         q05, q25, q75, q95 = np.percentile(samples, [5, 25, 75, 95])
-        iqr[i]  = q75 - q25
+        iqr[i] = q75 - q25
         wide[i] = q95 - q05
     return iqr, wide
 
@@ -2448,11 +2729,13 @@ def _bootstrap_diff_ci(
     if a.size == 0 or b.size == 0:
         return np.nan, np.nan, np.nan
     diff_obs = a.mean() - b.mean()
-    diffs = np.array([
-        rng.choice(a, size=a.size, replace=True).mean()
-        - rng.choice(b, size=b.size, replace=True).mean()
-        for _ in range(n_boot)
-    ])
+    diffs = np.array(
+        [
+            rng.choice(a, size=a.size, replace=True).mean()
+            - rng.choice(b, size=b.size, replace=True).mean()
+            for _ in range(n_boot)
+        ]
+    )
     lo = np.percentile(diffs, (100 - ci) / 2)
     hi = np.percentile(diffs, 100 - (100 - ci) / 2)
     return diff_obs, lo, hi
@@ -2464,8 +2747,8 @@ def plot_spread_comparison(
     ranges: dict[str, range],
     grouping_label: str = "genotype",
     n_boot: int = 5000,
-    save_path: "str | Path | None" = None,
-) -> "plt.Figure":
+    save_path: str | Path | None = None,
+) -> plt.Figure:
     """
     Compare dFC speed spread (IQR and q95-q05) between groups across
     window segments (short / mid / long).
@@ -2487,22 +2770,31 @@ def plot_spread_comparison(
     -------
     fig : matplotlib Figure
     """
-    import matplotlib.pyplot as plt
     import matplotlib.patheffects as pe
+    import matplotlib.pyplot as plt
 
-    seg_names  = list(ranges.keys())
+    seg_names = list(ranges.keys())
     group_keys = list(group_data.keys())
-    metrics    = ["IQR  (q75−q25)", "Wide  (q95−q05)"]
-    n_seg      = len(seg_names)
-    n_groups   = len(group_keys)
+    metrics = ["IQR  (q75−q25)", "Wide  (q95−q05)"]
+    n_seg = len(seg_names)
+    n_groups = len(group_keys)
 
     # Palette — up to 8 groups, cycles if more
-    base_colors = ["#2196F3", "#F44336", "#4CAF50", "#FF9800",
-                   "#9C27B0", "#00BCD4", "#795548", "#607D8B"]
+    base_colors = [
+        "#2196F3",
+        "#F44336",
+        "#4CAF50",
+        "#FF9800",
+        "#9C27B0",
+        "#00BCD4",
+        "#795548",
+        "#607D8B",
+    ]
     colors = {gk: base_colors[i % len(base_colors)] for i, gk in enumerate(group_keys)}
 
     fig, axes = plt.subplots(
-        2, n_seg,
+        2,
+        n_seg,
         figsize=(3.5 * n_seg, 7),
         sharey="row",
     )
@@ -2516,7 +2808,7 @@ def plot_spread_comparison(
         iqr_all, wide_all = _compute_animal_spread(speeds, w_range)
 
         for row, (metric_vals, metric_label) in enumerate(
-            zip([iqr_all, wide_all], metrics)
+            zip([iqr_all, wide_all], metrics, strict=False)
         ):
             ax = axes[row, col]
 
@@ -2529,21 +2821,36 @@ def plot_spread_comparison(
                 x = x_positions[gk]
                 jitter = rng_jitter.uniform(-0.12, 0.12, size=v.size)
                 ax.scatter(
-                    np.full(v.size, x) + jitter, v,
-                    color=colors[gk], alpha=0.45, s=18, linewidths=0, zorder=2,
+                    np.full(v.size, x) + jitter,
+                    v,
+                    color=colors[gk],
+                    alpha=0.45,
+                    s=18,
+                    linewidths=0,
+                    zorder=2,
                 )
                 # Mean ± bootstrap CI
                 if v.size > 1:
                     mean_v = v.mean()
-                    boot   = np.array([
-                        np.random.default_rng(s).choice(v, size=v.size, replace=True).mean()
-                        for s in range(n_boot)
-                    ])
+                    boot = np.array(
+                        [
+                            np.random.default_rng(s)
+                            .choice(v, size=v.size, replace=True)
+                            .mean()
+                            for s in range(n_boot)
+                        ]
+                    )
                     ci_lo, ci_hi = np.percentile(boot, [2.5, 97.5])
                     ax.errorbar(
-                        x, mean_v, yerr=[[mean_v - ci_lo], [ci_hi - mean_v]],
-                        fmt="D", color=colors[gk], markersize=7,
-                        capsize=5, linewidth=2, zorder=4,
+                        x,
+                        mean_v,
+                        yerr=[[mean_v - ci_lo], [ci_hi - mean_v]],
+                        fmt="D",
+                        color=colors[gk],
+                        markersize=7,
+                        capsize=5,
+                        linewidth=2,
+                        zorder=4,
                         path_effects=[pe.withStroke(linewidth=3.5, foreground="white")],
                     )
 
@@ -2553,14 +2860,19 @@ def plot_spread_comparison(
             ax.set_xlim(-0.6, n_groups - 0.4)
 
             # For each consecutive pair, annotate difference + CI
-            y_max = np.nanmax([
-                np.nanmax(group_vals[gk]) for gk in group_keys
-                if np.any(np.isfinite(group_vals[gk]))
-            ])
-            y_step = (y_max - ax.get_ylim()[0]) * 0.12 if y_max > ax.get_ylim()[0] else 0.05
+            y_max = np.nanmax(
+                [
+                    np.nanmax(group_vals[gk])
+                    for gk in group_keys
+                    if np.any(np.isfinite(group_vals[gk]))
+                ]
+            )
+            y_step = (
+                (y_max - ax.get_ylim()[0]) * 0.12 if y_max > ax.get_ylim()[0] else 0.05
+            )
 
             for pi, (gk1, gk2) in enumerate(
-                zip(group_keys[:-1], group_keys[1:])
+                zip(group_keys[:-1], group_keys[1:], strict=False)
             ):
                 v1 = group_vals[gk1][np.isfinite(group_vals[gk1])]
                 v2 = group_vals[gk2][np.isfinite(group_vals[gk2])]
@@ -2572,20 +2884,27 @@ def plot_spread_comparison(
                 x1, x2 = x_positions[gk1], x_positions[gk2]
                 ax.annotate(
                     "",
-                    xy=(x2, y_ann), xytext=(x1, y_ann),
+                    xy=(x2, y_ann),
+                    xytext=(x1, y_ann),
                     arrowprops=dict(arrowstyle="-", color="0.3", lw=1.2),
                 )
                 ax.text(
-                    (x1 + x2) / 2, y_ann,
+                    (x1 + x2) / 2,
+                    y_ann,
                     f"{sig}\nΔ={diff:+.3f}\n[{lo:+.3f}, {hi:+.3f}]",
-                    ha="center", va="bottom", fontsize=6.5, color="0.2",
+                    ha="center",
+                    va="bottom",
+                    fontsize=6.5,
+                    color="0.2",
                 )
 
             # ── Labels ───────────────────────────────────────────────────────
             ax.set_xticks(list(x_positions.values()))
             ax.set_xticklabels(
                 [str(gk) for gk in group_keys],
-                fontsize=8, rotation=20, ha="right",
+                fontsize=8,
+                rotation=20,
+                ha="right",
             )
             if col == 0:
                 ax.set_ylabel(metric_label, fontsize=9)
@@ -2596,19 +2915,22 @@ def plot_spread_comparison(
 
     fig.suptitle(
         f"Speed spread by segment — {grouping_label}",
-        fontsize=11, fontweight="bold", y=1.01,
+        fontsize=11,
+        fontweight="bold",
+        y=1.01,
     )
     fig.tight_layout()
 
     if save_path is not None:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
-
+        print(f"[OK] Saved spread comparison figure → {save_path}")
     return fig
 
 
 # =============================================================================
 # SPREAD CURVES  (continuous spread vs window size, bootstrap CI per group)
 # =============================================================================
+
 
 def _compute_spread_per_window(
     speeds: list,
@@ -2645,12 +2967,12 @@ def plot_spread_curves(
     speeds: list,
     group_data: dict,
     time_windows_range: np.ndarray,
-    segment_boundaries: "dict | None" = None,
+    segment_boundaries: dict | None = None,
     grouping_label: str = "genotype",
     n_boot: int = 2000,
     ci: float = 95.0,
-    save_path: "str | Path | None" = None,
-) -> "plt.Figure":
+    save_path: str | Path | None = None,
+) -> plt.Figure:
     """
     Plot spread (IQR and q95-q05) as a continuous function of window size,
     with bootstrap CI bands per group.
@@ -2678,36 +3000,44 @@ def plot_spread_curves(
     import matplotlib.pyplot as plt
 
     group_keys = list(group_data.keys())
-    base_colors = ["#1565C0", "#B71C1C", "#2E7D32", "#E65100",
-                   "#6A1B9A", "#00838F", "#4E342E", "#37474F"]
+    base_colors = [
+        "#1565C0",
+        "#B71C1C",
+        "#2E7D32",
+        "#E65100",
+        "#6A1B9A",
+        "#00838F",
+        "#4E342E",
+        "#37474F",
+    ]
     colors = {gk: base_colors[i % len(base_colors)] for i, gk in enumerate(group_keys)}
 
     metrics = [
-        ("iqr",  "IQR  (q75 − q25)"),
+        ("iqr", "IQR  (q75 − q25)"),
         ("wide", "Wide  (q95 − q05)"),
     ]
 
     fig, axes = plt.subplots(
-        2, 1,
+        2,
+        1,
         figsize=(10, 7),
         sharex=True,
     )
 
     rng = np.random.default_rng(42)
-    x   = np.asarray(time_windows_range)
+    x = np.asarray(time_windows_range)
 
-    for ax, (metric_key, metric_label) in zip(axes, metrics):
+    for ax, (metric_key, metric_label) in zip(axes, metrics, strict=False):
         spread = _compute_spread_per_window(speeds, metric=metric_key)
         # spread: (n_windows, n_animals)
 
         for gk in group_keys:
-            idx   = group_data[gk]
-            gspr  = spread[:, idx]          # (n_windows, n_group_animals)
+            idx = group_data[gk]
+            gspr = spread[:, idx]  # (n_windows, n_group_animals)
             valid = np.isfinite(gspr)
 
             # Mean per window (ignoring NaN)
-            mean_w = np.where(valid.any(axis=1),
-                              np.nanmean(gspr, axis=1), np.nan)
+            mean_w = np.where(valid.any(axis=1), np.nanmean(gspr, axis=1), np.nan)
 
             # Bootstrap CI per window
             ci_lo = np.full(len(x), np.nan)
@@ -2721,36 +3051,41 @@ def plot_spread_curves(
                 ci_lo[w], ci_hi[w] = np.percentile(boot, [alpha, 100 - alpha])
 
             # Plot
-            ax.fill_between(x, ci_lo, ci_hi,
-                            color=colors[gk], alpha=0.20, linewidth=0)
-            ax.plot(x, mean_w,
-                    color=colors[gk], linewidth=2.0, label=str(gk))
+            ax.fill_between(x, ci_lo, ci_hi, color=colors[gk], alpha=0.20, linewidth=0)
+            ax.plot(x, mean_w, color=colors[gk], linewidth=2.0, label=str(gk))
 
         # Segment boundary lines
         if segment_boundaries:
             y_min, y_max = ax.get_ylim()
             for si, (sname, sval) in enumerate(segment_boundaries.items()):
-                ax.axvline(sval, color="0.5", linestyle="--",
-                           linewidth=1.0, zorder=1)
-                ax.text(sval + 0.5, y_max * 0.97,
-                        sname, fontsize=7, color="0.4", va="top")
+                ax.axvline(sval, color="0.5", linestyle="--", linewidth=1.0, zorder=1)
+                ax.text(
+                    sval + 0.5, y_max * 0.97, sname, fontsize=7, color="0.4", va="top"
+                )
 
         ax.set_ylabel(metric_label, fontsize=10)
         ax.spines[["top", "right"]].set_visible(False)
         ax.tick_params(labelsize=9)
-        ax.legend(title=grouping_label, fontsize=8, title_fontsize=8,
-                  framealpha=0.7, loc="upper right")
+        ax.legend(
+            title=grouping_label,
+            fontsize=8,
+            title_fontsize=8,
+            framealpha=0.7,
+            loc="upper right",
+        )
 
     axes[-1].set_xlabel("Window size (TR)", fontsize=10)
     fig.suptitle(
         f"Speed spread vs window size — {grouping_label}",
-        fontsize=12, fontweight="bold",
+        fontsize=12,
+        fontweight="bold",
     )
     fig.tight_layout()
 
     if save_path is not None:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"[OK] Saved spread curves figure → {save_path}")
 
     return fig
 
@@ -2759,6 +3094,7 @@ def plot_spread_curves(
 # SPREAD BY SEGMENT  (pooled per animal, errorbar CI, no connecting lines)
 # =============================================================================
 
+
 def plot_spread_by_segment(
     speeds: list,
     group_data: dict,
@@ -2766,8 +3102,8 @@ def plot_spread_by_segment(
     grouping_label: str = "genotype",
     n_boot: int = 5000,
     ci: float = 95.0,
-    save_path: "str | Path | None" = None,
-) -> "plt.Figure":
+    save_path: str | Path | None = None,
+) -> plt.Figure:
     """
     For each segment (short / mid / long), pool all speed samples across windows
     per animal, compute two spread metrics:
@@ -2792,20 +3128,28 @@ def plot_spread_by_segment(
     -------
     fig : matplotlib Figure
     """
-    import matplotlib.pyplot as plt
     import matplotlib.patheffects as pe
+    import matplotlib.pyplot as plt
 
     group_keys = list(group_data.keys())
-    seg_names  = list(ranges.keys())
-    n_groups   = len(group_keys)
-    n_segs     = len(seg_names)
+    seg_names = list(ranges.keys())
+    n_groups = len(group_keys)
+    n_segs = len(seg_names)
 
-    base_colors = ["#1565C0", "#B71C1C", "#2E7D32", "#E65100",
-                   "#6A1B9A", "#00838F", "#4E342E", "#37474F"]
+    base_colors = [
+        "#1565C0",
+        "#B71C1C",
+        "#2E7D32",
+        "#E65100",
+        "#6A1B9A",
+        "#00838F",
+        "#4E342E",
+        "#37474F",
+    ]
     colors = {gk: base_colors[i % len(base_colors)] for i, gk in enumerate(group_keys)}
 
     # q95-q05 top, q99-q01 bottom
-    metrics    = ["q95q05", "q99q01"]
+    metrics = ["q95q05", "q99q01"]
     pct_ranges = {"q95q05": [5, 95], "q99q01": [1, 99]}
     metric_labels = {
         "q95q05": "Wide range  (q95 − q05)",
@@ -2816,16 +3160,23 @@ def plot_spread_by_segment(
     min_s = {"q95q05": 10, "q99q01": 20}
 
     n_animals = len(speeds[0])
-    spread = {m: {seg: np.full(n_animals, np.nan) for seg in seg_names}
-              for m in metrics}
+    spread = {
+        m: {seg: np.full(n_animals, np.nan) for seg in seg_names} for m in metrics
+    }
 
     for seg, w_range in ranges.items():
         for i in range(n_animals):
-            samples = np.concatenate([
-                np.ravel(speeds[w][i])
-                for w in w_range
-                if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
-            ]) if len(w_range) > 0 else np.array([])
+            samples = (
+                np.concatenate(
+                    [
+                        np.ravel(speeds[w][i])
+                        for w in w_range
+                        if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
+                    ]
+                )
+                if len(w_range) > 0
+                else np.array([])
+            )
             for m in metrics:
                 if samples.size < min_s[m]:
                     continue
@@ -2833,7 +3184,7 @@ def plot_spread_by_segment(
                 spread[m][seg][i] = hi - lo
 
     # ── Bootstrap mean CI per group per segment ───────────────────────────────
-    rng   = np.random.default_rng(42)
+    rng = np.random.default_rng(42)
     alpha = (100 - ci) / 2
 
     # results[metric][seg][group] = (mean, ci_lo, ci_hi)
@@ -2848,24 +3199,29 @@ def plot_spread_by_segment(
                     results[m][seg][gk] = (np.nan, np.nan, np.nan)
                     continue
                 mean_v = v.mean()
-                boot   = rng.choice(v, size=(n_boot, v.size), replace=True).mean(axis=1)
+                boot = rng.choice(v, size=(n_boot, v.size), replace=True).mean(axis=1)
                 lo_b, hi_b = np.percentile(boot, [alpha, 100 - alpha])
                 results[m][seg][gk] = (mean_v, lo_b, hi_b)
 
     # ── Figure ────────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(2, 1, figsize=(max(6, n_segs * 2.2), 8), sharex=True)
 
-    x_base  = np.arange(n_segs)
-    offsets = np.linspace(-0.15 * (n_groups - 1) / 2,
-                           0.15 * (n_groups - 1) / 2, n_groups)
+    x_base = np.arange(n_segs)
+    offsets = np.linspace(
+        -0.15 * (n_groups - 1) / 2, 0.15 * (n_groups - 1) / 2, n_groups
+    )
 
-    for ax, m in zip(axes, metrics):
+    for ax, m in zip(axes, metrics, strict=False):
 
         # ── Errorbars ────────────────────────────────────────────────────────
         for gi, gk in enumerate(group_keys):
-            means  = np.array([results[m][seg][gk][0] for seg in seg_names], dtype=float)
-            ci_los = np.array([results[m][seg][gk][1] for seg in seg_names], dtype=float)
-            ci_his = np.array([results[m][seg][gk][2] for seg in seg_names], dtype=float)
+            means = np.array([results[m][seg][gk][0] for seg in seg_names], dtype=float)
+            ci_los = np.array(
+                [results[m][seg][gk][1] for seg in seg_names], dtype=float
+            )
+            ci_his = np.array(
+                [results[m][seg][gk][2] for seg in seg_names], dtype=float
+            )
 
             ax.errorbar(
                 x_base + offsets[gi],
@@ -2887,18 +3243,23 @@ def plot_spread_by_segment(
         # Compute y ceiling after drawing
         all_hi = [
             results[m][seg][gk][2]
-            for seg in seg_names for gk in group_keys
+            for seg in seg_names
+            for gk in group_keys
             if np.isfinite(results[m][seg][gk][2])
         ]
-        y_top   = max(all_hi) if all_hi else 1.0
-        y_range = y_top - (min(
-            results[m][seg][gk][0]
-            for seg in seg_names for gk in group_keys
-            if np.isfinite(results[m][seg][gk][0])
-        ) if all_hi else 0)
+        y_top = max(all_hi) if all_hi else 1.0
+        y_range = y_top - (
+            min(
+                results[m][seg][gk][0]
+                for seg in seg_names
+                for gk in group_keys
+                if np.isfinite(results[m][seg][gk][0])
+            )
+            if all_hi
+            else 0
+        )
 
-        pairs = [(group_keys[i], group_keys[i + 1])
-                 for i in range(len(group_keys) - 1)]
+        pairs = [(group_keys[i], group_keys[i + 1]) for i in range(len(group_keys) - 1)]
 
         for si, seg in enumerate(seg_names):
             y_ann = y_top + y_range * 0.06
@@ -2909,16 +3270,15 @@ def plot_spread_by_segment(
                 v1 = v1[np.isfinite(v1)]
                 v2 = v2[np.isfinite(v2)]
 
-                diff, lo_d, hi_d = _bootstrap_diff_ci(v1, v2, n_boot=n_boot,
-                                                       seed=si * 10 + pi)
+                diff, lo_d, hi_d = _bootstrap_diff_ci(
+                    v1, v2, n_boot=n_boot, seed=si * 10 + pi
+                )
                 if np.isnan(diff):
                     continue
 
                 sig_label = "*" if not (lo_d <= 0 <= hi_d) else "ns"
-                ann_text  = (
-                    f"{sig_label}\n"
-                    f"Δ={diff:+.3f}\n"
-                    f"[{lo_d:+.3f}, {hi_d:+.3f}]"
+                ann_text = (
+                    f"{sig_label}\n" f"Δ={diff:+.3f}\n" f"[{lo_d:+.3f}, {hi_d:+.3f}]"
                 )
 
                 x1 = si + offsets[group_keys.index(gk1)]
@@ -2926,26 +3286,43 @@ def plot_spread_by_segment(
                 x_mid = (x1 + x2) / 2
 
                 # bracket
-                ax.annotate("", xy=(x2, y_ann), xytext=(x1, y_ann),
-                            arrowprops=dict(arrowstyle="-", color="0.4", lw=1.0))
-                ax.text(x_mid, y_ann, ann_text,
-                        ha="center", va="bottom", fontsize=6.5,
-                        color="0.2", linespacing=1.4)
+                ax.annotate(
+                    "",
+                    xy=(x2, y_ann),
+                    xytext=(x1, y_ann),
+                    arrowprops=dict(arrowstyle="-", color="0.4", lw=1.0),
+                )
+                ax.text(
+                    x_mid,
+                    y_ann,
+                    ann_text,
+                    ha="center",
+                    va="bottom",
+                    fontsize=6.5,
+                    color="0.2",
+                    linespacing=1.4,
+                )
 
-                y_ann += y_range * 0.20   # stack if multiple pairs
+                y_ann += y_range * 0.20  # stack if multiple pairs
 
         ax.set_ylabel(metric_labels[m], fontsize=10)
         ax.set_xticks(x_base)
         ax.set_xticklabels(seg_names, fontsize=10)
         ax.spines[["top", "right"]].set_visible(False)
         ax.tick_params(labelsize=9)
-        ax.legend(title=grouping_label, fontsize=8, title_fontsize=8,
-                  framealpha=0.7, loc="lower right")
+        ax.legend(
+            title=grouping_label,
+            fontsize=8,
+            title_fontsize=8,
+            framealpha=0.7,
+            loc="lower right",
+        )
         ax.set_xlim(-0.5, n_segs - 0.5)
 
     fig.suptitle(
         f"Speed spread by segment — {grouping_label}",
-        fontsize=12, fontweight="bold",
+        fontsize=12,
+        fontweight="bold",
     )
     fig.tight_layout()
 
@@ -2960,12 +3337,13 @@ def plot_spread_by_segment(
 # SPREAD MATRIX  (regions × segments, Δ / significance / masked Δ)
 # =============================================================================
 
+
 def compute_spread_matrix(
     speeds_all: list,
-    speeds_per_region: "dict[str, list]",
+    speeds_per_region: dict[str, list],
     group_data: dict,
     ranges: dict,
-    metrics: "list[str]" = None,
+    metrics: list[str] = None,
     n_boot: int = 5000,
     ci: float = 95.0,
 ) -> dict:
@@ -3009,22 +3387,22 @@ def compute_spread_matrix(
 
     # Build ordered location list: individual regions first, then 'all'
     region_names = list(speeds_per_region.keys())
-    locations    = region_names + ["all"]
-    speeds_map   = {r: speeds_per_region[r] for r in region_names}
+    locations = region_names + ["all"]
+    speeds_map = {r: speeds_per_region[r] for r in region_names}
     speeds_map["all"] = speeds_all
 
-    rng   = np.random.default_rng(42)
+    rng = np.random.default_rng(42)
     alpha = (100 - ci) / 2
 
     result = {}
     for m in metrics:
-        pcts    = pct_map[m]
-        min_s   = min_samples[m]
-        n_loc   = len(locations)
-        n_seg   = len(seg_names)
+        pcts = pct_map[m]
+        min_s = min_samples[m]
+        n_loc = len(locations)
+        n_seg = len(seg_names)
 
-        delta     = np.full((n_seg, n_loc), np.nan)
-        sig       = np.zeros((n_seg, n_loc), dtype=bool)
+        delta = np.full((n_seg, n_loc), np.nan)
+        sig = np.zeros((n_seg, n_loc), dtype=bool)
 
         for li, loc in enumerate(locations):
             speeds = speeds_map[loc]
@@ -3034,11 +3412,17 @@ def compute_spread_matrix(
                 # Pool samples per animal for this segment
                 animal_spread = np.full(n_animals, np.nan)
                 for i in range(n_animals):
-                    samples = np.concatenate([
-                        np.ravel(speeds[w][i])
-                        for w in w_range
-                        if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
-                    ]) if len(w_range) > 0 else np.array([])
+                    samples = (
+                        np.concatenate(
+                            [
+                                np.ravel(speeds[w][i])
+                                for w in w_range
+                                if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
+                            ]
+                        )
+                        if len(w_range) > 0
+                        else np.array([])
+                    )
                     if samples.size < min_s:
                         continue
                     lo, hi = np.percentile(samples, pcts)
@@ -3056,15 +3440,15 @@ def compute_spread_matrix(
                     v0, v1, n_boot=n_boot, seed=li * 100 + si
                 )
                 delta[si, li] = diff
-                sig[si, li]   = not (lo_d <= 0 <= hi_d)
+                sig[si, li] = not (lo_d <= 0 <= hi_d)
 
         delta_sig = np.where(sig, delta, np.nan)
 
         result[m] = {
             "locations": locations,
-            "segments":  seg_names,
-            "delta":     delta,
-            "sig":       sig,
+            "segments": seg_names,
+            "delta": delta,
+            "sig": sig,
             "delta_sig": delta_sig,
             "group_keys": group_keys,
         }
@@ -3076,8 +3460,8 @@ def _plot_spread_matrix_single(
     res: dict,
     metric_label: str,
     grouping_label: str,
-    save_path: "str | Path | None" = None,
-) -> "plt.Figure":
+    save_path: str | Path | None = None,
+) -> plt.Figure:
     """
     Plot 3 heatmaps for a single spread metric:
       Row 1 — Δ (all values, divergent, * overlaid where significant)
@@ -3091,8 +3475,8 @@ def _plot_spread_matrix_single(
     grouping_label : used in suptitle
     save_path      : if given, save figure there
     """
-    import matplotlib.pyplot as plt
     import matplotlib.colors as mcolors
+    import matplotlib.pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
     row_titles = [
@@ -3102,11 +3486,11 @@ def _plot_spread_matrix_single(
     ]
 
     locations = res["locations"]
-    segments  = res["segments"]
-    delta     = res["delta"]
-    sig       = res["sig"].astype(float)
+    segments = res["segments"]
+    delta = res["delta"]
+    sig = res["sig"].astype(float)
     delta_sig = res["delta_sig"]
-    gk        = res["group_keys"]
+    gk = res["group_keys"]
 
     vmax = np.nanmax(np.abs(delta))
     vmax = vmax if np.isfinite(vmax) else 1.0
@@ -3116,32 +3500,35 @@ def _plot_spread_matrix_single(
     fig_w = max(14, n_loc * 0.35)
 
     fig, axes = plt.subplots(
-        3, 1,
+        3,
+        1,
         figsize=(fig_w, 3.5 * 3),
         gridspec_kw={"hspace": 0.6},
     )
 
-    for ri, (data, title_row) in enumerate(zip(
-        [delta, sig, delta_sig], row_titles
-    )):
+    for ri, (data, title_row) in enumerate(
+        zip([delta, sig, delta_sig], row_titles, strict=False)
+    ):
         ax = axes[ri]
 
         if ri == 0 or ri == 2:
-            cmap     = plt.cm.RdBu_r
-            norm     = mcolors.TwoSlopeNorm(vcenter=0, vmin=-vmax, vmax=vmax)
-            im       = ax.imshow(data, aspect="auto", cmap=cmap, norm=norm,
-                                 interpolation="nearest")
+            cmap = plt.cm.RdBu_r
+            norm = mcolors.TwoSlopeNorm(vcenter=0, vmin=-vmax, vmax=vmax)
+            im = ax.imshow(
+                data, aspect="auto", cmap=cmap, norm=norm, interpolation="none"
+            )
             label_cb = f"Δ  ({gk[0]} − {gk[1]})"
         else:
-            cmap     = mcolors.ListedColormap(["#EEEEEE", "#1A237E"])
-            im       = ax.imshow(data, aspect="auto", cmap=cmap, vmin=0, vmax=1,
-                                 interpolation="nearest")
+            cmap = mcolors.ListedColormap(["#EEEEEE", "#1A237E"])
+            im = ax.imshow(
+                data, aspect="auto", cmap=cmap, vmin=0, vmax=1, interpolation="none"
+            )
             label_cb = "* (1) / ns (0)"
 
         # Colorbar
         divider = make_axes_locatable(ax)
-        cax     = divider.append_axes("right", size="1.5%", pad=0.08)
-        cb      = fig.colorbar(im, cax=cax)
+        cax = divider.append_axes("right", size="1.5%", pad=0.08)
+        cb = fig.colorbar(im, cax=cax)
         cb.ax.tick_params(labelsize=7)
         cb.set_label(label_cb, fontsize=7)
 
@@ -3150,26 +3537,44 @@ def _plot_spread_matrix_single(
         ax.set_yticklabels(segments, fontsize=8)
         ax.set_xticks(np.arange(n_loc))
         ax.set_xticklabels(locations, rotation=45, ha="right", fontsize=6.5)
-        ax.set_title(f"{metric_label}  —  {title_row}",
-                     fontsize=9, fontweight="bold", pad=4)
+        ax.set_title(
+            f"{metric_label}  —  {title_row}", fontsize=9, fontweight="bold", pad=4
+        )
 
         # Vertical separator before 'all' (last column)
         ax.axvline(n_loc - 1.5, color="white", linewidth=2, zorder=5)
-        ax.text(n_loc - 1, n_seg - 0.45, "all",
-                ha="center", va="top", fontsize=6,
-                color="white", fontweight="bold")
+        ax.text(
+            n_loc - 1,
+            n_seg - 0.45,
+            "all",
+            ha="center",
+            va="top",
+            fontsize=6,
+            color="white",
+            fontweight="bold",
+        )
 
         # Stars on Δ panel
         if ri == 0:
             for si_r in range(n_seg):
                 for li_c in range(n_loc):
                     if res["sig"][si_r, li_c]:
-                        ax.text(li_c, si_r, "*", ha="center", va="center",
-                                fontsize=9, color="white", fontweight="bold")
+                        ax.text(
+                            li_c,
+                            si_r,
+                            "*",
+                            ha="center",
+                            va="center",
+                            fontsize=9,
+                            color="white",
+                            fontweight="bold",
+                        )
 
     fig.suptitle(
         f"Speed spread — {metric_label}  |  {grouping_label}",
-        fontsize=12, fontweight="bold", y=1.01,
+        fontsize=12,
+        fontweight="bold",
+        y=1.01,
     )
 
     if save_path is not None:
@@ -3182,9 +3587,9 @@ def _plot_spread_matrix_single(
 def plot_spread_matrices(
     spread_result: dict,
     grouping_label: str = "genotype",
-    save_dir: "str | Path | None" = None,
+    save_dir: str | Path | None = None,
     save_prefix: str = "spread_matrices",
-) -> "dict[str, plt.Figure]":
+) -> dict[str, plt.Figure]:
     """
     Generate one figure per metric (3 heatmaps each).
 
@@ -3226,9 +3631,10 @@ def plot_spread_matrices(
 # ALL-PAIRS SPREAD MATRIX  (one Δ-masked row per pair, one figure per grouping)
 # =============================================================================
 
+
 def compute_spread_matrix_all_pairs(
     speeds_all: list,
-    speeds_per_region: "dict[str, list]",
+    speeds_per_region: dict[str, list],
     group_data: dict,
     ranges: dict,
     metric: str = "q95q05",
@@ -3260,45 +3666,51 @@ def compute_spread_matrix_all_pairs(
     """
     from itertools import combinations
 
-    pct_map     = {"q95q05": [5, 95], "q99q01": [1, 99]}
-    min_samples = {"q95q05": 10,      "q99q01": 20}
+    pct_map = {"q95q05": [5, 95], "q99q01": [1, 99]}
+    min_samples = {"q95q05": 10, "q99q01": 20}
 
-    pcts  = pct_map[metric]
+    pcts = pct_map[metric]
     min_s = min_samples[metric]
 
     group_keys = list(group_data.keys())
-    seg_names  = list(ranges.keys())
-    pairs      = list(combinations(group_keys, 2))
+    seg_names = list(ranges.keys())
+    pairs = list(combinations(group_keys, 2))
 
     region_names = list(speeds_per_region.keys())
-    locations    = region_names + ["all"]
-    speeds_map   = {r: speeds_per_region[r] for r in region_names}
+    locations = region_names + ["all"]
+    speeds_map = {r: speeds_per_region[r] for r in region_names}
     speeds_map["all"] = speeds_all
 
     n_pairs = len(pairs)
-    n_seg   = len(seg_names)
-    n_loc   = len(locations)
+    n_seg = len(seg_names)
+    n_loc = len(locations)
 
-    rng   = np.random.default_rng(42)
+    rng = np.random.default_rng(42)
     alpha = (100 - ci) / 2
 
     delta_masked = np.full((n_pairs, n_seg, n_loc), np.nan)
-    sig          = np.zeros((n_pairs, n_seg, n_loc), dtype=bool)
+    sig = np.zeros((n_pairs, n_seg, n_loc), dtype=bool)
 
     for li, loc in enumerate(locations):
-        speeds    = speeds_map[loc]
+        speeds = speeds_map[loc]
         n_animals = len(speeds[0])
 
-        # Pre-compute pooled spread per animal for this location
-        animal_spread = np.full(n_animals, np.nan)
-
         for si, (seg, w_range) in enumerate(ranges.items()):
+            # Reset per segment — avoids carrying over values from previous segment
+            # when an animal has insufficient samples (continue would skip the update)
+            animal_spread = np.full(n_animals, np.nan)
             for i in range(n_animals):
-                samples = np.concatenate([
-                    np.ravel(speeds[w][i])
-                    for w in w_range
-                    if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
-                ]) if len(w_range) > 0 else np.array([])
+                samples = (
+                    np.concatenate(
+                        [
+                            np.ravel(speeds[w][i])
+                            for w in w_range
+                            if w < len(speeds) and np.ravel(speeds[w][i]).size > 0
+                        ]
+                    )
+                    if len(w_range) > 0
+                    else np.array([])
+                )
                 if samples.size < min_s:
                     continue
                 lo, hi = np.percentile(samples, pcts)
@@ -3317,24 +3729,24 @@ def compute_spread_matrix_all_pairs(
                     v0, v1, n_boot=n_boot, seed=li * 1000 + si * 100 + pi
                 )
                 is_sig = not (lo_d <= 0 <= hi_d)
-                sig[pi, si, li]          = is_sig
+                sig[pi, si, li] = is_sig
                 delta_masked[pi, si, li] = diff if is_sig else np.nan
 
     return {
-        "pairs":        pairs,
-        "locations":    locations,
-        "segments":     seg_names,
+        "pairs": pairs,
+        "locations": locations,
+        "segments": seg_names,
         "delta_masked": delta_masked,
-        "sig":          sig,
-        "metric":       metric,
+        "sig": sig,
+        "metric": metric,
     }
 
 
 def plot_spread_matrix_all_pairs(
     result: dict,
     grouping_label: str = "grouping",
-    save_path: "str | Path | None" = None,
-) -> "plt.Figure":
+    save_path: str | Path | None = None,
+) -> plt.Figure:
     """
     One figure per grouping: one row of Δ-masked heatmap per pair.
 
@@ -3347,21 +3759,21 @@ def plot_spread_matrix_all_pairs(
     grouping_label : used in title
     save_path      : if given, save figure there
     """
-    import matplotlib.pyplot as plt
     import matplotlib.colors as mcolors
+    import matplotlib.pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    pairs        = result["pairs"]
-    locations    = result["locations"]
-    segments     = result["segments"]
-    delta_masked = result["delta_masked"]   # (n_pairs, n_seg, n_loc)
-    metric       = result["metric"]
+    pairs = result["pairs"]
+    locations = result["locations"]
+    segments = result["segments"]
+    delta_masked = result["delta_masked"]  # (n_pairs, n_seg, n_loc)
+    metric = result["metric"]
 
     metric_label = {"q95q05": "q95 − q05", "q99q01": "q99 − q01"}.get(metric, metric)
 
     n_pairs = len(pairs)
-    n_loc   = len(locations)
-    n_seg   = len(segments)
+    n_loc = len(locations)
+    n_seg = len(segments)
 
     # Shared symmetric color scale across all pairs
     vmax = np.nanmax(np.abs(delta_masked))
@@ -3371,7 +3783,8 @@ def plot_spread_matrix_all_pairs(
     fig_w = max(14, n_loc * 0.35)
 
     fig, axes = plt.subplots(
-        n_pairs, 1,
+        n_pairs,
+        1,
         figsize=(fig_w, fig_h),
         gridspec_kw={"hspace": 0.7},
     )
@@ -3381,16 +3794,17 @@ def plot_spread_matrix_all_pairs(
     cmap = plt.cm.RdBu_r
     norm = mcolors.TwoSlopeNorm(vcenter=0, vmin=-vmax, vmax=vmax)
 
-    for pi, (ax, (gk0, gk1)) in enumerate(zip(axes, pairs)):
-        data = delta_masked[pi]   # (n_seg, n_loc)
+    for pi, (ax, (gk0, gk1)) in enumerate(zip(axes, pairs, strict=False)):
+        data = delta_masked[pi]  # (n_seg, n_loc)
 
-        im = ax.imshow(data, aspect="auto", cmap=cmap, norm=norm,
-                       interpolation="nearest")
+        im = ax.imshow(
+            data, aspect="auto", cmap=cmap, norm=norm, interpolation="nearest"
+        )
 
         # Colorbar
         divider = make_axes_locatable(ax)
-        cax     = divider.append_axes("right", size="1.5%", pad=0.08)
-        cb      = fig.colorbar(im, cax=cax)
+        cax = divider.append_axes("right", size="1.5%", pad=0.08)
+        cb = fig.colorbar(im, cax=cax)
         cb.ax.tick_params(labelsize=7)
         cb.set_label(f"Δ ({gk0} − {gk1})", fontsize=7)
 
@@ -3399,8 +3813,7 @@ def plot_spread_matrix_all_pairs(
         ax.set_yticklabels(segments, fontsize=8)
         ax.set_xticks(np.arange(n_loc))
         ax.set_xticklabels(locations, rotation=45, ha="right", fontsize=6.5)
-        ax.set_title(f"{gk0}  vs  {gk1}",
-                     fontsize=8, fontweight="bold", pad=3)
+        ax.set_title(f"{gk0}  vs  {gk1}", fontsize=8, fontweight="bold", pad=3)
 
         # Vertical separator before 'all'
         ax.axvline(n_loc - 1.5, color="white", linewidth=2, zorder=5)
@@ -3409,14 +3822,21 @@ def plot_spread_matrix_all_pairs(
         for si in range(n_seg):
             for li in range(n_loc):
                 if np.isnan(data[si, li]):
-                    ax.add_patch(plt.Rectangle(
-                        (li - 0.5, si - 0.5), 1, 1,
-                        color="#DDDDDD", zorder=2,
-                    ))
+                    ax.add_patch(
+                        plt.Rectangle(
+                            (li - 0.5, si - 0.5),
+                            1,
+                            1,
+                            color="#DDDDDD",
+                            zorder=2,
+                        )
+                    )
 
     fig.suptitle(
         f"Δ masked — {metric_label}  |  {grouping_label}  (grey = ns)",
-        fontsize=11, fontweight="bold", y=1.002,
+        fontsize=11,
+        fontweight="bold",
+        y=1.002,
     )
 
     if save_path is not None:
